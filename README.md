@@ -21,7 +21,7 @@ O schema também é criado na inicialização apenas para facilitar desenvolvime
 
 ## Vercel
 
-Use PostgreSQL gerenciado compatível (Neon, Supabase ou Vercel Postgres). Configure `DATABASE_URL`, `AUTH_SECRET`, `GOOGLE_MAPS_API_KEY` (opcional) e `COOKIE_SECURE=true` no projeto Vercel. Não exponha secrets em variáveis `NEXT_PUBLIC_*`. A função FastAPI está em `api/index.py`; aplique `alembic upgrade head` contra a URL de produção antes do deploy.
+Use PostgreSQL gerenciado compatível (Neon ou Supabase). Configure `DATABASE_URL`, `AUTH_SECRET`, `GOOGLE_MAPS_API_KEY` (opcional), `COOKIE_SECURE=true` e `NEXT_PUBLIC_API_URL=/api` no projeto Vercel. Não exponha secrets em variáveis `NEXT_PUBLIC_*`; `/api` é somente o caminho público da API. A função FastAPI está em `api/index.py`; aplique `alembic upgrade head` contra a URL de produção antes do deploy.
 
 ## Backup
 
