@@ -73,8 +73,14 @@ def create_user(body:UserCreate,request:Request,admin:User=Depends(main_admin),d
 def update_user(user_id:int,body:Payload,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
     u=db.get(User,user_id)
     if not u: raise HTTPException(404,"Usuário não encontrado")
-    for k in ("name","role","active","permissions"):
+    for k in ("name","username","role","active","permissions"):
         if k in body.data: setattr(u,k,body.data[k])
+    if body.data.get("password"):
+        pwd=body.data["password"]
+        if len(pwd)<12: raise HTTPException(422,"A nova senha deve ter pelo menos 12 caracteres")
+        u.password_hash=hash_password(pwd); u.must_change_password=True
+    try: db.flush()
+    except IntegrityError: db.rollback(); raise HTTPException(409,"Nome de usuário já em uso")
     audit(db,admin,"ALTERAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize_user(u)
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]

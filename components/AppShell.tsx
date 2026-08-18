@@ -8,8 +8,18 @@ const resource:any={routes:'routes',vehicles:'vehicles',drivers:'drivers',mainte
 const moduleAccess:any={ADMINISTRADOR:['*'],GERENTE:['dashboard','routes','vehicles','drivers','maintenance','fuel','stock','customers','reports'],LOGÍSTICA:['dashboard','routes','vehicles','drivers','fuel','customers'],ESTOQUE:['dashboard','stock','entry','output','movements'],MOTORISTA:['routes'],CONSULTA:['dashboard','routes','vehicles','drivers','maintenance','fuel','stock','customers','reports']};
 function titleFor(k:string){return ({routes:'Rotas',vehicles:'Veículos',drivers:'Motoristas',maintenance:'Manutenção',fuel:'Combustível',stock:'Estoque',customers:'Clientes',settings:'Configurações'} as any)[k]||k}
  
+// Módulos selecionáveis como permissão específica (usuários fora, só o Administrador Principal gerencia usuários)
+const MODULE_OPTIONS=items.filter(([k])=>k!=='users').map(([k,label])=>({value:k as string,label:label as string}));
+// Selecionar "Estoque" implica também Entradas/Saídas/Movimentações no backend, e vice-versa — mantemos isso coerente
+function expandPermissions(keys:string[]):string[]{
+ const s=new Set(keys);
+ if(s.has('stock')){s.add('entry');s.add('output');s.add('movements')}
+ if(s.has('entry')||s.has('output')||s.has('movements')){s.add('stock')}
+ return Array.from(s);
+}
+ 
 // ---- Definição dos campos de formulário por módulo ----
-type FieldType='text'|'number'|'date'|'datetime'|'select'|'textarea'|'vehicle'|'driver'|'customer'|'product';
+type FieldType='text'|'number'|'date'|'datetime'|'select'|'textarea'|'vehicle'|'driver'|'customer'|'product'|'modules';
 type FieldDef={key:string,label:string,type:FieldType,required?:boolean,options?:string[],step?:string};
  
 const FIELDS:Record<string,FieldDef[]>={
@@ -126,6 +136,7 @@ const FIELDS:Record<string,FieldDef[]>={
     {key:'username',label:'Usuário',type:'text',required:true},
     {key:'password',label:'Senha temporária',type:'text',required:true},
     {key:'role',label:'Perfil',type:'select',options:['ADMINISTRADOR','GERENTE','LOGÍSTICA','ESTOQUE','MOTORISTA','CONSULTA'],required:true},
+    {key:'permissions',label:'Permissões específicas (deixe tudo desmarcado para usar os módulos padrão do perfil escolhido)',type:'modules'},
   ],
 };
  
@@ -134,7 +145,7 @@ const USER_EDIT_FIELDS:FieldDef[]=[
   {key:'name',label:'Nome completo',type:'text',required:true},
   {key:'username',label:'Nome de usuário (login)',type:'text',required:true},
   {key:'role',label:'Perfil',type:'select',options:['ADMINISTRADOR','GERENTE','LOGÍSTICA','ESTOQUE','MOTORISTA','CONSULTA'],required:true},
-  {key:'permissions',label:'Permissões específicas (opcional, separadas por vírgula)',type:'text'},
+  {key:'permissions',label:'Permissões específicas (deixe tudo desmarcado para usar os módulos padrão do perfil)',type:'modules'},
   {key:'active',label:'Ativo',type:'select',options:['Sim','Não'],required:true},
   {key:'password',label:'Nova senha (deixe em branco para manter a atual)',type:'text'},
 ];
@@ -261,6 +272,21 @@ function emptyValues(page:string,initial?:any){
  return out;
 }
  
+function ModuleCheckboxes({value,onChange}:{value:string,onChange:(v:string)=>void}){
+ const list=value?value.split(',').filter(Boolean):[];
+ return <div className="grid grid-cols-2 gap-1 rounded-lg border p-2 sm:grid-cols-3">
+  {MODULE_OPTIONS.map(m=>{
+   const checked=list.includes(m.value);
+   return <label key={m.value} className="flex items-center gap-2 text-xs text-slate-600">
+    <input type="checkbox" checked={checked} onChange={e=>{
+     const next=e.target.checked?[...list,m.value]:list.filter(x=>x!==m.value);
+     onChange(next.join(','));
+    }}/>{m.label}
+   </label>;
+  })}
+ </div>;
+}
+ 
 function ResourceForm({page,lookups,onSubmit,initial,submitLabel}:{page:string,lookups:any,onSubmit:(data:any)=>Promise<void>,initial?:any,submitLabel?:string}){
  const fields=FIELDS[page]||[];
  const [values,setValues]=useState<any>(()=>emptyValues(page,initial));
@@ -279,6 +305,10 @@ function ResourceForm({page,lookups,onSubmit,initial,submitLabel}:{page:string,l
   const data:any={};
   for(const f of fields){
    let v:any=values[f.key];
+   if(f.type==='modules'){
+    data[f.key]=v?expandPermissions(String(v).split(',').filter(Boolean)).join(','):null;
+    continue;
+   }
    if(v===''){data[f.key]=null;continue}
    if(f.type==='number'||['vehicle','driver','customer','product'].includes(f.type)) v=Number(v);
    data[f.key]=v;
@@ -289,9 +319,11 @@ function ResourceForm({page,lookups,onSubmit,initial,submitLabel}:{page:string,l
  return <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
   {fields.map(f=>{
    const isLookup=['vehicle','driver','customer','product'].includes(f.type);
-   return <label key={f.key} className={`text-sm ${f.type==='textarea'?'sm:col-span-2':''}`}>
+   return <label key={f.key} className={`text-sm ${(f.type==='textarea'||f.type==='modules')?'sm:col-span-2':''}`}>
     <span className="mb-1 block text-slate-600">{f.label}{f.required?' *':''}</span>
-    {f.type==='textarea' ?
+    {f.type==='modules' ?
+     <ModuleCheckboxes value={values[f.key]} onChange={v=>set(f.key,v)}/> :
+    f.type==='textarea' ?
      <textarea required={f.required} value={values[f.key]} onChange={e=>set(f.key,e.target.value)} className="h-20 w-full rounded-lg border p-2"/> :
     f.type==='select' ?
      <select required={f.required} value={values[f.key]} onChange={e=>set(f.key,e.target.value)} className="w-full rounded-lg border p-2">
@@ -323,7 +355,7 @@ function EditUserForm({user,onSubmit}:{user:any,onSubmit:(data:any)=>Promise<voi
   e.preventDefault();setSaving(true);
   const data:any={
    name:values.name,username:values.username,role:values.role,
-   permissions:values.permissions===''?null:values.permissions,
+   permissions:values.permissions?expandPermissions(String(values.permissions).split(',').filter(Boolean)).join(','):null,
    active:values.active==='Sim',
   };
   if(values.password) data.password=values.password;
@@ -331,9 +363,11 @@ function EditUserForm({user,onSubmit}:{user:any,onSubmit:(data:any)=>Promise<voi
  }
  return <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" autoComplete="off">
   {USER_EDIT_FIELDS.map(f=>
-   <label key={f.key} className="text-sm">
+   <label key={f.key} className={`text-sm ${f.type==='modules'?'sm:col-span-2':''}`}>
     <span className="mb-1 block text-slate-600">{f.label}{f.required?' *':''}</span>
-    {f.type==='select' ?
+    {f.type==='modules' ?
+     <ModuleCheckboxes value={values[f.key]} onChange={v=>set(f.key,v)}/> :
+    f.type==='select' ?
      <select required={f.required} value={values[f.key]} onChange={e=>set(f.key,e.target.value)} className="w-full rounded-lg border p-2">
       {f.key!=='active'&&<option value="">Selecione</option>}
       {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
