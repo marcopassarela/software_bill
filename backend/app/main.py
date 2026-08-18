@@ -88,6 +88,20 @@ def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Se
 
 RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}
 @app.get("/{resource}")
+@app.patch("/settings/{key}")
+def edit_setting(key:str,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require("settings")(user)
+    s=db.get(Setting,key)
+    if not s:
+        s=Setting(key=key); db.add(s)
+    if "value" in body.data: s.value=body.data["value"]
+    audit(db,user,"ALTERAÇÃO","settings",key,request); db.commit(); return serialize(s)
+@app.delete("/settings/{key}")
+def delete_setting(key:str,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require("settings")(user)
+    s=db.get(Setting,key)
+    if not s: raise HTTPException(404)
+    db.delete(s); audit(db,user,"EXCLUSÃO","settings",key,request); db.commit(); return {"ok":True}
 def list_resource(resource:str,user:User=Depends(current_user),db:Session=Depends(get_db)):
     if resource not in RESOURCES: raise HTTPException(404)
     model,module=RESOURCES[resource]; require(module)(user); return [serialize(x) for x in db.scalars(select(model).limit(500)).all()]
