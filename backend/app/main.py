@@ -25,7 +25,7 @@ def seed():
         if not db.scalar(select(User).where(User.username=="user")):
             db.add(User(name="Administrador Principal",username="user",password_hash=hash_password("user123"),role=Role.ADMIN,must_change_password=True)); db.commit()
 class Login(BaseModel): username:str=Field(min_length=1,max_length=60); password:str=Field(min_length=1,max_length=200)
-class PasswordChange(BaseModel): current_password:str=Field(min_length=8,max_length=200); new_password:str=Field(min_length=12,max_length=200)
+class PasswordChange(BaseModel): current_password:str=Field(min_length=1,max_length=200); new_password:str=Field(min_length=12,max_length=200)
 class UserCreate(BaseModel): name:str; username:str; password:str=Field(min_length=12); role:Role; permissions:str|None=None
 class Payload(BaseModel): data:dict[str,Any]
 class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsible:str|None=None; sector:str|None=None; vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
