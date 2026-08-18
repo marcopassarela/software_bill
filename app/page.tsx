@@ -31,7 +31,7 @@ export default function Home(){
    <button className="mt-4 w-full rounded-lg bg-brand p-2 text-white">Salvar e continuar</button>
   </form>
  </main>;
- if(user) return <AppShell user={user} onLogout={()=>setUser(undefined)}/>;
+ if(user) return <AppShell user={user} onLogout={()=>setUser(undefined)} onUserUpdate={(u:any)=>setUser(u)}/>;
  return <main className="grid min-h-screen place-items-center bg-slate-100 p-4">
   <form onSubmit={login} className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg" autoComplete="off">
    <div className="mb-6"><p className="text-sm font-semibold text-cyan-700">GESTÃO LOGÍSTICA</p><h1 className="text-2xl font-bold">Acesso ao sistema</h1></div>

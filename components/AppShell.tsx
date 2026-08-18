@@ -152,7 +152,7 @@ const LABELS:Record<string,string>={
 };
 function labelFor(k:string){return LABELS[k]||k.replace(/_/g,' ')}
  
-export default function AppShell({user,onLogout}:{user:any,onLogout:()=>void}){
+export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout:()=>void,onUserUpdate:(u:any)=>void}){
  const [page,setPage]=useState('dashboard'),[rows,setRows]=useState<any[]>([]),[metrics,setMetrics]=useState<any>(),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  const [lookups,setLookups]=useState<{vehicles:any[],drivers:any[],customers:any[],products:any[]}>({vehicles:[],drivers:[],customers:[],products:[]});
  const [editingUser,setEditingUser]=useState<any>(null);
@@ -196,24 +196,40 @@ export default function AppShell({user,onLogout}:{user:any,onLogout:()=>void}){
   try{await request('/'+resource[page]+'/'+id,{method:'DELETE'});load()}catch(e:any){setError(e.message)}
  }
  async function logout(){await request('/auth/logout',{method:'POST'}).catch(()=>{});onLogout()}
- return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>GESTÃO LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><div><p className="text-sm text-slate-500">Ambiente interno</p><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1></div><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel onClose={()=>setShowAccount(false)}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={user.username==='user'} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource}/>}</main></div>
+ return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>GESTÃO LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><div><p className="text-sm text-slate-500">Ambiente interno</p><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1></div><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={user.username==='user'} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource}/>}</main></div>
 }
  
-function AccountPanel({onClose}:{onClose:()=>void}){
+function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onUserUpdate:(u:any)=>void}){
+ const [name,setName]=useState(user.name||'');
+ const [nameMsg,setNameMsg]=useState(''),[nameErr,setNameErr]=useState(''),[savingName,setSavingName]=useState(false);
  const [current,setCurrent]=useState(''),[next,setNext]=useState(''),[msg,setMsg]=useState(''),[err,setErr]=useState(''),[saving,setSaving]=useState(false);
- async function submit(e:React.FormEvent){
+ async function submitName(e:React.FormEvent){
+  e.preventDefault();setSavingName(true);setNameErr('');setNameMsg('');
+  try{
+   const updated=await request('/auth/profile',{method:'PATCH',body:JSON.stringify({name})});
+   onUserUpdate(updated);setNameMsg('Nome atualizado.');
+  }catch(e:any){setNameErr(e.message)}finally{setSavingName(false)}
+ }
+ async function submitPassword(e:React.FormEvent){
   e.preventDefault();setSaving(true);setErr('');setMsg('');
   try{
    await request('/auth/change-password',{method:'POST',body:JSON.stringify({current_password:current,new_password:next})});
    setMsg('Senha alterada com sucesso.');setCurrent('');setNext('');
   }catch(e:any){setErr(e.message)}finally{setSaving(false)}
  }
- return <div className="absolute right-0 top-14 z-10 w-80 rounded-xl border bg-white p-4 shadow-lg">
-  <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-semibold">Alterar minha senha</h4><button onClick={onClose} className="text-xs text-slate-500 hover:underline">Fechar</button></div>
-  {err&&<p className="mb-2 text-xs text-red-600">{err}</p>}
-  {msg&&<p className="mb-2 text-xs text-green-600">{msg}</p>}
-  <form onSubmit={submit} className="space-y-2" autoComplete="off">
-   <input type="text" name="hidden-user" style={{position:'absolute',left:-9999,width:1,height:1,opacity:0}} tabIndex={-1} aria-hidden="true"/>
+ return <div className="absolute right-0 top-14 z-10 w-80 rounded-xl border bg-white p-4 shadow-lg space-y-4">
+  <div className="flex items-center justify-between"><h4 className="text-sm font-semibold">Minha conta</h4><button onClick={onClose} className="text-xs text-slate-500 hover:underline">Fechar</button></div>
+  <form onSubmit={submitName} className="space-y-2" autoComplete="off">
+   <p className="text-xs font-medium text-slate-500">Nome</p>
+   {nameErr&&<p className="text-xs text-red-600">{nameErr}</p>}
+   {nameMsg&&<p className="text-xs text-green-600">{nameMsg}</p>}
+   <input type="text" value={name} onChange={e=>setName(e.target.value)} required className="w-full rounded-lg border p-2 text-sm"/>
+   <button disabled={savingName} className="w-full rounded-lg bg-slate-100 p-2 text-sm font-medium text-slate-700 disabled:opacity-60">{savingName?'Salvando…':'Salvar nome'}</button>
+  </form>
+  <form onSubmit={submitPassword} className="space-y-2 border-t pt-4" autoComplete="off">
+   <p className="text-xs font-medium text-slate-500">Senha</p>
+   {err&&<p className="text-xs text-red-600">{err}</p>}
+   {msg&&<p className="text-xs text-green-600">{msg}</p>}
    <input type="password" autoComplete="off" placeholder="Senha atual" value={current} onChange={e=>setCurrent(e.target.value)} required className="w-full rounded-lg border p-2 text-sm"/>
    <input type="password" autoComplete="new-password" placeholder="Nova senha (mín. 12 caracteres)" value={next} onChange={e=>setNext(e.target.value)} required minLength={12} className="w-full rounded-lg border p-2 text-sm"/>
    <button disabled={saving} className="w-full rounded-lg bg-brand p-2 text-sm font-medium text-white disabled:opacity-60">{saving?'Salvando…':'Salvar nova senha'}</button>

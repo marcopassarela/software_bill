@@ -26,6 +26,7 @@ def seed():
             db.add(User(name="Administrador Principal",username="user",password_hash=hash_password("user123"),role=Role.ADMIN,must_change_password=True)); db.commit()
 class Login(BaseModel): username:str=Field(min_length=1,max_length=60); password:str=Field(min_length=1,max_length=200)
 class PasswordChange(BaseModel): current_password:str=Field(min_length=1,max_length=200); new_password:str=Field(min_length=12,max_length=200)
+class ProfileUpdate(BaseModel): name:str=Field(min_length=1,max_length=120)
 class UserCreate(BaseModel): name:str; username:str; password:str=Field(min_length=12); role:Role; permissions:str|None=None
 class Payload(BaseModel): data:dict[str,Any]
 class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsible:str|None=None; sector:str|None=None; vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
@@ -56,6 +57,10 @@ def me(user:User=Depends(current_user)): return serialize_user(user)
 def change_password(body:PasswordChange,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
     if not verify_password(body.current_password,user.password_hash): raise HTTPException(400,"Senha atual incorreta")
     user.password_hash=hash_password(body.new_password); user.must_change_password=False; audit(db,user,"ALTERAÇÃO_DE_SENHA","auth",user.id,request); db.commit(); return {"ok":True}
+@app.patch("/auth/profile")
+def update_profile(body:ProfileUpdate,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    user.name=body.name
+    audit(db,user,"ALTERAÇÃO_DE_PERFIL","auth",user.id,request); db.commit(); return serialize_user(user)
 @app.get("/users")
 def users(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize_user(x) for x in db.scalars(select(User).order_by(User.name)).all()]
 @app.post("/users")
