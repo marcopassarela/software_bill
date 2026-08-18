@@ -1,1 +1,11 @@
-{"$schema":"https://openapi.vercel.sh/vercel.json","functions":{"api/**/*.py":{"excludeFiles":"{tests/**,work/**,outputs/**,node_modules/**}"}}}
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.py": {
+      "excludeFiles": "{tests/**,work/**,outputs/**,node_modules/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" }
+  ]
+}
