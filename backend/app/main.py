@@ -74,6 +74,13 @@ def update_user(user_id:int,body:Payload,request:Request,admin:User=Depends(main
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
 
+@app.delete("/users/{user_id}")
+def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
+    u=db.get(User,user_id)
+    if not u: raise HTTPException(404,"Usuário não encontrado")
+    if u.username=="user": raise HTTPException(400,"Não é possível excluir o Administrador Principal")
+    db.delete(u); audit(db,admin,"EXCLUSÃO_DE_USUÁRIO","users",user_id,request); db.commit(); return {"ok":True}
+
 RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}
 @app.get("/{resource}")
 def list_resource(resource:str,user:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -90,6 +97,17 @@ def edit_resource(resource:str,record_id:int,body:Payload,request:Request,user:U
     if not x: raise HTTPException(404)
     for k,v in model_data(model,body.data).items(): setattr(x,k,v)
     audit(db,user,"ALTERAÇÃO",module,record_id,request);db.commit();return serialize(x)
+@app.delete("/{resource}/{record_id}")
+def delete_resource(resource:str,record_id:int,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    if resource not in RESOURCES: raise HTTPException(404)
+    model,module=RESOURCES[resource]; require(module)(user)
+    x=db.get(model,record_id)
+    if not x: raise HTTPException(404)
+    try:
+        db.delete(x); db.flush()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409,"Não é possível excluir: existem registros vinculados a este item")
+    audit(db,user,"EXCLUSÃO",module,record_id,request); db.commit(); return {"ok":True}
 @app.get("/stock/movements")
 def movements(user:User=Depends(current_user),db:Session=Depends(get_db)):
     require("stock")(user);return [serialize(x) for x in db.scalars(select(StockMovement).order_by(StockMovement.occurred_at.desc()).limit(500)).all()]
