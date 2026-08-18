@@ -129,6 +129,19 @@ const FIELDS:Record<string,FieldDef[]>={
   ],
 };
  
+const LABELS:Record<string,string>={
+ id:'ID',name:'Nome',username:'Usuário',role:'Perfil',active:'Ativo',must_change_password:'Trocar senha',permissions:'Permissões',
+ plate:'Placa',brand:'Marca',model:'Modelo',year:'Ano',type:'Tipo',capacity:'Capacidade',average_consumption:'Consumo médio',current_km:'KM atual',fuel_type:'Combustível',status:'Status',notes:'Observações',
+ cpf:'CPF',phone:'Telefone',cnh:'CNH',category:'Categoria',cnh_expiry:'Validade CNH',vehicle_id:'Veículo',
+ origin:'Origem',destination:'Destino',customer_id:'Cliente',scheduled_at:'Agendamento',driver_id:'Motorista',cargo_weight:'Peso da carga',stop_count:'Paradas',total_km:'KM total',estimated_time:'Tempo estimado',estimated_fuel:'Combustível estimado',estimated_cost:'Custo estimado',
+ description:'Descrição',date:'Data',km:'KM',next_km:'Próxima KM',next_date:'Próxima data',value:'Valor',workshop:'Oficina',responsible:'Responsável',
+ liters:'Litros',price_per_liter:'Preço/litro',total_value:'Valor total',station:'Posto',
+ code:'Código',minimum_stock:'Estoque mínimo',location:'Localização',supplier:'Fornecedor',unit_value:'Valor unitário',unit:'Unidade',quantity:'Quantidade',
+ document:'Documento',address:'Endereço',city:'Cidade',state:'UF',zip_code:'CEP',maps_url:'Mapa',
+ key:'Chave',created_at:'Criado em',occurred_at:'Ocorrido em',
+};
+function labelFor(k:string){return LABELS[k]||k.replace(/_/g,' ')}
+
 export default function AppShell({user,onLogout}:{user:any,onLogout:()=>void}){
  const [page,setPage]=useState('dashboard'),[rows,setRows]=useState<any[]>([]),[metrics,setMetrics]=useState<any>(),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  const [lookups,setLookups]=useState<{vehicles:any[],drivers:any[],customers:any[],products:any[]}>({vehicles:[],drivers:[],customers:[],products:[]});
@@ -158,9 +171,9 @@ export default function AppShell({user,onLogout}:{user:any,onLogout:()=>void}){
 function Dashboard({metrics}:{metrics:any}){const cards=[['Veículos disponíveis',metrics?.available,'🚛'],['Em rota',metrics?.on_route,'🗺️'],['Em manutenção',metrics?.maintenance,'🔧'],['Rotas hoje',metrics?.routes_today,'📍'],['Produtos em estoque',metrics?.products,'📦'],['Estoque baixo',metrics?.low_stock,'⚠️'],['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']];return <><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([l,v,i])=><article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm"><div className="text-xl">{i}</div><div className="mt-3 text-2xl font-bold">{v??'—'}</div><div className="text-sm text-slate-500">{l}</div></article>)}</section><section className="mt-6 rounded-xl bg-white p-6 shadow-sm"><h2 className="font-semibold">Acompanhamento operacional</h2><p className="mt-2 text-sm text-slate-500">Os indicadores são calculados diretamente no banco PostgreSQL. Cadastre veículos, produtos, rotas e abastecimentos para compor a visão gerencial.</p></section></>}
  
 function Module({page,rows,loading,create,isAdmin,lookups}:{page:string,rows:any[],loading:boolean,create:(data:any)=>Promise<void>,isAdmin:boolean,lookups:any}){
- const readable=(x:any)=>typeof x==='object'?JSON.stringify(x):String(x??'—');
+ const readable=(x:any)=>x===null||x===undefined?'—':typeof x==='boolean'?(x?'Sim':'Não'):typeof x==='object'?JSON.stringify(x):String(x);
  const createAllowed=!['movements','reports'].includes(page)&&(page!=='users'||isAdmin);
- return <><section className="rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><h2 className="font-semibold">{page==='reports'?'Relatórios por período':titleFor(page)}</h2><span className="text-sm text-slate-500">{rows.length} registros</span></div>{page==='reports'?<div className="p-5 text-sm text-slate-600">Relatórios de estoque, frota, rotas e funcionários podem ser filtrados na API e exportados pelo provedor de relatórios. Esta tela respeita o perfil do usuário.</div>:loading?<div className="p-5">Carregando…</div>:<div className="overflow-auto"><table><thead><tr>{Object.keys(rows[0]||{id:'ID',informação:'Informação'}).slice(0,7).map(k=><th key={k}>{k.replace('_',' ')}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r.id||i}>{Object.keys(rows[0]||{}).slice(0,7).map(k=><td key={k}>{readable(r[k])}</td>)}</tr>)}{!rows.length&&<tr><td className="p-5 text-slate-500">Nenhum registro encontrado.</td></tr>}</tbody></table></div>}</section>{createAllowed&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><h3 className="font-semibold">Novo registro</h3><ResourceForm page={page} lookups={lookups} onSubmit={create}/></section>}</>
+ return <><section className="rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><h2 className="font-semibold">{page==='reports'?'Relatórios por período':titleFor(page)}</h2><span className="text-sm text-slate-500">{rows.length} registros</span></div>{page==='reports'?<div className="p-5 text-sm text-slate-600">Relatórios de estoque, frota, rotas e funcionários podem ser filtrados na API e exportados pelo provedor de relatórios. Esta tela respeita o perfil do usuário.</div>:loading?<div className="p-5">Carregando…</div>:<div className="overflow-auto"><table><thead><tr>{Object.keys(rows[0]||{id:'ID',informação:'Informação'}).slice(0,7).map(k=><th key={k}>{labelFor(k)}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r.id||i}>{Object.keys(rows[0]||{}).slice(0,7).map(k=><td key={k}>{readable(r[k])}</td>)}</tr>)}{!rows.length&&<tr><td className="p-5 text-slate-500">Nenhum registro encontrado.</td></tr>}</tbody></table></div>}</section>{createAllowed&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><h3 className="font-semibold">Novo registro</h3><ResourceForm page={page} lookups={lookups} onSubmit={create}/></section>}</>
 }
  
 function emptyValues(page:string){const out:any={};(FIELDS[page]||[]).forEach(f=>out[f.key]='');return out}
