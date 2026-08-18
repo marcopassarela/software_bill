@@ -32,6 +32,10 @@ class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsib
 def serialize(o):
     d={c.name:getattr(o,c.name) for c in o.__table__.columns}
     return {k:(v.value if hasattr(v,'value') else v.isoformat() if isinstance(v,datetime) else float(v) if hasattr(v,'as_tuple') else v) for k,v in d.items()}
+def serialize_user(o):
+    d = serialize(o)
+    d.pop("password_hash", None)
+    return d
 def model_data(model,data): return {c.name:v for c in model.__table__.columns for k,v in data.items() if k==c.name and k not in {"id","quantity","created_at","occurred_at"}}
 @app.get("/health")
 def health(): return {"status":"ok"}
@@ -42,35 +46,31 @@ def login(body:Login,request:Request,response:Response,db:Session=Depends(get_db
     if not u or not u.active or not verify_password(body.password,u.password_hash):
         audit(db,u,"LOGIN_INVÁLIDO","auth",request=request); db.commit(); raise HTTPException(401,"Usuário ou senha inválidos")
     audit(db,u,"LOGIN","auth",request=request); db.commit(); response.set_cookie("gl_session",token_for(u),httponly=True,secure=settings.cookie_secure,samesite="lax",max_age=settings.access_token_minutes*60,path="/")
-    return {"user":serialize(u)}
+    return {"user":serialize_user(u)}
 @app.post("/auth/logout")
 def logout(response:Response,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
     audit(db,user,"LOGOUT","auth",request=request); db.commit(); response.delete_cookie("gl_session",path="/"); return {"ok":True}
 @app.get("/auth/me")
-def me(user:User=Depends(current_user)): return serialize(user)
+def me(user:User=Depends(current_user)): return serialize_user(user)
 @app.post("/auth/change-password")
 def change_password(body:PasswordChange,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
     if not verify_password(body.current_password,user.password_hash): raise HTTPException(400,"Senha atual incorreta")
     user.password_hash=hash_password(body.new_password); user.must_change_password=False; audit(db,user,"ALTERAÇÃO_DE_SENHA","auth",user.id,request); db.commit(); return {"ok":True}
 @app.get("/users")
-def users(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(User).order_by(User.name)).all()]
+def users(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize_user(x) for x in db.scalars(select(User).order_by(User.name)).all()]
 @app.post("/users")
 def create_user(body:UserCreate,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
     u=User(name=body.name,username=body.username,password_hash=hash_password(body.password),role=body.role,permissions=body.permissions,must_change_password=True); db.add(u)
     try: db.flush()
     except IntegrityError: db.rollback(); raise HTTPException(409,"Usuário já existe")
-    audit(db,admin,"CRIAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize(u)
+    audit(db,admin,"CRIAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize_user(u)
 @app.patch("/users/{user_id}")
 def update_user(user_id:int,body:Payload,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
     u=db.get(User,user_id)
     if not u: raise HTTPException(404,"Usuário não encontrado")
     for k in ("name","role","active","permissions"):
         if k in body.data: setattr(u,k,body.data[k])
-    audit(db,admin,"ALTERAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize(u)
-def serialize_user(o):
-    d = serialize(o)
-    d.pop("password_hash", None) 
-    return d
+    audit(db,admin,"ALTERAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize_user(u)
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
 
