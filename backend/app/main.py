@@ -67,6 +67,10 @@ def update_user(user_id:int,body:Payload,request:Request,admin:User=Depends(main
     for k in ("name","role","active","permissions"):
         if k in body.data: setattr(u,k,body.data[k])
     audit(db,admin,"ALTERAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize(u)
+def serialize_user(o):
+    d = serialize(o)
+    d.pop("password_hash", None)
+    return d
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
 
