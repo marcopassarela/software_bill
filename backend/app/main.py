@@ -36,6 +36,7 @@ def serialize(o):
 def serialize_user(o):
     d = serialize(o)
     d.pop("password_hash", None)
+    d["is_main_admin"] = (o.id == 1)
     return d
 def model_data(model,data): return {c.name:v for c in model.__table__.columns for k,v in data.items() if k==c.name and k not in {"id","quantity","created_at","occurred_at"}}
 @app.get("/health")
@@ -89,7 +90,7 @@ def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [seriali
 def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
     u=db.get(User,user_id)
     if not u: raise HTTPException(404,"Usuário não encontrado")
-    if u.username=="user": raise HTTPException(400,"Não é possível excluir o Administrador Principal")
+    if u.id==1: raise HTTPException(400,"Não é possível excluir o Administrador Principal")
     db.delete(u); audit(db,admin,"EXCLUSÃO_DE_USUÁRIO","users",user_id,request); db.commit(); return {"ok":True}
 
 RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}

@@ -29,7 +29,7 @@ def require(module: str, write=False):
         return user
     return check
 def main_admin(user: User=Depends(current_user)):
-    if user.username != "user" or user.role != Role.ADMIN: raise HTTPException(status_code=403,detail="Apenas o Administrador Principal pode executar esta ação")
+    if user.id != 1 or user.role != Role.ADMIN: raise HTTPException(status_code=403,detail="Apenas o Administrador Principal pode executar esta ação")
     return user
 def audit(db, user, action, module, record_id=None, request: Request|None=None):
     from .models import AuditLog
