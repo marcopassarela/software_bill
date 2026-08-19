@@ -2,8 +2,9 @@ from datetime import datetime
 from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from slowapi import Limiter
@@ -18,6 +19,13 @@ app=FastAPI(title="Gestão Logística API",version="1.0.0")
 settings=get_settings(); limiter=Limiter(key_func=get_remote_address); app.state.limiter=limiter
 app.add_exception_handler(RateLimitExceeded, lambda r,e: Response('{"detail":"Muitas tentativas. Aguarde."}',429,media_type="application/json"))
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(","),allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
+
+# Qualquer exceção não tratada vira uma resposta JSON legível (em vez de uma página de erro
+# sem JSON, que o frontend não consegue interpretar e mostra "Erro de comunicação").
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
+
 @app.on_event("startup")
 def seed():
     Base.metadata.create_all(engine) # Local convenience; production uses Alembic.
@@ -93,14 +101,18 @@ def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Se
     u=db.get(User,user_id)
     if not u: raise HTTPException(404,"Usuário não encontrado")
     if u.id==1: raise HTTPException(400,"Não é possível excluir o Administrador Principal")
-    db.delete(u); audit(db,admin,"EXCLUSÃO_DE_USUÁRIO","users",user_id,request); db.commit(); return {"ok":True}
+    # Libera os registros de auditoria desse usuário (mantém o histórico, sem travar a exclusão).
+    db.execute(update(AuditLog).where(AuditLog.user_id==user_id).values(user_id=None))
+    try:
+        db.delete(u); db.flush()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409,"Não é possível excluir: este usuário possui movimentações de estoque registradas. Desative-o em vez de excluir.")
+    audit(db,admin,"EXCLUSÃO_DE_USUÁRIO","users",user_id,request); db.commit(); return {"ok":True}
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
 
 RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}
 
-# Configurações usa chave em texto (não numérica) como identificador — precisa de rotas próprias,
-# registradas ANTES das rotas genéricas abaixo para terem prioridade.
 @app.patch("/settings/{key}")
 def edit_setting(key:str,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
     require("settings")(user)
@@ -153,8 +165,12 @@ def stock(kind:str,body:Movement,request:Request,user:User=Depends(current_user)
     # SELECT FOR UPDATE makes concurrent removals serialize on PostgreSQL.
     product=db.scalar(select(Product).where(Product.id==body.product_id).with_for_update())
     if not product: raise HTTPException(404,"Produto não encontrado")
-    if kind=="output" and product.quantity<body.quantity: raise HTTPException(409,"Estoque insuficiente")
-    product.quantity=product.quantity+body.quantity if kind=="entry" else product.quantity-body.quantity
+    # product.quantity vem do banco como Decimal; body.quantity é float — precisa converter
+    # antes de somar, senão o Python quebra ("unsupported operand type(s)").
+    current_qty=float(product.quantity)
+    if kind=="output" and current_qty<body.quantity: raise HTTPException(409,"Estoque insuficiente")
+    new_qty=current_qty+body.quantity if kind=="entry" else current_qty-body.quantity
+    product.quantity=new_qty
     m=StockMovement(product_id=product.id,type="ENTRADA" if kind=="entry" else "SAÍDA",quantity=body.quantity,user_id=user.id,responsible=body.responsible,sector=body.sector,vehicle_id=body.vehicle_id,observation=body.observation,invoice=body.invoice,unit_value=body.unit_value);db.add(m);db.flush();audit(db,user,m.type,"stock",m.id,request);db.commit();return {"movement":serialize(m),"quantity":float(product.quantity)}
 
 @app.get("/dashboard")

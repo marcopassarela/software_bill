@@ -148,6 +148,8 @@ const LABELS:Record<string,string>={
  key:'Chave',created_at:'Criado em',occurred_at:'Ocorrido em',
 };
 function labelFor(k:string){return LABELS[k]||k.replace(/_/g,' ')}
+// Colunas que existem no registro mas não devem aparecer na listagem (só no formulário de edição)
+const HIDDEN_TABLE_COLUMNS:Record<string,string[]>={users:['permissions']}
 
 export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout:()=>void,onUserUpdate:(u:any)=>void}){
  const [page,setPage]=useState('dashboard'),[rows,setRows]=useState<any[]>([]),[metrics,setMetrics]=useState<any>(),[error,setError]=useState(''),[loading,setLoading]=useState(false);
