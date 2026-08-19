@@ -114,9 +114,10 @@ const FIELDS:Record<string,FieldDef[]>={
   output:[
     {key:'product_id',label:'Produto',type:'product',required:true},
     {key:'quantity',label:'Quantidade',type:'number',step:'0.01',required:true},
-    {key:'responsible',label:'Responsável',type:'text'},
+    {key:'responsible',label:'Responsável (quem entregou)',type:'text'},
     {key:'sector',label:'Setor',type:'text'},
-    {key:'vehicle_id',label:'Veículo',type:'vehicle'},
+    {key:'vehicle_id',label:'Veículo (se aplicável)',type:'vehicle'},
+    {key:'recipient',label:'Retirado por (nome de quem está pegando o material)',type:'text',required:true},
     {key:'observation',label:'Observação',type:'textarea'},
   ],
   users:[
@@ -143,7 +144,7 @@ const LABELS:Record<string,string>={
  cpf:'CPF',phone:'Telefone',cnh:'CNH',category:'Categoria',cnh_expiry:'Validade CNH',vehicle_id:'Veículo',
  origin:'Origem',destination:'Destino',scheduled_at:'Agendamento',driver_id:'Motorista',cargo_weight:'Peso da carga',stop_count:'Paradas',total_km:'KM total',estimated_time:'Tempo estimado',estimated_fuel:'Combustível estimado',estimated_cost:'Custo estimado',
  description:'Descrição',date:'Data',km:'KM',next_km:'Próxima KM',next_date:'Próxima data',value:'Valor',workshop:'Oficina',responsible:'Responsável',
- liters:'Litros',price_per_liter:'Preço/litro',total_value:'Valor total',station:'Posto',
+ liters:'Litros',price_per_liter:'Preço/litro',total_value:'Valor total',station:'Posto',recipient:'Retirado por',
  code:'Código',minimum_stock:'Estoque mínimo',location:'Localização',supplier:'Fornecedor',unit_value:'Valor unitário',unit:'Unidade',quantity:'Quantidade',
  key:'Chave',created_at:'Criado em',occurred_at:'Ocorrido em',
 };
@@ -159,7 +160,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
  const [showAccount,setShowAccount]=useState(false);
  const isMainAdmin=!!user.is_main_admin;
  const allowed=(key:string)=>isMainAdmin||(user.permissions?user.permissions.split(',').includes(key):(moduleAccess[user.role]||[]).includes('*')||(moduleAccess[user.role]||[]).includes(key));
- async function load(p=page){setError('');setLoading(true);try{if(p==='dashboard')setMetrics(await request('/dashboard'));else if(p==='movements')setRows(await request('/stock/movements'));else if(p==='users')setRows(await request('/users'));else if(resource[p])setRows(await request('/'+resource[p]));else setRows([])}catch(e:any){setError(e.message)}finally{setLoading(false)}}
+ async function load(p=page){setError('');setLoading(true);try{if(p==='dashboard')setMetrics(await request('/dashboard'));else if(p==='movements')setRows(await request('/stock/movements'));else if(p==='entry')setRows((await request('/stock/movements') as any[]).filter(m=>m.type==='ENTRADA'));else if(p==='output')setRows((await request('/stock/movements') as any[]).filter(m=>m.type==='SAÍDA'));else if(p==='users')setRows(await request('/users'));else if(resource[p])setRows(await request('/'+resource[p]));else setRows([])}catch(e:any){setError(e.message)}finally{setLoading(false)}}
  useEffect(()=>{load();setEditingUser(null);setEditingResource(null)},[page]);
  useEffect(()=>{
   Promise.all([

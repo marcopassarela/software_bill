@@ -20,15 +20,13 @@ settings=get_settings(); limiter=Limiter(key_func=get_remote_address); app.state
 app.add_exception_handler(RateLimitExceeded, lambda r,e: Response('{"detail":"Muitas tentativas. Aguarde."}',429,media_type="application/json"))
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(","),allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
-# Qualquer exceção não tratada vira uma resposta JSON legível (em vez de uma página de erro
-# sem JSON, que o frontend não consegue interpretar e mostra "Erro de comunicação").
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
 
 @app.on_event("startup")
 def seed():
-    Base.metadata.create_all(engine) # Local convenience; production uses Alembic.
+    Base.metadata.create_all(engine)
     with Session(engine) as db:
         if not db.scalar(select(User).where(User.username=="user")):
             db.add(User(name="Administrador Principal",username="user",password_hash=hash_password("user123"),role=Role.ADMIN,must_change_password=True)); db.commit()
@@ -38,7 +36,7 @@ class PasswordChange(BaseModel): current_password:str=Field(min_length=1,max_len
 class ProfileUpdate(BaseModel): name:str=Field(min_length=1,max_length=120)
 class UserCreate(BaseModel): name:str; username:str; password:str=Field(min_length=12); role:Role; permissions:str|None=None
 class Payload(BaseModel): data:dict[str,Any]
-class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsible:str|None=None; sector:str|None=None; vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
+class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsible:str|None=None; recipient:str|None=None; sector:str|None=None; vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
 
 def serialize(o):
     d={c.name:getattr(o,c.name) for c in o.__table__.columns}
@@ -101,7 +99,6 @@ def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Se
     u=db.get(User,user_id)
     if not u: raise HTTPException(404,"Usuário não encontrado")
     if u.id==1: raise HTTPException(400,"Não é possível excluir o Administrador Principal")
-    # Libera os registros de auditoria desse usuário (mantém o histórico, sem travar a exclusão).
     db.execute(update(AuditLog).where(AuditLog.user_id==user_id).values(user_id=None))
     try:
         db.delete(u); db.flush()
@@ -111,7 +108,29 @@ def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Se
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
 
-RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}
+# IMPORTANTE: rotas de caminho fixo (dashboard, stock/*, settings/*) ficam TODAS aqui em cima,
+# antes das rotas genéricas "/{resource}" mais abaixo — senão o roteamento genérico "engole" a
+# chamada antes de chegar na rota certa (foi o que quebrava o Dashboard).
+@app.get("/dashboard")
+def dashboard(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require("dashboard")(user); today=datetime.now().date()
+    count=lambda q: db.scalar(q) or 0
+    return {"available":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Disponível")),"on_route":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Em rota")),"maintenance":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Manutenção")),"routes_today":count(select(func.count()).select_from(Route).where(func.date(Route.scheduled_at)==today)),"products":count(select(func.count()).select_from(Product)),"low_stock":count(select(func.count()).select_from(Product).where(Product.quantity<=Product.minimum_stock)),"fuel_cost":float(count(select(func.coalesce(func.sum(FuelRecord.total_value),0))))}
+
+@app.get("/stock/movements")
+def movements(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require("stock")(user);return [serialize(x) for x in db.scalars(select(StockMovement).order_by(StockMovement.occurred_at.desc()).limit(500)).all()]
+@app.post("/stock/{kind}")
+def stock(kind:str,body:Movement,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    if kind not in ("entry","output"): raise HTTPException(404)
+    require("stock")(user)
+    product=db.scalar(select(Product).where(Product.id==body.product_id).with_for_update())
+    if not product: raise HTTPException(404,"Produto não encontrado")
+    current_qty=float(product.quantity)
+    if kind=="output" and current_qty<body.quantity: raise HTTPException(409,"Estoque insuficiente")
+    new_qty=current_qty+body.quantity if kind=="entry" else current_qty-body.quantity
+    product.quantity=new_qty
+    m=StockMovement(product_id=product.id,type="ENTRADA" if kind=="entry" else "SAÍDA",quantity=body.quantity,user_id=user.id,responsible=body.responsible,recipient=body.recipient,sector=body.sector,vehicle_id=body.vehicle_id,observation=body.observation,invoice=body.invoice,unit_value=body.unit_value);db.add(m);db.flush();audit(db,user,m.type,"stock",m.id,request);db.commit();return {"movement":serialize(m),"quantity":float(product.quantity)}
 
 @app.patch("/settings/{key}")
 def edit_setting(key:str,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -128,6 +147,7 @@ def delete_setting(key:str,request:Request,user:User=Depends(current_user),db:Se
     if not s: raise HTTPException(404)
     db.delete(s); audit(db,user,"EXCLUSÃO","settings",key,request); db.commit(); return {"ok":True}
 
+RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}
 @app.get("/{resource}")
 def list_resource(resource:str,user:User=Depends(current_user),db:Session=Depends(get_db)):
     if resource not in RESOURCES: raise HTTPException(404)
@@ -154,27 +174,3 @@ def delete_resource(resource:str,record_id:int,request:Request,user:User=Depends
     except IntegrityError:
         db.rollback(); raise HTTPException(409,"Não é possível excluir: existem registros vinculados a este item")
     audit(db,user,"EXCLUSÃO",module,record_id,request); db.commit(); return {"ok":True}
-
-@app.get("/stock/movements")
-def movements(user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require("stock")(user);return [serialize(x) for x in db.scalars(select(StockMovement).order_by(StockMovement.occurred_at.desc()).limit(500)).all()]
-@app.post("/stock/{kind}")
-def stock(kind:str,body:Movement,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if kind not in ("entry","output"): raise HTTPException(404)
-    require("stock")(user)
-    # SELECT FOR UPDATE makes concurrent removals serialize on PostgreSQL.
-    product=db.scalar(select(Product).where(Product.id==body.product_id).with_for_update())
-    if not product: raise HTTPException(404,"Produto não encontrado")
-    # product.quantity vem do banco como Decimal; body.quantity é float — precisa converter
-    # antes de somar, senão o Python quebra ("unsupported operand type(s)").
-    current_qty=float(product.quantity)
-    if kind=="output" and current_qty<body.quantity: raise HTTPException(409,"Estoque insuficiente")
-    new_qty=current_qty+body.quantity if kind=="entry" else current_qty-body.quantity
-    product.quantity=new_qty
-    m=StockMovement(product_id=product.id,type="ENTRADA" if kind=="entry" else "SAÍDA",quantity=body.quantity,user_id=user.id,responsible=body.responsible,sector=body.sector,vehicle_id=body.vehicle_id,observation=body.observation,invoice=body.invoice,unit_value=body.unit_value);db.add(m);db.flush();audit(db,user,m.type,"stock",m.id,request);db.commit();return {"movement":serialize(m),"quantity":float(product.quantity)}
-
-@app.get("/dashboard")
-def dashboard(user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require("dashboard")(user); today=datetime.now().date()
-    count=lambda q: db.scalar(q) or 0
-    return {"available":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Disponível")),"on_route":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Em rota")),"maintenance":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Manutenção")),"routes_today":count(select(func.count()).select_from(Route).where(func.date(Route.scheduled_at)==today)),"products":count(select(func.count()).select_from(Product)),"low_stock":count(select(func.count()).select_from(Product).where(Product.quantity<=Product.minimum_stock)),"fuel_cost":float(count(select(func.coalesce(func.sum(FuelRecord.total_value),0))))}
