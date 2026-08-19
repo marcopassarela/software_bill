@@ -278,9 +278,6 @@ function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=
       value: maintenanceCount,
       icon: '🔧',
       page: 'maintenance',
-      detail: alerts.length > 0
-        ? alerts.slice(0, 2).map((m: any) => m.description || 'Manutenção').join(' • ')
-        : null,
     },
     {
       label: 'Produtos em estoque',
@@ -313,12 +310,6 @@ function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=
           <div className="text-xl">{card.icon}</div>
           <div className="mt-3 text-2xl font-bold">{card.value}</div>
           <div className="text-sm text-slate-500">{card.label}</div>
-          {card.detail && (
-            <p className="mt-2 text-xs text-amber-700 line-clamp-2">
-              {card.detail}
-              {alerts.length > 2 && ` +${alerts.length - 2}`}
-            </p>
-          )}
         </article>
       ))}
     </section>
