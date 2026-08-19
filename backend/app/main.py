@@ -28,7 +28,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 def seed():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        if not db.scalar(select(User).where(User.username=="user")):
+        # Só cria o admin inicial se o banco estiver TOTALMENTE vazio (instalação nova).
+        # Checar apenas o username "user" recriava a conta sempre que ela era renomeada ou
+        # excluída, porque a cada reinício do servidor a condição voltava a ser verdadeira.
+        if not db.scalar(select(User.id).limit(1)):
             db.add(User(name="Administrador Principal",username="user",password_hash=hash_password("user123"),role=Role.ADMIN,must_change_password=True)); db.commit()
 
 class Login(BaseModel): username:str=Field(min_length=1,max_length=60); password:str=Field(min_length=1,max_length=200)
@@ -37,6 +40,11 @@ class ProfileUpdate(BaseModel): name:str=Field(min_length=1,max_length=120)
 class UserCreate(BaseModel): name:str; username:str; password:str=Field(min_length=12); role:Role; permissions:str|None=None
 class Payload(BaseModel): data:dict[str,Any]
 class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsible:str|None=None; recipient:str|None=None; sector:str|None=None; vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
+class MovementEdit(BaseModel):
+    password:str
+    quantity:float|None=None; responsible:str|None=None; recipient:str|None=None; sector:str|None=None
+    vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
+class MovementDelete(BaseModel): password:str
 
 def serialize(o):
     d={c.name:getattr(o,c.name) for c in o.__table__.columns}
@@ -108,9 +116,6 @@ def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Se
 @app.get("/audit")
 def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
 
-# IMPORTANTE: rotas de caminho fixo (dashboard, stock/*, settings/*) ficam TODAS aqui em cima,
-# antes das rotas genéricas "/{resource}" mais abaixo — senão o roteamento genérico "engole" a
-# chamada antes de chegar na rota certa (foi o que quebrava o Dashboard).
 @app.get("/dashboard")
 def dashboard(user:User=Depends(current_user),db:Session=Depends(get_db)):
     require("dashboard")(user); today=datetime.now().date()
@@ -131,6 +136,39 @@ def stock(kind:str,body:Movement,request:Request,user:User=Depends(current_user)
     new_qty=current_qty+body.quantity if kind=="entry" else current_qty-body.quantity
     product.quantity=new_qty
     m=StockMovement(product_id=product.id,type="ENTRADA" if kind=="entry" else "SAÍDA",quantity=body.quantity,user_id=user.id,responsible=body.responsible,recipient=body.recipient,sector=body.sector,vehicle_id=body.vehicle_id,observation=body.observation,invoice=body.invoice,unit_value=body.unit_value);db.add(m);db.flush();audit(db,user,m.type,"stock",m.id,request);db.commit();return {"movement":serialize(m),"quantity":float(product.quantity)}
+
+@app.patch("/stock/movements/{movement_id}")
+def edit_movement(movement_id:int,body:MovementEdit,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require("stock")(user)
+    if not verify_password(body.password,user.password_hash): raise HTTPException(401,"Senha incorreta")
+    m=db.get(StockMovement,movement_id)
+    if not m: raise HTTPException(404,"Movimentação não encontrada")
+    product=db.scalar(select(Product).where(Product.id==m.product_id).with_for_update())
+    if not product: raise HTTPException(404,"Produto não encontrado")
+    current=float(product.quantity)
+    old_qty=float(m.quantity)
+    current=current-old_qty if m.type=="ENTRADA" else current+old_qty  # desfaz o efeito antigo
+    new_qty=body.quantity if body.quantity is not None else old_qty
+    for field,val in (("responsible",body.responsible),("recipient",body.recipient),("sector",body.sector),("vehicle_id",body.vehicle_id),("observation",body.observation),("invoice",body.invoice),("unit_value",body.unit_value)):
+        if val is not None: setattr(m,field,val)
+    m.quantity=new_qty
+    current=current+new_qty if m.type=="ENTRADA" else current-new_qty  # aplica o novo efeito
+    if current<0: raise HTTPException(409,"Essa alteração deixaria o estoque negativo")
+    product.quantity=current
+    audit(db,user,"ALTERAÇÃO","stock",movement_id,request); db.commit(); return serialize(m)
+@app.delete("/stock/movements/{movement_id}")
+def delete_movement(movement_id:int,body:MovementDelete,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require("stock")(user)
+    if not verify_password(body.password,user.password_hash): raise HTTPException(401,"Senha incorreta")
+    m=db.get(StockMovement,movement_id)
+    if not m: raise HTTPException(404,"Movimentação não encontrada")
+    product=db.scalar(select(Product).where(Product.id==m.product_id).with_for_update())
+    if product:
+        qty=float(m.quantity)
+        new_qty=float(product.quantity)-qty if m.type=="ENTRADA" else float(product.quantity)+qty
+        if new_qty<0: raise HTTPException(409,"Não é possível excluir: deixaria o estoque negativo")
+        product.quantity=new_qty
+    db.delete(m); audit(db,user,"EXCLUSÃO","stock",movement_id,request); db.commit(); return {"ok":True}
 
 @app.patch("/settings/{key}")
 def edit_setting(key:str,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
