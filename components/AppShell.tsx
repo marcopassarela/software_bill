@@ -221,7 +221,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
   try{await request('/stock/movements/'+id,{method:'DELETE',body:JSON.stringify({password})});load()}catch(e:any){setError(e.message)}
  }
  async function logout(){await request('/auth/logout',{method:'POST'}).catch(()=>{});onLogout()}
- return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}</main></div>
+ return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics} onNavigate={setPage}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}</main></div>
 }
 
 function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onUserUpdate:(u:any)=>void}){
@@ -262,51 +262,67 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({metrics}:{metrics:any}){
- // Removido o card "Em rota"
- const cards=[
-  ['Veículos disponíveis',metrics?.available,'🚛'],
-  ['Em manutenção',metrics?.maintenance,'🔧'],
-  ['Produtos em estoque',metrics?.products,'📦'],
-  ['Estoque baixo',metrics?.low_stock,'⚠️'],
-  ['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']
- ];
+function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=>void}){
+  const alerts = metrics?.maintenance_alerts || [];
+  const maintenanceCount = alerts.length;
 
- const alerts = metrics?.maintenance_alerts || [];
- const hasAlerts = alerts.length > 0;
+  const cards = [
+    {
+      label: 'Veículos disponíveis',
+      value: metrics?.available ?? '—',
+      icon: '🚛',
+      page: 'vehicles',
+    },
+    {
+      label: 'Em manutenção',
+      value: maintenanceCount,
+      icon: '🔧',
+      page: 'maintenance',
+      detail: alerts.length > 0
+        ? alerts.slice(0, 2).map((m: any) => m.description || 'Manutenção').join(' • ')
+        : null,
+    },
+    {
+      label: 'Produtos em estoque',
+      value: metrics?.products ?? '—',
+      icon: '📦',
+      page: 'stock',
+    },
+    {
+      label: 'Estoque baixo',
+      value: metrics?.low_stock ?? '—',
+      icon: '⚠️',
+      page: 'stock',
+    },
+    {
+      label: 'Custo combustível',
+      value: metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) ?? '—',
+      icon: '⛽',
+      page: 'fuel',
+    },
+  ];
 
- return <>
-  {hasAlerts && (
-   <section className="mb-6 space-y-2">
-    <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-     <AlertTriangle size={20} className="mt-0.5 shrink-0"/>
-     <div>
-      <p className="font-semibold">
-       {alerts.length} manutenção(ões) em andamento
-      </p>
-      <ul className="mt-1 list-disc pl-4 text-sm">
-       {alerts.slice(0, 5).map((m: any) => (
-        <li key={m.id}>
-          {m.description || 'Manutenção'} — {readable(m.date)}
-        </li>
-       ))}
-       {alerts.length > 5 && <li>... e mais {alerts.length - 5}</li>}
-      </ul>
-     </div>
-    </div>
-   </section>
-  )}
-
-  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-   {cards.map(([l,v,i]) => (
-    <article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm">
-     <div className="text-xl">{i}</div>
-     <div className="mt-3 text-2xl font-bold">{v ?? '—'}</div>
-     <div className="text-sm text-slate-500">{l}</div>
-    </article>
-   ))}
-  </section>
- </>;
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {cards.map((card) => (
+        <article
+          key={card.label}
+          onClick={() => onNavigate(card.page)}
+          className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition hover:shadow-md hover:ring-2 hover:ring-cyan-500/30"
+        >
+          <div className="text-xl">{card.icon}</div>
+          <div className="mt-3 text-2xl font-bold">{card.value}</div>
+          <div className="text-sm text-slate-500">{card.label}</div>
+          {card.detail && (
+            <p className="mt-2 text-xs text-amber-700 line-clamp-2">
+              {card.detail}
+              {alerts.length > 2 && ` +${alerts.length - 2}`}
+            </p>
+          )}
+        </article>
+      ))}
+    </section>
+  );
 }
 
 const REPORT_SOURCES=[
