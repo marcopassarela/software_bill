@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,200 +15,641 @@ from .database import Base, engine, get_db
 from .models import *
 from .security import audit, current_user, hash_password, main_admin, require, token_for, verify_password
 
-app=FastAPI(title="Gestão Logística API",version="1.0.0")
-settings=get_settings(); limiter=Limiter(key_func=get_remote_address); app.state.limiter=limiter
-app.add_exception_handler(RateLimitExceeded, lambda r,e: Response('{"detail":"Muitas tentativas. Aguarde."}',429,media_type="application/json"))
-app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(","),allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
+app = FastAPI(title="Gestão Logística API", version="1.0.0")
+settings = get_settings()
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda r, e: Response(
+        '{"detail":"Muitas tentativas. Aguarde."}',
+        429,
+        media_type="application/json",
+    ),
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins.split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
+
+
+def update_maintenance_status(db: Session):
+    """Atualiza automaticamente manutenções cuja data já chegou para 'Em andamento'."""
+    today = date.today()
+    db.execute(
+        update(Maintenance)
+        .where(
+            Maintenance.status == "Agendado",
+            func.date(Maintenance.date) <= today,
+        )
+        .values(status="Em andamento")
+    )
+    db.commit()
+
 
 @app.on_event("startup")
 def seed():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         # Só cria o admin inicial se o banco estiver TOTALMENTE vazio (instalação nova).
-        # Checar apenas o username "user" recriava a conta sempre que ela era renomeada ou
-        # excluída, porque a cada reinício do servidor a condição voltava a ser verdadeira.
         if not db.scalar(select(User.id).limit(1)):
-            db.add(User(name="Administrador Principal",username="user",password_hash=hash_password("user123"),role=Role.ADMIN,must_change_password=True)); db.commit()
+            db.add(
+                User(
+                    name="Administrador Principal",
+                    username="user",
+                    password_hash=hash_password("user123"),
+                    role=Role.ADMIN,
+                    must_change_password=True,
+                )
+            )
+            db.commit()
 
-class Login(BaseModel): username:str=Field(min_length=1,max_length=60); password:str=Field(min_length=1,max_length=200)
-class PasswordChange(BaseModel): current_password:str=Field(min_length=1,max_length=200); new_password:str=Field(min_length=12,max_length=200)
-class ProfileUpdate(BaseModel): name:str=Field(min_length=1,max_length=120)
-class UserCreate(BaseModel): name:str; username:str; password:str=Field(min_length=12); role:Role; permissions:str|None=None
-class Payload(BaseModel): data:dict[str,Any]
-class Movement(BaseModel): product_id:int; quantity:float=Field(gt=0); responsible:str|None=None; recipient:str|None=None; sector:str|None=None; vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
+        # Atualiza status de manutenções no startup
+        update_maintenance_status(db)
+
+
+class Login(BaseModel):
+    username: str = Field(min_length=1, max_length=60)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
+
+
+class ProfileUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class UserCreate(BaseModel):
+    name: str
+    username: str
+    password: str = Field(min_length=12)
+    role: Role
+    permissions: str | None = None
+
+
+class Payload(BaseModel):
+    data: dict[str, Any]
+
+
+class Movement(BaseModel):
+    product_id: int
+    quantity: float = Field(gt=0)
+    responsible: str | None = None
+    recipient: str | None = None
+    sector: str | None = None
+    vehicle_id: int | None = None
+    observation: str | None = None
+    invoice: str | None = None
+    unit_value: float | None = None
+
+
 class MovementEdit(BaseModel):
-    password:str
-    quantity:float|None=None; responsible:str|None=None; recipient:str|None=None; sector:str|None=None
-    vehicle_id:int|None=None; observation:str|None=None; invoice:str|None=None; unit_value:float|None=None
-class MovementDelete(BaseModel): password:str
+    password: str
+    quantity: float | None = None
+    responsible: str | None = None
+    recipient: str | None = None
+    sector: str | None = None
+    vehicle_id: int | None = None
+    observation: str | None = None
+    invoice: str | None = None
+    unit_value: float | None = None
+
+
+class MovementDelete(BaseModel):
+    password: str
+
 
 def serialize(o):
-    d={c.name:getattr(o,c.name) for c in o.__table__.columns}
-    return {k:(v.value if hasattr(v,'value') else v.isoformat() if isinstance(v,datetime) else float(v) if hasattr(v,'as_tuple') else v) for k,v in d.items()}
+    d = {c.name: getattr(o, c.name) for c in o.__table__.columns}
+    return {
+        k: (
+            v.value
+            if hasattr(v, "value")
+            else v.isoformat()
+            if isinstance(v, datetime)
+            else float(v)
+            if hasattr(v, "as_tuple")
+            else v
+        )
+        for k, v in d.items()
+    }
+
+
 def serialize_user(o):
     d = serialize(o)
     d.pop("password_hash", None)
-    d["is_main_admin"] = (o.id == 1)
+    d["is_main_admin"] = o.id == 1
     return d
-def model_data(model,data): return {c.name:v for c in model.__table__.columns for k,v in data.items() if k==c.name and k not in {"id","quantity","created_at","occurred_at"}}
+
+
+def model_data(model, data):
+    return {
+        c.name: v
+        for c in model.__table__.columns
+        for k, v in data.items()
+        if k == c.name and k not in {"id", "quantity", "created_at", "occurred_at"}
+    }
+
 
 @app.get("/health")
-def health(): return {"status":"ok"}
+def health():
+    return {"status": "ok"}
+
 
 @app.post("/auth/login")
 @limiter.limit("5/minute")
-def login(body:Login,request:Request,response:Response,db:Session=Depends(get_db)):
-    u=db.scalar(select(User).where(User.username==body.username))
-    if not u or not u.active or not verify_password(body.password,u.password_hash):
-        audit(db,u,"LOGIN_INVÁLIDO","auth",request=request); db.commit(); raise HTTPException(401,"Usuário ou senha inválidos")
-    audit(db,u,"LOGIN","auth",request=request); db.commit(); response.set_cookie("gl_session",token_for(u),httponly=True,secure=settings.cookie_secure,samesite="lax",max_age=settings.access_token_minutes*60,path="/")
-    return {"user":serialize_user(u)}
+def login(
+    body: Login,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    u = db.scalar(select(User).where(User.username == body.username))
+    if not u or not u.active or not verify_password(body.password, u.password_hash):
+        audit(db, u, "LOGIN_INVÁLIDO", "auth", request=request)
+        db.commit()
+        raise HTTPException(401, "Usuário ou senha inválidos")
+    audit(db, u, "LOGIN", "auth", request=request)
+    db.commit()
+    response.set_cookie(
+        "gl_session",
+        token_for(u),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    return {"user": serialize_user(u)}
+
+
 @app.post("/auth/logout")
-def logout(response:Response,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    audit(db,user,"LOGOUT","auth",request=request); db.commit(); response.delete_cookie("gl_session",path="/"); return {"ok":True}
+def logout(
+    response: Response,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    audit(db, user, "LOGOUT", "auth", request=request)
+    db.commit()
+    response.delete_cookie("gl_session", path="/")
+    return {"ok": True}
+
+
 @app.get("/auth/me")
-def me(user:User=Depends(current_user)): return serialize_user(user)
+def me(user: User = Depends(current_user)):
+    return serialize_user(user)
+
+
 @app.post("/auth/change-password")
-def change_password(body:PasswordChange,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if not verify_password(body.current_password,user.password_hash): raise HTTPException(400,"Senha atual incorreta")
-    user.password_hash=hash_password(body.new_password); user.must_change_password=False; audit(db,user,"ALTERAÇÃO_DE_SENHA","auth",user.id,request); db.commit(); return {"ok":True}
+def change_password(
+    body: PasswordChange,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(400, "Senha atual incorreta")
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+    audit(db, user, "ALTERAÇÃO_DE_SENHA", "auth", user.id, request)
+    db.commit()
+    return {"ok": True}
+
+
 @app.patch("/auth/profile")
-def update_profile(body:ProfileUpdate,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    user.name=body.name
-    audit(db,user,"ALTERAÇÃO_DE_PERFIL","auth",user.id,request); db.commit(); return serialize_user(user)
+def update_profile(
+    body: ProfileUpdate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    user.name = body.name
+    audit(db, user, "ALTERAÇÃO_DE_PERFIL", "auth", user.id, request)
+    db.commit()
+    return serialize_user(user)
+
 
 @app.get("/users")
-def users(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize_user(x) for x in db.scalars(select(User).order_by(User.name)).all()]
+def users(_: User = Depends(main_admin), db: Session = Depends(get_db)):
+    return [serialize_user(x) for x in db.scalars(select(User).order_by(User.name)).all()]
+
+
 @app.post("/users")
-def create_user(body:UserCreate,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
-    u=User(name=body.name,username=body.username,password_hash=hash_password(body.password),role=body.role,permissions=body.permissions,must_change_password=True); db.add(u)
-    try: db.flush()
-    except IntegrityError: db.rollback(); raise HTTPException(409,"Usuário já existe")
-    audit(db,admin,"CRIAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize_user(u)
-@app.patch("/users/{user_id}")
-def update_user(user_id:int,body:Payload,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
-    u=db.get(User,user_id)
-    if not u: raise HTTPException(404,"Usuário não encontrado")
-    for k in ("name","username","role","active","permissions"):
-        if k in body.data: setattr(u,k,body.data[k])
-    if body.data.get("password"):
-        pwd=body.data["password"]
-        if len(pwd)<12: raise HTTPException(422,"A nova senha deve ter pelo menos 12 caracteres")
-        u.password_hash=hash_password(pwd); u.must_change_password=True
-    try: db.flush()
-    except IntegrityError: db.rollback(); raise HTTPException(409,"Nome de usuário já em uso")
-    audit(db,admin,"ALTERAÇÃO_DE_USUÁRIO","users",u.id,request);db.commit();return serialize_user(u)
-@app.delete("/users/{user_id}")
-def delete_user(user_id:int,request:Request,admin:User=Depends(main_admin),db:Session=Depends(get_db)):
-    u=db.get(User,user_id)
-    if not u: raise HTTPException(404,"Usuário não encontrado")
-    if u.id==1: raise HTTPException(400,"Não é possível excluir o Administrador Principal")
-    db.execute(update(AuditLog).where(AuditLog.user_id==user_id).values(user_id=None))
+def create_user(
+    body: UserCreate,
+    request: Request,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    u = User(
+        name=body.name,
+        username=body.username,
+        password_hash=hash_password(body.password),
+        role=body.role,
+        permissions=body.permissions,
+        must_change_password=True,
+    )
+    db.add(u)
     try:
-        db.delete(u); db.flush()
+        db.flush()
     except IntegrityError:
-        db.rollback(); raise HTTPException(409,"Não é possível excluir: este usuário possui movimentações de estoque registradas. Desative-o em vez de excluir.")
-    audit(db,admin,"EXCLUSÃO_DE_USUÁRIO","users",user_id,request); db.commit(); return {"ok":True}
+        db.rollback()
+        raise HTTPException(409, "Usuário já existe")
+    audit(db, admin, "CRIAÇÃO_DE_USUÁRIO", "users", u.id, request)
+    db.commit()
+    return serialize_user(u)
+
+
+@app.patch("/users/{user_id}")
+def update_user(
+    user_id: int,
+    body: Payload,
+    request: Request,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404, "Usuário não encontrado")
+    for k in ("name", "username", "role", "active", "permissions"):
+        if k in body.data:
+            setattr(u, k, body.data[k])
+    if body.data.get("password"):
+        pwd = body.data["password"]
+        if len(pwd) < 12:
+            raise HTTPException(422, "A nova senha deve ter pelo menos 12 caracteres")
+        u.password_hash = hash_password(pwd)
+        u.must_change_password = True
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Nome de usuário já em uso")
+    audit(db, admin, "ALTERAÇÃO_DE_USUÁRIO", "users", u.id, request)
+    db.commit()
+    return serialize_user(u)
+
+
+@app.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    request: Request,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404, "Usuário não encontrado")
+    if u.id == 1:
+        raise HTTPException(400, "Não é possível excluir o Administrador Principal")
+    db.execute(update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None))
+    try:
+        db.delete(u)
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Não é possível excluir: este usuário possui movimentações de estoque registradas. Desative-o em vez de excluir.",
+        )
+    audit(db, admin, "EXCLUSÃO_DE_USUÁRIO", "users", user_id, request)
+    db.commit()
+    return {"ok": True}
+
+
 @app.get("/audit")
-def logs(_:User=Depends(main_admin),db:Session=Depends(get_db)): return [serialize(x) for x in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)).all()]
+def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
+    return [
+        serialize(x)
+        for x in db.scalars(
+            select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)
+        ).all()
+    ]
+
 
 @app.get("/dashboard")
-def dashboard(user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require("dashboard")(user); today=datetime.now().date()
-    count=lambda q: db.scalar(q) or 0
-    return {"available":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Disponível")),"on_route":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Em rota")),"maintenance":count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Manutenção")),"routes_today":count(select(func.count()).select_from(Route).where(func.date(Route.scheduled_at)==today)),"products":count(select(func.count()).select_from(Product)),"low_stock":count(select(func.count()).select_from(Product).where(Product.quantity<=Product.minimum_stock)),"fuel_cost":float(count(select(func.coalesce(func.sum(FuelRecord.total_value),0))))}
+def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require("dashboard")(user)
+
+    # Atualiza status das manutenções antes de calcular os indicadores
+    update_maintenance_status(db)
+
+    today = datetime.now().date()
+    count = lambda q: db.scalar(q) or 0
+
+    # Manutenções em andamento (para aviso no frontend)
+    maintenance_alerts = [
+        serialize(m)
+        for m in db.scalars(
+            select(Maintenance)
+            .where(Maintenance.status == "Em andamento")
+            .order_by(Maintenance.date)
+            .limit(20)
+        ).all()
+    ]
+
+    return {
+        "available": count(
+            select(func.count()).select_from(Vehicle).where(Vehicle.status == "Disponível")
+        ),
+        "maintenance": count(
+            select(func.count()).select_from(Vehicle).where(Vehicle.status == "Manutenção")
+        ),
+        "routes_today": count(
+            select(func.count())
+            .select_from(Route)
+            .where(func.date(Route.scheduled_at) == today)
+        ),
+        "products": count(select(func.count()).select_from(Product)),
+        "low_stock": count(
+            select(func.count())
+            .select_from(Product)
+            .where(Product.quantity <= Product.minimum_stock)
+        ),
+        "fuel_cost": float(
+            count(select(func.coalesce(func.sum(FuelRecord.total_value), 0)))
+        ),
+        "maintenance_alerts": maintenance_alerts,  # lista para o frontend mostrar o aviso
+    }
+
 
 @app.get("/stock/movements")
-def movements(user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require("stock")(user);return [serialize(x) for x in db.scalars(select(StockMovement).order_by(StockMovement.occurred_at.desc()).limit(500)).all()]
-@app.post("/stock/{kind}")
-def stock(kind:str,body:Movement,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if kind not in ("entry","output"): raise HTTPException(404)
+def movements(user: User = Depends(current_user), db: Session = Depends(get_db)):
     require("stock")(user)
-    product=db.scalar(select(Product).where(Product.id==body.product_id).with_for_update())
-    if not product: raise HTTPException(404,"Produto não encontrado")
-    current_qty=float(product.quantity)
-    if kind=="output" and current_qty<body.quantity: raise HTTPException(409,"Estoque insuficiente")
-    new_qty=current_qty+body.quantity if kind=="entry" else current_qty-body.quantity
-    product.quantity=new_qty
-    m=StockMovement(product_id=product.id,type="ENTRADA" if kind=="entry" else "SAÍDA",quantity=body.quantity,user_id=user.id,responsible=body.responsible,recipient=body.recipient,sector=body.sector,vehicle_id=body.vehicle_id,observation=body.observation,invoice=body.invoice,unit_value=body.unit_value);db.add(m);db.flush();audit(db,user,m.type,"stock",m.id,request);db.commit();return {"movement":serialize(m),"quantity":float(product.quantity)}
+    return [
+        serialize(x)
+        for x in db.scalars(
+            select(StockMovement).order_by(StockMovement.occurred_at.desc()).limit(500)
+        ).all()
+    ]
+
+
+@app.post("/stock/{kind}")
+def stock(
+    kind: str,
+    body: Movement,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if kind not in ("entry", "output"):
+        raise HTTPException(404)
+    require("stock")(user)
+    product = db.scalar(
+        select(Product).where(Product.id == body.product_id).with_for_update()
+    )
+    if not product:
+        raise HTTPException(404, "Produto não encontrado")
+    current_qty = float(product.quantity)
+    if kind == "output" and current_qty < body.quantity:
+        raise HTTPException(409, "Estoque insuficiente")
+    new_qty = (
+        current_qty + body.quantity if kind == "entry" else current_qty - body.quantity
+    )
+    product.quantity = new_qty
+    m = StockMovement(
+        product_id=product.id,
+        type="ENTRADA" if kind == "entry" else "SAÍDA",
+        quantity=body.quantity,
+        user_id=user.id,
+        responsible=body.responsible,
+        recipient=body.recipient,
+        sector=body.sector,
+        vehicle_id=body.vehicle_id,
+        observation=body.observation,
+        invoice=body.invoice,
+        unit_value=body.unit_value,
+    )
+    db.add(m)
+    db.flush()
+    audit(db, user, m.type, "stock", m.id, request)
+    db.commit()
+    return {"movement": serialize(m), "quantity": float(product.quantity)}
+
 
 @app.patch("/stock/movements/{movement_id}")
-def edit_movement(movement_id:int,body:MovementEdit,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+def edit_movement(
+    movement_id: int,
+    body: MovementEdit,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require("stock")(user)
-    if not verify_password(body.password,user.password_hash): raise HTTPException(401,"Senha incorreta")
-    m=db.get(StockMovement,movement_id)
-    if not m: raise HTTPException(404,"Movimentação não encontrada")
-    product=db.scalar(select(Product).where(Product.id==m.product_id).with_for_update())
-    if not product: raise HTTPException(404,"Produto não encontrado")
-    current=float(product.quantity)
-    old_qty=float(m.quantity)
-    current=current-old_qty if m.type=="ENTRADA" else current+old_qty  # desfaz o efeito antigo
-    new_qty=body.quantity if body.quantity is not None else old_qty
-    for field,val in (("responsible",body.responsible),("recipient",body.recipient),("sector",body.sector),("vehicle_id",body.vehicle_id),("observation",body.observation),("invoice",body.invoice),("unit_value",body.unit_value)):
-        if val is not None: setattr(m,field,val)
-    m.quantity=new_qty
-    current=current+new_qty if m.type=="ENTRADA" else current-new_qty  # aplica o novo efeito
-    if current<0: raise HTTPException(409,"Essa alteração deixaria o estoque negativo")
-    product.quantity=current
-    audit(db,user,"ALTERAÇÃO","stock",movement_id,request); db.commit(); return serialize(m)
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Senha incorreta")
+    m = db.get(StockMovement, movement_id)
+    if not m:
+        raise HTTPException(404, "Movimentação não encontrada")
+    product = db.scalar(
+        select(Product).where(Product.id == m.product_id).with_for_update()
+    )
+    if not product:
+        raise HTTPException(404, "Produto não encontrado")
+    current = float(product.quantity)
+    old_qty = float(m.quantity)
+    current = current - old_qty if m.type == "ENTRADA" else current + old_qty
+    new_qty = body.quantity if body.quantity is not None else old_qty
+    for field, val in (
+        ("responsible", body.responsible),
+        ("recipient", body.recipient),
+        ("sector", body.sector),
+        ("vehicle_id", body.vehicle_id),
+        ("observation", body.observation),
+        ("invoice", body.invoice),
+        ("unit_value", body.unit_value),
+    ):
+        if val is not None:
+            setattr(m, field, val)
+    m.quantity = new_qty
+    current = current + new_qty if m.type == "ENTRADA" else current - new_qty
+    if current < 0:
+        raise HTTPException(409, "Essa alteração deixaria o estoque negativo")
+    product.quantity = current
+    audit(db, user, "ALTERAÇÃO", "stock", movement_id, request)
+    db.commit()
+    return serialize(m)
+
+
 @app.delete("/stock/movements/{movement_id}")
-def delete_movement(movement_id:int,body:MovementDelete,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+def delete_movement(
+    movement_id: int,
+    body: MovementDelete,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require("stock")(user)
-    if not verify_password(body.password,user.password_hash): raise HTTPException(401,"Senha incorreta")
-    m=db.get(StockMovement,movement_id)
-    if not m: raise HTTPException(404,"Movimentação não encontrada")
-    product=db.scalar(select(Product).where(Product.id==m.product_id).with_for_update())
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Senha incorreta")
+    m = db.get(StockMovement, movement_id)
+    if not m:
+        raise HTTPException(404, "Movimentação não encontrada")
+    product = db.scalar(
+        select(Product).where(Product.id == m.product_id).with_for_update()
+    )
     if product:
-        qty=float(m.quantity)
-        new_qty=float(product.quantity)-qty if m.type=="ENTRADA" else float(product.quantity)+qty
-        if new_qty<0: raise HTTPException(409,"Não é possível excluir: deixaria o estoque negativo")
-        product.quantity=new_qty
-    db.delete(m); audit(db,user,"EXCLUSÃO","stock",movement_id,request); db.commit(); return {"ok":True}
+        qty = float(m.quantity)
+        new_qty = (
+            float(product.quantity) - qty
+            if m.type == "ENTRADA"
+            else float(product.quantity) + qty
+        )
+        if new_qty < 0:
+            raise HTTPException(
+                409, "Não é possível excluir: deixaria o estoque negativo"
+            )
+        product.quantity = new_qty
+    db.delete(m)
+    audit(db, user, "EXCLUSÃO", "stock", movement_id, request)
+    db.commit()
+    return {"ok": True}
+
 
 @app.patch("/settings/{key}")
-def edit_setting(key:str,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
+def edit_setting(
+    key: str,
+    body: Payload,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require("settings")(user)
-    s=db.get(Setting,key)
+    s = db.get(Setting, key)
     if not s:
-        s=Setting(key=key); db.add(s)
-    if "value" in body.data: s.value=body.data["value"]
-    audit(db,user,"ALTERAÇÃO","settings",key,request); db.commit(); return serialize(s)
-@app.delete("/settings/{key}")
-def delete_setting(key:str,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require("settings")(user)
-    s=db.get(Setting,key)
-    if not s: raise HTTPException(404)
-    db.delete(s); audit(db,user,"EXCLUSÃO","settings",key,request); db.commit(); return {"ok":True}
+        s = Setting(key=key)
+        db.add(s)
+    if "value" in body.data:
+        s.value = body.data["value"]
+    audit(db, user, "ALTERAÇÃO", "settings", key, request)
+    db.commit()
+    return serialize(s)
 
-RESOURCES={"customers":(Customer,"customers"),"vehicles":(Vehicle,"vehicles"),"drivers":(Driver,"drivers"),"routes":(Route,"routes"),"route-stops":(RouteStop,"routes"),"maintenance":(Maintenance,"maintenance"),"fuel":(FuelRecord,"fuel"),"products":(Product,"stock"),"settings":(Setting,"settings")}
+
+@app.delete("/settings/{key}")
+def delete_setting(
+    key: str,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("settings")(user)
+    s = db.get(Setting, key)
+    if not s:
+        raise HTTPException(404)
+    db.delete(s)
+    audit(db, user, "EXCLUSÃO", "settings", key, request)
+    db.commit()
+    return {"ok": True}
+
+
+RESOURCES = {
+    "customers": (Customer, "customers"),
+    "vehicles": (Vehicle, "vehicles"),
+    "drivers": (Driver, "drivers"),
+    "routes": (Route, "routes"),
+    "route-stops": (RouteStop, "routes"),
+    "maintenance": (Maintenance, "maintenance"),
+    "fuel": (FuelRecord, "fuel"),
+    "products": (Product, "stock"),
+    "settings": (Setting, "settings"),
+}
+
+
 @app.get("/{resource}")
-def list_resource(resource:str,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if resource not in RESOURCES: raise HTTPException(404)
-    model,module=RESOURCES[resource]; require(module)(user); return [serialize(x) for x in db.scalars(select(model).limit(500)).all()]
+def list_resource(
+    resource: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    if resource not in RESOURCES:
+        raise HTTPException(404)
+    model, module = RESOURCES[resource]
+    require(module)(user)
+
+    # Atualiza status das manutenções ao listar
+    if resource == "maintenance":
+        update_maintenance_status(db)
+
+    return [serialize(x) for x in db.scalars(select(model).limit(500)).all()]
+
+
 @app.post("/{resource}")
-def add_resource(resource:str,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if resource not in RESOURCES: raise HTTPException(404)
-    model,module=RESOURCES[resource]; require(module)(user); x=model(**model_data(model,body.data));db.add(x);db.flush();audit(db,user,"CADASTRO",module,x.id if hasattr(x,'id') else None,request);db.commit();return serialize(x)
+def add_resource(
+    resource: str,
+    body: Payload,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if resource not in RESOURCES:
+        raise HTTPException(404)
+    model, module = RESOURCES[resource]
+    require(module)(user)
+    x = model(**model_data(model, body.data))
+    db.add(x)
+    db.flush()
+    audit(db, user, "CADASTRO", module, x.id if hasattr(x, "id") else None, request)
+    db.commit()
+    return serialize(x)
+
+
 @app.patch("/{resource}/{record_id}")
-def edit_resource(resource:str,record_id:int,body:Payload,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if resource not in RESOURCES: raise HTTPException(404)
-    model,module=RESOURCES[resource]; require(module)(user);x=db.get(model,record_id)
-    if not x: raise HTTPException(404)
-    for k,v in model_data(model,body.data).items(): setattr(x,k,v)
-    audit(db,user,"ALTERAÇÃO",module,record_id,request);db.commit();return serialize(x)
+def edit_resource(
+    resource: str,
+    record_id: int,
+    body: Payload,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if resource not in RESOURCES:
+        raise HTTPException(404)
+    model, module = RESOURCES[resource]
+    require(module)(user)
+    x = db.get(model, record_id)
+    if not x:
+        raise HTTPException(404)
+    for k, v in model_data(model, body.data).items():
+        setattr(x, k, v)
+    audit(db, user, "ALTERAÇÃO", module, record_id, request)
+    db.commit()
+    return serialize(x)
+
+
 @app.delete("/{resource}/{record_id}")
-def delete_resource(resource:str,record_id:int,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if resource not in RESOURCES: raise HTTPException(404)
-    model,module=RESOURCES[resource]; require(module)(user)
-    x=db.get(model,record_id)
-    if not x: raise HTTPException(404)
+def delete_resource(
+    resource: str,
+    record_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if resource not in RESOURCES:
+        raise HTTPException(404)
+    model, module = RESOURCES[resource]
+    require(module)(user)
+    x = db.get(model, record_id)
+    if not x:
+        raise HTTPException(404)
     try:
-        db.delete(x); db.flush()
+        db.delete(x)
+        db.flush()
     except IntegrityError:
-        db.rollback(); raise HTTPException(409,"Não é possível excluir: existem registros vinculados a este item")
-    audit(db,user,"EXCLUSÃO",module,record_id,request); db.commit(); return {"ok":True}
+        db.rollback()
+        raise HTTPException(
+            409, "Não é possível excluir: existem registros vinculados a este item"
+        )
+    audit(db, user, "EXCLUSÃO", module, record_id, request)
+    db.commit()
+    return {"ok": True}

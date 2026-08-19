@@ -263,15 +263,49 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
 }
 
 function Dashboard({metrics}:{metrics:any}){
- const cards=[['Veículos disponíveis',metrics?.available,'🚛'],['Em rota',metrics?.on_route,'🗺️'],['Em manutenção',metrics?.maintenance,'🔧'],['Produtos em estoque',metrics?.products,'📦'],['Estoque baixo',metrics?.low_stock,'⚠️'],['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']];
- const hasAlerts=(metrics?.maintenance_today>0)||(metrics?.maintenance_overdue>0);
+ // Removido o card "Em rota"
+ const cards=[
+  ['Veículos disponíveis',metrics?.available,'🚛'],
+  ['Em manutenção',metrics?.maintenance,'🔧'],
+  ['Produtos em estoque',metrics?.products,'📦'],
+  ['Estoque baixo',metrics?.low_stock,'⚠️'],
+  ['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']
+ ];
+
+ const alerts = metrics?.maintenance_alerts || [];
+ const hasAlerts = alerts.length > 0;
+
  return <>
-  {hasAlerts&&<section className="mb-6 space-y-2">
-   {metrics?.maintenance_overdue>0&&<div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_overdue}</strong> manutenção(ões) atrasada(s) — verifique a aba Manutenção.</span></div>}
-   {metrics?.maintenance_today>0&&<div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_today}</strong> manutenção(ões) agendada(s) para hoje.</span></div>}
-  </section>}
-  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([l,v,i])=><article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm"><div className="text-xl">{i}</div><div className="mt-3 text-2xl font-bold">{v??'—'}</div><div className="text-sm text-slate-500">{l}</div></article>)}</section>
-  <section className="mt-6 rounded-xl bg-white p-6 shadow-sm"><h2 className="font-semibold">Acompanhamento operacional</h2><p className="mt-2 text-sm text-slate-500">Os indicadores são calculados diretamente no banco PostgreSQL. Cadastre veículos, produtos e abastecimentos para compor a visão gerencial.</p></section>
+  {hasAlerts && (
+   <section className="mb-6 space-y-2">
+    <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+     <AlertTriangle size={20} className="mt-0.5 shrink-0"/>
+     <div>
+      <p className="font-semibold">
+       {alerts.length} manutenção(ões) em andamento
+      </p>
+      <ul className="mt-1 list-disc pl-4 text-sm">
+       {alerts.slice(0, 5).map((m: any) => (
+        <li key={m.id}>
+          {m.description || 'Manutenção'} — {readable(m.date)}
+        </li>
+       ))}
+       {alerts.length > 5 && <li>... e mais {alerts.length - 5}</li>}
+      </ul>
+     </div>
+    </div>
+   </section>
+  )}
+
+  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+   {cards.map(([l,v,i]) => (
+    <article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm">
+     <div className="text-xl">{i}</div>
+     <div className="mt-3 text-2xl font-bold">{v ?? '—'}</div>
+     <div className="text-sm text-slate-500">{l}</div>
+    </article>
+   ))}
+  </section>
  </>;
 }
 
