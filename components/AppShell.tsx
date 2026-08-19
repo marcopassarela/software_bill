@@ -2,12 +2,12 @@
 import {useEffect,useState} from 'react';
 import {request} from '@/lib/api';
 import * as XLSX from 'xlsx';
-import {BarChart3,Box,ClipboardList,Fuel,Map,Settings,Truck,Users,UserRound, Wrench, LogOut, LayoutDashboard, PackagePlus, PackageMinus} from 'lucide-react';
+import {BarChart3,Box,ClipboardList,Fuel,Settings,Truck,Users,UserRound, Wrench, LogOut, LayoutDashboard, PackagePlus, PackageMinus, AlertTriangle} from 'lucide-react';
 
-const items=[['dashboard','Dashboard',LayoutDashboard],['routes','Rotas',Map],['vehicles','Veículos',Truck],['drivers','Motoristas',UserRound],['maintenance','Manutenção',Wrench],['fuel','Combustível',Fuel],['stock','Estoque',Box],['entry','Entradas',PackagePlus],['output','Saídas',PackageMinus],['movements','Movimentações',ClipboardList],['reports','Relatórios',BarChart3],['users','Usuários',Users],['settings','Configurações',Settings]] as const;
-const resource:any={routes:'routes',vehicles:'vehicles',drivers:'drivers',maintenance:'maintenance',fuel:'fuel',stock:'products',settings:'settings'};
-const moduleAccess:any={ADMINISTRADOR:['*'],GERENTE:['dashboard','routes','vehicles','drivers','maintenance','fuel','stock','reports'],LOGÍSTICA:['dashboard','routes','vehicles','drivers','fuel'],ESTOQUE:['dashboard','stock','entry','output','movements'],MOTORISTA:['routes'],CONSULTA:['dashboard','routes','vehicles','drivers','maintenance','fuel','stock','reports']};
-function titleFor(k:string){return ({routes:'Rotas',vehicles:'Veículos',drivers:'Motoristas',maintenance:'Manutenção',fuel:'Combustível',stock:'Estoque',settings:'Configurações',entry:'Entradas',output:'Saídas'} as any)[k]||k}
+const items=[['dashboard','Dashboard',LayoutDashboard],['vehicles','Veículos',Truck],['drivers','Motoristas',UserRound],['maintenance','Manutenção',Wrench],['fuel','Combustível',Fuel],['stock','Estoque',Box],['entry','Entradas',PackagePlus],['output','Saídas',PackageMinus],['movements','Movimentações',ClipboardList],['reports','Relatórios',BarChart3],['users','Usuários',Users],['settings','Configurações',Settings]] as const;
+const resource:any={vehicles:'vehicles',drivers:'drivers',maintenance:'maintenance',fuel:'fuel',stock:'products',settings:'settings'};
+const moduleAccess:any={ADMINISTRADOR:['*'],GERENTE:['dashboard','vehicles','drivers','maintenance','fuel','stock','reports'],LOGÍSTICA:['dashboard','vehicles','drivers','fuel'],ESTOQUE:['dashboard','stock','entry','output','movements'],MOTORISTA:[],CONSULTA:['dashboard','vehicles','drivers','maintenance','fuel','stock','reports']};
+function titleFor(k:string){return ({dashboard:'Dashboard',vehicles:'Veículos',drivers:'Motoristas',maintenance:'Manutenção',fuel:'Combustível',stock:'Estoque',settings:'Configurações',entry:'Entradas',output:'Saídas',movements:'Movimentações',reports:'Relatórios',users:'Usuários'} as any)[k]||k}
 
 const MODULE_OPTIONS=items.filter(([k])=>k!=='users').map(([k,label])=>({value:k as string,label:label as string}));
 function expandPermissions(keys:string[]):string[]{
@@ -16,7 +16,6 @@ function expandPermissions(keys:string[]):string[]{
  if(s.has('entry')||s.has('output')||s.has('movements')){s.add('stock')}
  return Array.from(s);
 }
-// Identificador único do registro: quase tudo usa "id", mas Configurações usa a própria "key" (texto).
 function resourceIdOf(page:string,row:any){ return page==='settings' ? row.key : row.id; }
 
 type FieldType='text'|'number'|'date'|'datetime'|'select'|'textarea'|'vehicle'|'driver'|'product'|'modules';
@@ -47,26 +46,12 @@ const FIELDS:Record<string,FieldDef[]>={
     {key:'status',label:'Status',type:'select',options:['Ativo','Inativo','Férias','Afastado']},
     {key:'notes',label:'Observações',type:'textarea'},
   ],
-  routes:[
-    {key:'origin',label:'Origem',type:'text',required:true},
-    {key:'destination',label:'Destino',type:'text',required:true},
-    {key:'scheduled_at',label:'Data/hora agendada',type:'datetime',required:true},
-    {key:'driver_id',label:'Motorista',type:'driver'},
-    {key:'vehicle_id',label:'Veículo',type:'vehicle'},
-    {key:'cargo_weight',label:'Peso da carga (kg)',type:'number',step:'0.01'},
-    {key:'stop_count',label:'Número de paradas',type:'number'},
-    {key:'total_km',label:'KM total',type:'number',step:'0.01'},
-    {key:'estimated_time',label:'Tempo estimado',type:'text'},
-    {key:'estimated_fuel',label:'Combustível estimado (L)',type:'number',step:'0.01'},
-    {key:'estimated_cost',label:'Custo estimado',type:'number',step:'0.01'},
-    {key:'status',label:'Status',type:'select',options:['Planejada','Em andamento','Concluída','Cancelada']},
-    {key:'notes',label:'Observações',type:'textarea'},
-  ],
   maintenance:[
     {key:'vehicle_id',label:'Veículo',type:'vehicle',required:true},
     {key:'type',label:'Tipo',type:'select',options:['Preventiva','Corretiva'],required:true},
+    {key:'status',label:'Status',type:'select',options:['Agendado','Em andamento','Concluído','Atrasado'],required:true},
     {key:'description',label:'Descrição',type:'textarea',required:true},
-    {key:'date',label:'Data',type:'date',required:true},
+    {key:'date',label:'Data e hora agendada',type:'datetime',required:true},
     {key:'km',label:'KM no serviço',type:'number',step:'0.01'},
     {key:'next_km',label:'Próxima KM',type:'number',step:'0.01'},
     {key:'next_date',label:'Próxima data',type:'date'},
@@ -125,7 +110,7 @@ const FIELDS:Record<string,FieldDef[]>={
     {key:'username',label:'Usuário',type:'text',required:true},
     {key:'password',label:'Senha temporária',type:'text',required:true},
     {key:'role',label:'Perfil',type:'select',options:['ADMINISTRADOR','GERENTE','LOGÍSTICA','ESTOQUE','MOTORISTA','CONSULTA'],required:true},
-    {key:'permissions',label:'Permissões específicas (deixe tudo desmarcado para usar os módulos padrão do perfil escolhido)',type:'modules'},
+    {key:'permissions',label:'Permissões específicas',type:'modules'},
   ],
 };
 
@@ -133,16 +118,15 @@ const USER_EDIT_FIELDS:FieldDef[]=[
   {key:'name',label:'Nome completo',type:'text',required:true},
   {key:'username',label:'Nome de usuário (login)',type:'text',required:true},
   {key:'role',label:'Perfil',type:'select',options:['ADMINISTRADOR','GERENTE','LOGÍSTICA','ESTOQUE','MOTORISTA','CONSULTA'],required:true},
-  {key:'permissions',label:'Permissões específicas (deixe tudo desmarcado para usar os módulos padrão do perfil)',type:'modules'},
+  {key:'permissions',label:'Permissões específicas',type:'modules'},
   {key:'active',label:'Ativo',type:'select',options:['Sim','Não'],required:true},
   {key:'password',label:'Nova senha (deixe em branco para manter a atual)',type:'text'},
 ];
 
 const LABELS:Record<string,string>={
- id:'ID',name:'Nome',username:'Usuário',role:'Perfil',active:'Ativo',must_change_password:'Trocar senha',permissions:'Permissões',is_main_admin:'Admin. Principal',
- plate:'Placa',brand:'Marca',model:'Modelo',year:'Ano',type:'Tipo',capacity:'Capacidade',average_consumption:'Consumo médio',current_km:'KM atual',fuel_type:'Combustível',status:'Status',notes:'Observações',
+ id:'ID',name:'Nome',username:'Usuário',role:'Perfil',active:'Ativo',must_change_password:'Trocar senha',permissions:'Permissões',is_main_admin:'Admin. Principal',status:'Status',
+ plate:'Placa',brand:'Marca',model:'Modelo',year:'Ano',type:'Tipo',capacity:'Capacidade',average_consumption:'Consumo médio',current_km:'KM atual',fuel_type:'Combustível',notes:'Observações',
  cpf:'CPF',phone:'Telefone',cnh:'CNH',category:'Categoria',cnh_expiry:'Validade CNH',vehicle_id:'Veículo',
- origin:'Origem',destination:'Destino',scheduled_at:'Agendamento',driver_id:'Motorista',cargo_weight:'Peso da carga',stop_count:'Paradas',total_km:'KM total',estimated_time:'Tempo estimado',estimated_fuel:'Combustível estimado',estimated_cost:'Custo estimado',
  description:'Descrição',date:'Data',km:'KM',next_km:'Próxima KM',next_date:'Próxima data',value:'Valor',workshop:'Oficina',responsible:'Responsável',
  liters:'Litros',price_per_liter:'Preço/litro',total_value:'Valor total',station:'Posto',recipient:'Retirado por',
  code:'Código',minimum_stock:'Estoque mínimo',location:'Localização',supplier:'Fornecedor',unit_value:'Valor unitário',unit:'Unidade',quantity:'Quantidade',
@@ -151,15 +135,23 @@ const LABELS:Record<string,string>={
 function labelFor(k:string){return LABELS[k]||k.replace(/_/g,' ')}
 const HIDDEN_TABLE_COLUMNS:Record<string,string[]>={users:['permissions']}
 
+function isIsoDateTime(x:any){return typeof x==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(x)}
 function readable(x:any):string{
  if(x===null||x===undefined) return '—';
  if(typeof x==='boolean') return x?'Sim':'Não';
- if(typeof x==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(x)){
+ if(isIsoDateTime(x)){
   const d=new Date(x);
   return isNaN(d.getTime())?x:d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
  }
  if(typeof x==='object') return JSON.stringify(x);
  return String(x);
+}
+function resolveCell(key:string,value:any,lookups:any):string{
+ if(value===null||value===undefined) return '—';
+ if(key==='vehicle_id'){ const v=(lookups.vehicles||[]).find((x:any)=>x.id===value); return v?`${v.plate} — ${v.brand} ${v.model}`:readable(value); }
+ if(key==='driver_id'){ const d=(lookups.drivers||[]).find((x:any)=>x.id===value); return d?d.name:readable(value); }
+ if(key==='product_id'){ const p=(lookups.products||[]).find((x:any)=>x.id===value); return p?`${p.code} — ${p.name}`:readable(value); }
+ return readable(value);
 }
 
 export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout:()=>void,onUserUpdate:(u:any)=>void}){
@@ -229,7 +221,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
   try{await request('/stock/movements/'+id,{method:'DELETE',body:JSON.stringify({password})});load()}catch(e:any){setError(e.message)}
  }
  async function logout(){await request('/auth/logout',{method:'POST'}).catch(()=>{});onLogout()}
- return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><div><p className="text-sm text-slate-500">Ambiente interno</p><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1></div><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}</main></div>
+ return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}</main></div>
 }
 
 function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onUserUpdate:(u:any)=>void}){
@@ -250,7 +242,7 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
    setMsg('Senha alterada com sucesso.');setCurrent('');setNext('');
   }catch(e:any){setErr(e.message)}finally{setSaving(false)}
  }
- return <div className="absolute right-0 top-14 z-10 w-80 rounded-xl border bg-white p-4 shadow-lg space-y-4">
+ return <div className="absolute right-0 top-14 z-10 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg space-y-4">
   <div className="flex items-center justify-between"><h4 className="text-sm font-semibold">Minha conta</h4><button onClick={onClose} className="text-xs text-slate-500 hover:underline">Fechar</button></div>
   <form onSubmit={submitName} className="space-y-2" autoComplete="off">
    <p className="text-xs font-medium text-slate-500">Nome</p>
@@ -270,12 +262,22 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({metrics}:{metrics:any}){const cards=[['Veículos disponíveis',metrics?.available,'🚛'],['Em rota',metrics?.on_route,'🗺️'],['Em manutenção',metrics?.maintenance,'🔧'],['Rotas hoje',metrics?.routes_today,'📍'],['Produtos em estoque',metrics?.products,'📦'],['Estoque baixo',metrics?.low_stock,'⚠️'],['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']];return <><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([l,v,i])=><article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm"><div className="text-xl">{i}</div><div className="mt-3 text-2xl font-bold">{v??'—'}</div><div className="text-sm text-slate-500">{l}</div></article>)}</section><section className="mt-6 rounded-xl bg-white p-6 shadow-sm"><h2 className="font-semibold">Acompanhamento operacional</h2><p className="mt-2 text-sm text-slate-500">Os indicadores são calculados diretamente no banco PostgreSQL. Cadastre veículos, produtos, rotas e abastecimentos para compor a visão gerencial.</p></section></>}
+function Dashboard({metrics}:{metrics:any}){
+ const cards=[['Veículos disponíveis',metrics?.available,'🚛'],['Em rota',metrics?.on_route,'🗺️'],['Em manutenção',metrics?.maintenance,'🔧'],['Produtos em estoque',metrics?.products,'📦'],['Estoque baixo',metrics?.low_stock,'⚠️'],['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']];
+ const hasAlerts=(metrics?.maintenance_today>0)||(metrics?.maintenance_overdue>0);
+ return <>
+  {hasAlerts&&<section className="mb-6 space-y-2">
+   {metrics?.maintenance_overdue>0&&<div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_overdue}</strong> manutenção(ões) atrasada(s) — verifique a aba Manutenção.</span></div>}
+   {metrics?.maintenance_today>0&&<div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_today}</strong> manutenção(ões) agendada(s) para hoje.</span></div>}
+  </section>}
+  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([l,v,i])=><article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm"><div className="text-xl">{i}</div><div className="mt-3 text-2xl font-bold">{v??'—'}</div><div className="text-sm text-slate-500">{l}</div></article>)}</section>
+  <section className="mt-6 rounded-xl bg-white p-6 shadow-sm"><h2 className="font-semibold">Acompanhamento operacional</h2><p className="mt-2 text-sm text-slate-500">Os indicadores são calculados diretamente no banco PostgreSQL. Cadastre veículos, produtos e abastecimentos para compor a visão gerencial.</p></section>
+ </>;
+}
 
 const REPORT_SOURCES=[
  {value:'vehicles',label:'Veículos',path:'/vehicles'},
  {value:'drivers',label:'Motoristas',path:'/drivers'},
- {value:'routes',label:'Rotas',path:'/routes'},
  {value:'maintenance',label:'Manutenção',path:'/maintenance'},
  {value:'fuel',label:'Combustível',path:'/fuel'},
  {value:'products',label:'Estoque',path:'/products'},
@@ -318,7 +320,7 @@ function Module({page,rows,loading,create,isAdmin,lookups,editingUser,setEditing
  const showActions=(isUsers&&isAdmin)||isResourceModule||isMovementModule;
  const hidden=HIDDEN_TABLE_COLUMNS[page]||[];
  const cols=Object.keys(rows[0]||{id:'ID',informação:'Informação'}).filter(k=>!hidden.includes(k)).slice(0,7);
- return <><section className="rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><h2 className="font-semibold">{page==='reports'?'Relatórios':titleFor(page)}</h2>{page!=='reports'&&<span className="text-sm text-slate-500">{rows.length} registros</span>}</div>{page==='reports'?<ReportsExport/>:loading?<div className="p-5">Carregando…</div>:<div className="overflow-auto"><table><thead><tr>{cols.map(k=><th key={k}>{labelFor(k)}</th>)}{showActions&&<th>Ações</th>}</tr></thead><tbody>{rows.map((r,i)=><tr key={resourceIdOf(page,r)||i}>{cols.map(k=><td key={k}>{readable(r[k])}</td>)}{showActions&&<td className="whitespace-nowrap"><button onClick={()=>isUsers?setEditingUser(r):isMovementModule?setEditingMovement(r):setEditingResource(r)} className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200">Editar</button>{!(isUsers&&r.is_main_admin)&&<button onClick={()=>isUsers?deleteUser(r.id):isMovementModule?deleteMovement(r.id):deleteResource(resourceIdOf(page,r))} className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100">Excluir</button>}</td>}</tr>)}{!rows.length&&<tr><td className="p-5 text-slate-500">Nenhum registro encontrado.</td></tr>}</tbody></table></div>}</section>
+ return <><section className="rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><h2 className="font-semibold">{page==='reports'?'Relatórios':titleFor(page)}</h2>{page!=='reports'&&<span className="text-sm text-slate-500">{rows.length} registros</span>}</div>{page==='reports'?<ReportsExport/>:loading?<div className="p-5">Carregando…</div>:<div className="overflow-auto"><table><thead><tr>{cols.map(k=><th key={k}>{labelFor(k)}</th>)}{showActions&&<th>Ações</th>}</tr></thead><tbody>{rows.map((r,i)=><tr key={resourceIdOf(page,r)||i}>{cols.map(k=><td key={k}>{resolveCell(k,r[k],lookups)}</td>)}{showActions&&<td className="whitespace-nowrap"><button onClick={()=>isUsers?setEditingUser(r):isMovementModule?setEditingMovement(r):setEditingResource(r)} className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200">Editar</button>{!(isUsers&&r.is_main_admin)&&<button onClick={()=>isUsers?deleteUser(r.id):isMovementModule?deleteMovement(r.id):deleteResource(resourceIdOf(page,r))} className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100">Excluir</button>}</td>}</tr>)}{!rows.length&&<tr><td className="p-5 text-slate-500">Nenhum registro encontrado.</td></tr>}</tbody></table></div>}</section>
  {isUsers&&isAdmin&&editingUser&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Editar usuário: {editingUser.name}</h3><button onClick={()=>setEditingUser(null)} className="text-sm text-slate-500 hover:underline">Cancelar</button></div><EditUserForm user={editingUser} onSubmit={(data)=>updateUser(editingUser.id,data)}/></section>}
  {isResourceModule&&editingResource&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Editar registro</h3><button onClick={()=>setEditingResource(null)} className="text-sm text-slate-500 hover:underline">Cancelar</button></div><ResourceForm page={page} lookups={lookups} initial={editingResource} onSubmit={(data)=>updateResource(resourceIdOf(page,editingResource),data)} submitLabel="Salvar alterações"/></section>}
  {isMovementModule&&editingMovement&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Editar movimentação</h3><button onClick={()=>setEditingMovement(null)} className="text-sm text-slate-500 hover:underline">Cancelar</button></div><MovementEditForm movement={editingMovement} lookups={lookups} onSubmit={(data)=>updateMovement(editingMovement.id,data)}/></section>}
@@ -348,6 +350,20 @@ function ModuleCheckboxes({value,onChange}:{value:string,onChange:(v:string)=>vo
     <span className="leading-none">{m.label}</span>
    </label>;
   })}
+ </div>;
+}
+
+function PermissionsField({value,onChange,startOpen}:{value:string,onChange:(v:string)=>void,startOpen:boolean}){
+ const [open,setOpen]=useState(startOpen);
+ return <div>
+  {!open ? (
+   <button type="button" onClick={()=>setOpen(true)} className="text-xs font-medium text-brand hover:underline">Personalizar permissões específicas (opcional)</button>
+  ) : (
+   <>
+    <ModuleCheckboxes value={value} onChange={onChange}/>
+    <button type="button" onClick={()=>{onChange('');setOpen(false)}} className="mt-2 text-xs text-slate-500 hover:underline">Usar módulos padrão do perfil</button>
+   </>
+  )}
  </div>;
 }
 
@@ -385,7 +401,7 @@ function ResourceForm({page,lookups,onSubmit,initial,submitLabel}:{page:string,l
    return <label key={f.key} className={`text-sm ${(f.type==='textarea'||f.type==='modules')?'sm:col-span-2':''}`}>
     <span className="mb-1 block text-slate-600">{f.label}{f.required?' *':''}</span>
     {f.type==='modules' ?
-     <ModuleCheckboxes value={values[f.key]} onChange={v=>set(f.key,v)}/> :
+     <PermissionsField value={values[f.key]} onChange={v=>set(f.key,v)} startOpen={!!(initial && initial[f.key])}/> :
     f.type==='textarea' ?
      <textarea required={f.required} value={values[f.key]} onChange={e=>set(f.key,e.target.value)} className="h-20 w-full rounded-lg border p-2"/> :
     f.type==='select' ?
@@ -429,7 +445,7 @@ function EditUserForm({user,onSubmit}:{user:any,onSubmit:(data:any)=>Promise<voi
    <label key={f.key} className={`text-sm ${f.type==='modules'?'sm:col-span-2':''}`}>
     <span className="mb-1 block text-slate-600">{f.label}{f.required?' *':''}</span>
     {f.type==='modules' ?
-     <ModuleCheckboxes value={values[f.key]} onChange={v=>set(f.key,v)}/> :
+     <PermissionsField value={values[f.key]} onChange={v=>set(f.key,v)} startOpen={!!user.permissions}/> :
     f.type==='select' ?
      <select required={f.required} value={values[f.key]} onChange={e=>set(f.key,e.target.value)} className="w-full rounded-lg border p-2">
       {f.key!=='active'&&<option value="">Selecione</option>}
@@ -444,8 +460,6 @@ function EditUserForm({user,onSubmit}:{user:any,onSubmit:(data:any)=>Promise<voi
  </form>
 }
 
-// Editar uma movimentação de estoque exige a senha de quem está confirmando, e reajusta o
-// estoque automaticamente (desfaz o efeito antigo, aplica o novo).
 function MovementEditForm({movement,lookups,onSubmit}:{movement:any,lookups:any,onSubmit:(data:any)=>Promise<void>}){
  const [values,setValues]=useState<any>({
   quantity:String(movement.quantity??''),
