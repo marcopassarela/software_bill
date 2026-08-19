@@ -34,4 +34,3 @@ def main_admin(user: User=Depends(current_user)):
 def audit(db, user, action, module, record_id=None, request: Request|None=None):
     from .models import AuditLog
     db.add(AuditLog(user_id=user.id if user else None,action=action,module=module,record_id=str(record_id) if record_id else None,ip=request.client.host if request and request.client else None))
-
