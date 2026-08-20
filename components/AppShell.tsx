@@ -459,7 +459,7 @@ function Dashboard({metrics, onNavigate}:{metrics:any,onNavigate:(page:string)=>
           </div>
 
           <div className="mt-2 text-xs font-medium text-cyan-600">
-            Clique para acessar →
+            
           </div>
 
         </article>
