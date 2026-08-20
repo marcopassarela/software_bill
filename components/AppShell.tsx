@@ -2,7 +2,9 @@
 import {useEffect,useState} from 'react';
 import {request} from '@/lib/api';
 import * as XLSX from 'xlsx';
-import {BarChart3,Box,ClipboardList,Fuel,Settings,Truck,Users,UserRound, Wrench, LogOut, LayoutDashboard, PackagePlus, PackageMinus, AlertTriangle} from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import { autoTable } from 'jspdf-autotable';
+import {BarChart3,Box,ClipboardList,Fuel,Settings,Truck,Users,UserRound, Wrench, LogOut, LayoutDashboard, PackagePlus, PackageMinus, AlertTriangle, Menu, X} from 'lucide-react';
 
 const items=[['dashboard','Dashboard',LayoutDashboard],['vehicles','Veículos',Truck],['drivers','Motoristas',UserRound],['maintenance','Manutenção',Wrench],['fuel','Combustível',Fuel],['stock','Estoque',Box],['entry','Entradas',PackagePlus],['output','Saídas',PackageMinus],['movements','Movimentações',ClipboardList],['reports','Relatórios',BarChart3],['users','Usuários',Users],['settings','Configurações',Settings]] as const;
 const resource:any={vehicles:'vehicles',drivers:'drivers',maintenance:'maintenance',fuel:'fuel',stock:'products',settings:'settings'};
@@ -134,61 +136,55 @@ const LABELS:Record<string,string>={
 };
 function labelFor(k:string){return LABELS[k]||k.replace(/_/g,' ')}
 const HIDDEN_TABLE_COLUMNS:Record<string,string[]>={users:['permissions']}
+// Para módulos de movimentação, define exatamente quais colunas aparecem (a ordem natural do banco
+// cortava em 7 colunas e deixava de fora Observação/Retirado por).
+const TABLE_COLUMNS:Record<string,string[]>={
+ output:['occurred_at','product_id','quantity','responsible','recipient','sector','observation'],
+ entry:['occurred_at','product_id','quantity','responsible','sector','invoice','observation'],
+ movements:['occurred_at','type','product_id','quantity','responsible','recipient','sector'],
+};
 
 function isIsoDateTime(x:any){return typeof x==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(x)}
 function readable(x:any):string{
-  if(x===null||x===undefined) return '—';
-  if(typeof x==='boolean') return x?'Sim':'Não';
-  if(isIsoDateTime(x)){
-    const d = new Date(x);
-    if(isNaN(d.getTime())) return x;
-    // Se o horário for exatamente 00:00, mostra só a data
-    const isMidnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
-    if (isMidnight) {
-      return d.toLocaleDateString('pt-BR');
-    }
-    return d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
-  }
-  if(typeof x==='object') return JSON.stringify(x);
-  return String(x);
+ if(x===null||x===undefined) return '—';
+ if(typeof x==='boolean') return x?'Sim':'Não';
+ if(isIsoDateTime(x)){
+  const d=new Date(x);
+  return isNaN(d.getTime())?x:d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+ }
+ if(typeof x==='object') return JSON.stringify(x);
+ return String(x);
 }
+// Produto agora é identificado pelo ID (sequencial, sempre começa em 1), não pelo código digitado.
 function resolveCell(key:string,value:any,lookups:any):string{
  if(value===null||value===undefined) return '—';
  if(key==='vehicle_id'){ const v=(lookups.vehicles||[]).find((x:any)=>x.id===value); return v?`${v.plate} — ${v.brand} ${v.model}`:readable(value); }
  if(key==='driver_id'){ const d=(lookups.drivers||[]).find((x:any)=>x.id===value); return d?d.name:readable(value); }
- if(key==='product_id'){ const p=(lookups.products||[]).find((x:any)=>x.id===value); return p?`${p.code} — ${p.name}`:readable(value); }
+ if(key==='product_id'){ const p=(lookups.products||[]).find((x:any)=>x.id===value); return p?`${p.id} — ${p.name}`:readable(value); }
  return readable(value);
+}
+function statusClasses(v:string):string{
+ const s=(v||'').toLowerCase();
+ if(['concluído','concluido','disponível','disponivel','ativo'].includes(s)) return 'bg-green-100 text-green-700';
+ if(['em andamento','em rota'].includes(s)) return 'bg-blue-100 text-blue-700';
+ if(['atrasado','inativo','manutenção','manutencao'].includes(s)) return 'bg-red-100 text-red-700';
+ return 'bg-slate-100 text-slate-700';
 }
 
 export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout:()=>void,onUserUpdate:(u:any)=>void}){
- const [page,setPage]=useState('dashboard');
- const [rows,setRows]=useState<any[]>([]);
- const [metrics,setMetrics]=useState<any>();
- const [error,setError]=useState('');
- const [loading,setLoading]=useState(false);
+ const [page,setPage]=useState('dashboard'),[rows,setRows]=useState<any[]>([]),[metrics,setMetrics]=useState<any>(),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  const [lookups,setLookups]=useState<{vehicles:any[],drivers:any[],products:any[]}>({vehicles:[],drivers:[],products:[]});
  const [editingUser,setEditingUser]=useState<any>(null);
  const [editingResource,setEditingResource]=useState<any>(null);
  const [editingMovement,setEditingMovement]=useState<any>(null);
  const [showAccount,setShowAccount]=useState(false);
- const [showMaintenanceAlert, setShowMaintenanceAlert] = useState(false);
- const [alertShown, setAlertShown] = useState(false);
-
+ const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
  const isMainAdmin=!!user.is_main_admin;
  const allowed=(key:string)=>isMainAdmin||(user.permissions?user.permissions.split(',').includes(key):(moduleAccess[user.role]||[]).includes('*')||(moduleAccess[user.role]||[]).includes(key));
-
  async function load(p=page){
   setError('');setLoading(true);
   try{
-   if(p==='dashboard') {
-     const data = await request('/dashboard');
-     setMetrics(data);
-     // Mostra o popup só na primeira vez da sessão
-     if (!alertShown && data?.maintenance_alerts?.length > 0) {
-       setShowMaintenanceAlert(true);
-       setAlertShown(true);
-     }
-   }
+   if(p==='dashboard') setMetrics(await request('/dashboard'));
    else if(p==='movements') setRows(await request('/stock/movements'));
    else if(p==='entry') setRows((await request('/stock/movements') as any[]).filter(m=>m.type==='ENTRADA'));
    else if(p==='output') setRows((await request('/stock/movements') as any[]).filter(m=>m.type==='SAÍDA'));
@@ -197,7 +193,6 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
    else setRows([]);
   }catch(e:any){setError(e.message)}finally{setLoading(false)}
  }
-
  useEffect(()=>{load();setEditingUser(null);setEditingResource(null);setEditingMovement(null)},[page]);
  useEffect(()=>{
   Promise.all([
@@ -206,7 +201,6 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
    request('/products').catch(()=>[]),
   ]).then(([vehicles,drivers,products])=>setLookups({vehicles,drivers,products}));
  },[]);
-
  async function create(data:any){
   setError('');
   try{
@@ -245,65 +239,35 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
   try{await request('/stock/movements/'+id,{method:'DELETE',body:JSON.stringify({password})});load()}catch(e:any){setError(e.message)}
  }
  async function logout(){await request('/auth/logout',{method:'POST'}).catch(()=>{});onLogout()}
-
- return (
-  <div className="min-h-screen md:flex">
-    <aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64">
-      <div className="flex items-center gap-3 p-5 text-lg font-bold text-white">
-        <img 
-          src="/icon2.png" 
-          alt="Logo" 
-          className="h-9 w-9 object-contain"/>LOGÍSTICAS BILL</div>
-      <nav className="flex overflow-x-auto px-2 pb-3 md:block">
-        {items.filter(([k])=>allowed(k)).map(([k,label,Icon])=>(
-          <button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}>
-            <Icon size={18}/>{label}
-          </button>
-        ))}
-      </nav>
-      <button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button>
-    </aside>
-    <main className="min-w-0 flex-1 p-4 md:p-8">
-      <header className="mb-7 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1>
-        <div className="relative">
-          <button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>
-          {showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}
-        </div>
-      </header>
-      {error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
-      {page==='dashboard' ? (
-        <Dashboard 
-          metrics={metrics} 
-          onNavigate={setPage}
-          showAlert={showMaintenanceAlert}
-          onCloseAlert={() => setShowMaintenanceAlert(false)}
-        />
-      ) : (
-        <Module 
-          page={page} 
-          rows={rows} 
-          loading={loading} 
-          create={create} 
-          isAdmin={isMainAdmin} 
-          lookups={lookups} 
-          editingUser={editingUser} 
-          setEditingUser={setEditingUser} 
-          updateUser={updateUser} 
-          deleteUser={deleteUser} 
-          editingResource={editingResource} 
-          setEditingResource={setEditingResource} 
-          updateResource={updateResource} 
-          deleteResource={deleteResource} 
-          editingMovement={editingMovement} 
-          setEditingMovement={setEditingMovement} 
-          updateMovement={updateMovement} 
-          deleteMovement={deleteMovement}
-        />
-      )}
-    </main>
+ function goTo(k:string){setPage(k);setMobileMenuOpen(false)}
+ return <div className="min-h-screen md:flex">
+  {/* Barra superior — só em telas pequenas */}
+  <div className="flex items-center justify-between bg-navy p-4 text-white md:hidden">
+   <span className="flex items-center gap-2 font-bold"><span className="text-cyan-400">◆</span>BILL LOGÍSTICA</span>
+   <button onClick={()=>setMobileMenuOpen(true)} aria-label="Abrir menu"><Menu size={24}/></button>
   </div>
- );
+  {/* Fundo escurecido ao abrir o menu no mobile */}
+  {mobileMenuOpen&&<div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={()=>setMobileMenuOpen(false)}/>}
+  {/* Menu lateral — vira gaveta deslizante no mobile, fixo em telas maiores */}
+  <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] transform bg-navy text-slate-200 transition-transform duration-200 md:static md:z-auto md:w-64 md:min-h-screen md:translate-x-0 ${mobileMenuOpen?'translate-x-0':'-translate-x-full'}`}>
+   <div className="flex items-center justify-between p-5 text-lg font-bold text-white">
+    <span><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</span>
+    <button className="md:hidden" onClick={()=>setMobileMenuOpen(false)} aria-label="Fechar menu"><X size={22}/></button>
+   </div>
+   <nav className="px-2 pb-3">
+    {items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>goTo(k)} className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}
+   </nav>
+   <button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button>
+  </aside>
+  <main className="min-w-0 flex-1 p-4 md:p-8">
+   <header className="mb-7 flex items-center justify-between">
+    <h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1>
+    <div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div>
+   </header>
+   {error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
+   {page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}
+  </main>
+ </div>
 }
 
 function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onUserUpdate:(u:any)=>void}){
@@ -344,119 +308,26 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({
-  metrics, 
-  onNavigate, 
-  showAlert, 
-  onCloseAlert
-}:{
-  metrics:any, 
-  onNavigate:(page:string)=>void,
-  showAlert:boolean,
-  onCloseAlert:()=>void
-}){
-  const alerts = metrics?.maintenance_alerts || [];
-  const maintenanceCount = alerts.length;
-
-  const cards = [
-    {
-      label: 'Veículos disponíveis',
-      value: metrics?.available ?? '—',
-      icon: '🚛',
-      page: 'vehicles',
-    },
-    {
-      label: 'Em manutenção',
-      value: maintenanceCount,
-      icon: '🔧',
-      page: 'maintenance',
-    },
-    {
-      label: 'Produtos em estoque',
-      value: metrics?.products ?? '—',
-      icon: '📦',
-      page: 'stock',
-    },
-    {
-      label: 'Estoque baixo',
-      value: metrics?.low_stock ?? '—',
-      icon: '⚠️',
-      page: 'stock',
-    },
-    {
-      label: 'Custo combustível',
-      value: metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) ?? '—',
-      icon: '⛽',
-      page: 'fuel',
-    },
-  ];
-
-  return (
-    <>
-      {/* POPUP DE AVISO - aparece só uma vez por sessão */}
-      {showAlert && alerts.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                <AlertTriangle size={22} />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Atenção – Manutenções</h3>
-                <p className="text-sm text-slate-500">
-                  Existem {alerts.length} manutenção(ões) em andamento ou agendada(s) para hoje.
-                </p>
-              </div>
-            </div>
-
-            <ul className="mb-5 max-h-48 space-y-2 overflow-y-auto rounded-lg bg-slate-50 p-3 text-sm">
-              {alerts.map((m: any) => (
-                <li key={m.id} className="border-b border-slate-200 pb-2 last:border-0 last:pb-0">
-                  <span className="font-medium text-slate-700">{m.description || 'Manutenção'}</span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
-                    {readable(m.date)} • {m.status}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  onCloseAlert();
-                  onNavigate('maintenance');
-                }}
-                className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-white"
-              >
-                Ir para Manutenção
-              </button>
-              <button
-                onClick={onCloseAlert}
-                className="flex-1 rounded-lg border border-slate-300 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CARDS */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {cards.map((card) => (
-          <article
-            key={card.label}
-            onClick={() => onNavigate(card.page)}
-            className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition hover:shadow-md hover:ring-2 hover:ring-cyan-500/30"
-          >
-            <div className="text-xl">{card.icon}</div>
-            <div className="mt-3 text-2xl font-bold">{card.value}</div>
-            <div className="text-sm text-slate-500">{card.label}</div>
-          </article>
-        ))}
-      </section>
-    </>
-  );
+function Dashboard({metrics}:{metrics:any}){
+ const [dismissed,setDismissed]=useState(true);
+ useEffect(()=>{
+  const today=new Date().toISOString().slice(0,10);
+  setDismissed(localStorage.getItem('maint_alert_dismissed')===today);
+ },[]);
+ function dismiss(){
+  localStorage.setItem('maint_alert_dismissed',new Date().toISOString().slice(0,10));
+  setDismissed(true);
+ }
+ const cards=[['Veículos disponíveis',metrics?.available,'🚛'],['Em rota',metrics?.on_route,'🗺️'],['Em manutenção',metrics?.maintenance,'🔧'],['Manutenções concluídas',metrics?.maintenance_completed,'✅'],['Produtos em estoque',metrics?.products,'📦'],['Estoque baixo',metrics?.low_stock,'⚠️'],['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']];
+ const hasAlerts=!dismissed&&((metrics?.maintenance_today>0)||(metrics?.maintenance_overdue>0));
+ return <>
+  {hasAlerts&&<section className="mb-6 space-y-2">
+   {metrics?.maintenance_overdue>0&&<div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><span className="flex items-center gap-3"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_overdue}</strong> manutenção(ões) atrasada(s) — verifique a aba Manutenção.</span></span><button onClick={dismiss} className="text-xs text-red-700 hover:underline">Dispensar</button></div>}
+   {metrics?.maintenance_today>0&&<div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><span className="flex items-center gap-3"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_today}</strong> manutenção(ões) agendada(s) para hoje.</span></span><button onClick={dismiss} className="text-xs text-amber-700 hover:underline">Dispensar</button></div>}
+  </section>}
+  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([l,v,i])=><article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm"><div className="text-xl">{i}</div><div className="mt-3 text-2xl font-bold">{v??'—'}</div><div className="text-sm text-slate-500">{l}</div></article>)}</section>
+  <section className="mt-6 rounded-xl bg-white p-6 shadow-sm"><h2 className="font-semibold">Acompanhamento operacional</h2><p className="mt-2 text-sm text-slate-500">Os indicadores são calculados diretamente no banco PostgreSQL. Cadastre veículos, produtos e abastecimentos para compor a visão gerencial.</p></section>
+ </>;
 }
 
 const REPORT_SOURCES=[
@@ -468,31 +339,75 @@ const REPORT_SOURCES=[
  {value:'movements',label:'Movimentações de estoque',path:'/stock/movements'},
 ];
 
-function ReportsExport(){
- const [source,setSource]=useState('vehicles');
+function cleanRowForReport(r:any,lookups:any){
+ const out:Record<string,any>={};
+ for(const [k,v] of Object.entries(r)){
+  if(k==='password_hash') continue;
+  let val:any=v;
+  if(k==='vehicle_id'||k==='driver_id'||k==='product_id'){ val=resolveCell(k,v,lookups); }
+  else if(isIsoDateTime(v)){ const d=new Date(v as string); val=isNaN(d.getTime())?v:d.toLocaleDateString('pt-BR'); }
+  else if(v===null||v===undefined){ val=''; }
+  else if(typeof v==='boolean'){ val=v?'Sim':'Não'; }
+  out[labelFor(k)]=val;
+ }
+ return out;
+}
+
+function exportExcelMulti(datasets:{cfg:any,rows:any[]}[]){
+ const book=XLSX.utils.book_new();
+ const today=new Date().toLocaleDateString('pt-BR');
+ datasets.forEach(({cfg,rows})=>{
+  const sheet=XLSX.utils.aoa_to_sheet([['BILL LOGÍSTICA'],[`Relatório: ${cfg.label}`],[`Gerado em: ${today}`],[]]);
+  XLSX.utils.sheet_add_json(sheet,rows,{origin:-1});
+  XLSX.utils.book_append_sheet(book,sheet,cfg.label.slice(0,31));
+ });
+ XLSX.writeFile(book,`Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.xlsx`);
+}
+
+function exportPdfMulti(datasets:{cfg:any,rows:any[]}[]){
+ const doc=new jsPDF();
+ const today=new Date().toLocaleDateString('pt-BR');
+ datasets.forEach(({cfg,rows},i)=>{
+  if(i>0) doc.addPage();
+  doc.setFontSize(16); doc.text('BILL LOGÍSTICA',14,18);
+  doc.setFontSize(11); doc.text(`Relatório: ${cfg.label}`,14,26);
+  doc.text(`Gerado em: ${today}`,14,32);
+  const headers=rows.length?Object.keys(rows[0]):['Sem registros'];
+  const body=rows.map(r=>headers.map(h=>String(r[h]??'')));
+  autoTable(doc,{head:[headers],body,startY:38,styles:{fontSize:8}});
+ });
+ doc.save(`Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.pdf`);
+}
+
+function ReportsExport({lookups}:{lookups:any}){
+ const [selected,setSelected]=useState<string[]>([]);
+ const [format,setFormat]=useState<'xlsx'|'pdf'>('xlsx');
  const [exporting,setExporting]=useState(false);
  const [err,setErr]=useState('');
- async function exportExcel(){
+ function toggle(v:string){setSelected(s=>s.includes(v)?s.filter(x=>x!==v):[...s,v])}
+ async function run(){
+  if(!selected.length){setErr('Selecione pelo menos um módulo.');return}
   setExporting(true);setErr('');
   try{
-   const cfg=REPORT_SOURCES.find(s=>s.value===source)!;
-   const rows=await request(cfg.path) as any[];
-   const cleaned=rows.map(({password_hash,...rest})=>rest);
-   const sheet=XLSX.utils.json_to_sheet(cleaned);
-   const book=XLSX.utils.book_new();
-   XLSX.utils.book_append_sheet(book,sheet,cfg.label.slice(0,31));
-   XLSX.writeFile(book,`${cfg.label.replace(/\s+/g,'_')}.xlsx`);
+   const datasets=await Promise.all(selected.map(async v=>{
+    const cfg=REPORT_SOURCES.find(s=>s.value===v)!;
+    const rows=await request(cfg.path) as any[];
+    return {cfg,rows:rows.map(r=>cleanRowForReport(r,lookups))};
+   }));
+   if(format==='xlsx') exportExcelMulti(datasets); else exportPdfMulti(datasets);
   }catch(e:any){setErr(e.message)}finally{setExporting(false)}
  }
  return <div className="p-5 text-sm text-slate-600">
-  <p className="mb-3">Selecione o módulo e baixe os dados em uma planilha Excel (.xlsx).</p>
+  <p className="mb-3">Selecione um ou mais módulos e o formato de exportação. O relatório sai com nome da empresa, data de geração e datas sem horário — pronto para apresentação.</p>
   {err&&<p className="mb-2 text-red-600">{err}</p>}
-  <div className="flex flex-wrap items-center gap-3">
-   <select value={source} onChange={e=>setSource(e.target.value)} className="rounded-lg border p-2">
-    {REPORT_SOURCES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
-   </select>
-   <button onClick={exportExcel} disabled={exporting} className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-60">{exporting?'Gerando…':'Baixar Excel'}</button>
+  <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border p-3 sm:grid-cols-3">
+   {REPORT_SOURCES.map(s=><label key={s.value} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={selected.includes(s.value)} onChange={()=>toggle(s.value)} className="h-4 w-4"/>{s.label}</label>)}
   </div>
+  <div className="mb-4 flex items-center gap-4">
+   <label className="flex items-center gap-2 text-xs"><input type="radio" checked={format==='xlsx'} onChange={()=>setFormat('xlsx')}/> Excel (.xlsx)</label>
+   <label className="flex items-center gap-2 text-xs"><input type="radio" checked={format==='pdf'} onChange={()=>setFormat('pdf')}/> PDF</label>
+  </div>
+  <button onClick={run} disabled={exporting} className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-60">{exporting?'Gerando…':'Gerar relatório'}</button>
  </div>;
 }
 
@@ -503,8 +418,8 @@ function Module({page,rows,loading,create,isAdmin,lookups,editingUser,setEditing
  const isMovementModule=page==='entry'||page==='output';
  const showActions=(isUsers&&isAdmin)||isResourceModule||isMovementModule;
  const hidden=HIDDEN_TABLE_COLUMNS[page]||[];
- const cols=Object.keys(rows[0]||{id:'ID',informação:'Informação'}).filter(k=>!hidden.includes(k)).slice(0,7);
- return <><section className="rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><h2 className="font-semibold">{page==='reports'?'Relatórios':titleFor(page)}</h2>{page!=='reports'&&<span className="text-sm text-slate-500">{rows.length} registros</span>}</div>{page==='reports'?<ReportsExport/>:loading?<div className="p-5">Carregando…</div>:<div className="overflow-auto"><table><thead><tr>{cols.map(k=><th key={k}>{labelFor(k)}</th>)}{showActions&&<th>Ações</th>}</tr></thead><tbody>{rows.map((r,i)=><tr key={resourceIdOf(page,r)||i}>{cols.map(k=><td key={k}>{resolveCell(k,r[k],lookups)}</td>)}{showActions&&<td className="whitespace-nowrap"><button onClick={()=>isUsers?setEditingUser(r):isMovementModule?setEditingMovement(r):setEditingResource(r)} className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200">Editar</button>{!(isUsers&&r.is_main_admin)&&<button onClick={()=>isUsers?deleteUser(r.id):isMovementModule?deleteMovement(r.id):deleteResource(resourceIdOf(page,r))} className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100">Excluir</button>}</td>}</tr>)}{!rows.length&&<tr><td className="p-5 text-slate-500">Nenhum registro encontrado.</td></tr>}</tbody></table></div>}</section>
+ const cols=TABLE_COLUMNS[page]||Object.keys(rows[0]||{id:'ID',informação:'Informação'}).filter(k=>!hidden.includes(k)).slice(0,7);
+ return <><section className="rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><h2 className="font-semibold">{page==='reports'?'Relatórios':titleFor(page)}</h2>{page!=='reports'&&<span className="text-sm text-slate-500">{rows.length} registros</span>}</div>{page==='reports'?<ReportsExport lookups={lookups}/>:loading?<div className="p-5">Carregando…</div>:<div className="overflow-auto"><table><thead><tr>{cols.map(k=><th key={k}>{labelFor(k)}</th>)}{showActions&&<th>Ações</th>}</tr></thead><tbody>{rows.map((r,i)=><tr key={resourceIdOf(page,r)||i}>{cols.map(k=><td key={k}>{k==='status'?<span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(r[k])}`}>{r[k]||'—'}</span>:resolveCell(k,r[k],lookups)}</td>)}{showActions&&<td className="whitespace-nowrap"><button onClick={()=>isUsers?setEditingUser(r):isMovementModule?setEditingMovement(r):setEditingResource(r)} className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200">Editar</button>{!(isUsers&&r.is_main_admin)&&<button onClick={()=>isUsers?deleteUser(r.id):isMovementModule?deleteMovement(r.id):deleteResource(resourceIdOf(page,r))} className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100">Excluir</button>}</td>}</tr>)}{!rows.length&&<tr><td className="p-5 text-slate-500">Nenhum registro encontrado.</td></tr>}</tbody></table></div>}</section>
  {isUsers&&isAdmin&&editingUser&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Editar usuário: {editingUser.name}</h3><button onClick={()=>setEditingUser(null)} className="text-sm text-slate-500 hover:underline">Cancelar</button></div><EditUserForm user={editingUser} onSubmit={(data)=>updateUser(editingUser.id,data)}/></section>}
  {isResourceModule&&editingResource&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Editar registro</h3><button onClick={()=>setEditingResource(null)} className="text-sm text-slate-500 hover:underline">Cancelar</button></div><ResourceForm page={page} lookups={lookups} initial={editingResource} onSubmit={(data)=>updateResource(resourceIdOf(page,editingResource),data)} submitLabel="Salvar alterações"/></section>}
  {isMovementModule&&editingMovement&&<section className="mt-6 rounded-xl bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Editar movimentação</h3><button onClick={()=>setEditingMovement(null)} className="text-sm text-slate-500 hover:underline">Cancelar</button></div><MovementEditForm movement={editingMovement} lookups={lookups} onSubmit={(data)=>updateMovement(editingMovement.id,data)}/></section>}
@@ -560,7 +475,7 @@ function ResourceForm({page,lookups,onSubmit,initial,submitLabel}:{page:string,l
  function optionsFor(type:string){
   if(type==='vehicle') return (lookups.vehicles||[]).map((v:any)=>({value:v.id,label:`${v.plate} — ${v.brand} ${v.model}`}));
   if(type==='driver') return (lookups.drivers||[]).map((d:any)=>({value:d.id,label:d.name}));
-  if(type==='product') return (lookups.products||[]).map((p:any)=>({value:p.id,label:`${p.code} — ${p.name}`}));
+  if(type==='product') return (lookups.products||[]).map((p:any)=>({value:p.id,label:`${p.id} — ${p.name}`}));
   return [];
  }
  async function submit(e:React.FormEvent){
