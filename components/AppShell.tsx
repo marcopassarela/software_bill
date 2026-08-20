@@ -137,14 +137,21 @@ const HIDDEN_TABLE_COLUMNS:Record<string,string[]>={users:['permissions']}
 
 function isIsoDateTime(x:any){return typeof x==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(x)}
 function readable(x:any):string{
- if(x===null||x===undefined) return '—';
- if(typeof x==='boolean') return x?'Sim':'Não';
- if(isIsoDateTime(x)){
-  const d=new Date(x);
-  return isNaN(d.getTime())?x:d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
- }
- if(typeof x==='object') return JSON.stringify(x);
- return String(x);
+  if(x===null||x===undefined) return '—';
+  if(typeof x==='boolean') return x?'Sim':'Não';
+  if(isIsoDateTime(x)){
+    const d = new Date(x);
+    if(isNaN(d.getTime())) return x;
+
+    // Se o horário for exatamente 00:00, mostra só a data
+    const isMidnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
+    if (isMidnight) {
+      return d.toLocaleDateString('pt-BR');
+    }
+    return d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+  }
+  if(typeof x==='object') return JSON.stringify(x);
+  return String(x);
 }
 function resolveCell(key:string,value:any,lookups:any):string{
  if(value===null||value===undefined) return '—';
