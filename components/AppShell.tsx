@@ -249,7 +249,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
  return (
   <div className="min-h-screen md:flex">
     <aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64">
-      <div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div>
+      <div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>LOGÍSTICAS BILL</div>
       <nav className="flex overflow-x-auto px-2 pb-3 md:block">
         {items.filter(([k])=>allowed(k)).map(([k,label,Icon])=>(
           <button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}>
