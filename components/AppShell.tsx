@@ -265,6 +265,14 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
 function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=>void}){
   const alerts = metrics?.maintenance_alerts || [];
   const maintenanceCount = alerts.length;
+  const [showAlert, setShowAlert] = useState(false);
+
+  // Mostra o popup sempre que entrar e houver manutenções em andamento
+  useEffect(() => {
+    if (alerts.length > 0) {
+      setShowAlert(true);
+    }
+  }, [alerts.length]);
 
   const cards = [
     {
@@ -300,19 +308,70 @@ function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=
   ];
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {cards.map((card) => (
-        <article
-          key={card.label}
-          onClick={() => onNavigate(card.page)}
-          className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition hover:shadow-md hover:ring-2 hover:ring-cyan-500/30"
-        >
-          <div className="text-xl">{card.icon}</div>
-          <div className="mt-3 text-2xl font-bold">{card.value}</div>
-          <div className="text-sm text-slate-500">{card.label}</div>
-        </article>
-      ))}
-    </section>
+    <>
+      {/* POPUP DE AVISO */}
+      {showAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Atenção – Manutenções</h3>
+                <p className="text-sm text-slate-500">
+                  Existem {alerts.length} manutenção(ões) em andamento ou agendada(s) para hoje.
+                </p>
+              </div>
+            </div>
+
+            <ul className="mb-5 max-h-48 space-y-2 overflow-y-auto rounded-lg bg-slate-50 p-3 text-sm">
+              {alerts.map((m: any) => (
+                <li key={m.id} className="border-b border-slate-200 pb-2 last:border-0 last:pb-0">
+                  <span className="font-medium text-slate-700">{m.description || 'Manutenção'}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    {readable(m.date)} • {m.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAlert(false);
+                  onNavigate('maintenance');
+                }}
+                className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-white"
+              >
+                Ir para Manutenção
+              </button>
+              <button
+                onClick={() => setShowAlert(false)}
+                className="flex-1 rounded-lg border border-slate-300 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CARDS */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card) => (
+          <article
+            key={card.label}
+            onClick={() => onNavigate(card.page)}
+            className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition hover:shadow-md hover:ring-2 hover:ring-cyan-500/30"
+          >
+            <div className="text-xl">{card.icon}</div>
+            <div className="mt-3 text-2xl font-bold">{card.value}</div>
+            <div className="text-sm text-slate-500">{card.label}</div>
+          </article>
+        ))}
+      </section>
+    </>
   );
 }
 
