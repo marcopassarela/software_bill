@@ -267,9 +267,9 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
    {error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
    {page==='dashboard'
   ? <Dashboard
-      metrics={metrics}
-      onNavigate={goTo}
-    />
+  metrics={metrics}
+  onNavigate={goTo}
+/>
   : <Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}
   </main>
  </div>
@@ -313,14 +313,19 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({metrics, onNavigate}:{metrics:any,onNavigate:(page:string)=>void}){
+function Dashboard({
+  metrics,
+  onNavigate
+}:{
+  metrics:any,
+  onNavigate:(page:string)=>void
+}){
 
   const [dismissed,setDismissed]=useState(true);
 
   useEffect(()=>{
-    const today=new Date().toISOString().slice(0,10);
-    setDismissed(localStorage.getItem('maint_alert_dismissed')===today);
-  },[]);
+    setDismissed(false);
+  },[metrics]);
 
   function dismiss(){
     localStorage.setItem('maint_alert_dismissed',new Date().toISOString().slice(0,10));
@@ -381,6 +386,111 @@ function Dashboard({metrics, onNavigate}:{metrics:any,onNavigate:(page:string)=>
       (metrics?.maintenance_today>0) ||
       (metrics?.maintenance_overdue>0)
     );
+
+    {!dismissed &&
+  (
+    (metrics?.maintenance_today > 0) ||
+    (metrics?.maintenance_overdue > 0) ||
+    (metrics?.maintenance_alerts?.length > 0)
+  ) && (
+
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+
+    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+
+      <div className="mb-5 flex items-center gap-3">
+
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-2xl">
+          ⚠️
+        </div>
+
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">
+            Aviso de manutenção
+          </h2>
+
+          <p className="text-sm text-slate-500">
+            Existem manutenções que precisam da sua atenção.
+          </p>
+        </div>
+
+      </div>
+
+      <div className="space-y-3">
+
+        {metrics?.maintenance_today > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+
+            <div className="font-semibold text-amber-800">
+              📅 Manutenções de hoje
+            </div>
+
+            <div className="mt-1 text-sm text-amber-700">
+              Existem <strong>{metrics.maintenance_today}</strong>{' '}
+              manutenção(ões) agendada(s) para hoje.
+            </div>
+
+          </div>
+        )}
+
+        {metrics?.maintenance_overdue > 0 && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+
+            <div className="font-semibold text-red-800">
+              🚨 Manutenções atrasadas
+            </div>
+
+            <div className="mt-1 text-sm text-red-700">
+              Existem <strong>{metrics.maintenance_overdue}</strong>{' '}
+              manutenção(ões) atrasada(s).
+            </div>
+
+          </div>
+        )}
+
+        {metrics?.maintenance_alerts?.length > 0 && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+
+            <div className="font-semibold text-blue-800">
+              🔧 Manutenções em andamento
+            </div>
+
+            <div className="mt-1 text-sm text-blue-700">
+              Existem{' '}
+              <strong>{metrics.maintenance_alerts.length}</strong>{' '}
+              manutenção(ões) atualmente em andamento.
+            </div>
+
+          </div>
+        )}
+
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+
+        <button
+          onClick={dismiss}
+          className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+        >
+          Fechar
+        </button>
+
+        <button
+          onClick={()=>{
+            dismiss();
+            onNavigate('maintenance');
+          }}
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+        >
+          Ver manutenções
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+)}
 
   return <>
 
