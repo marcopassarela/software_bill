@@ -420,7 +420,7 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     select(func.count())
     .select_from(Maintenance)
     .where(
-        Maintenance.status.in_(["Em andamento", "Concluída"])
+        Maintenance.status.in_(["Em andamento", "Concluído"])
     )
     ),
 
