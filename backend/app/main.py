@@ -343,13 +343,58 @@ def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
     require("dashboard")(user)
 
-    # Atualiza status das manutenções antes de calcular os indicadores
+    # Atualiza automaticamente as manutenções que já chegaram à data
     update_maintenance_status(db)
 
     today = datetime.now().date()
+
     count = lambda q: db.scalar(q) or 0
 
-    # Manutenções em andamento (para aviso no frontend)
+    # ============================================================
+    # MANUTENÇÕES
+    # ============================================================
+
+    # Quantidade de veículos que possuem pelo menos uma manutenção
+    # atualmente em "Em andamento".
+    #
+    # DISTINCT evita contar o mesmo caminhão duas vezes caso ele
+    # possua mais de uma manutenção em andamento.
+    vehicles_in_maintenance = count(
+        select(func.count(func.distinct(Maintenance.vehicle_id)))
+        .select_from(Maintenance)
+        .where(Maintenance.status == "Em andamento")
+    )
+
+    # Manutenções agendadas para hoje
+    maintenance_today = count(
+        select(func.count())
+        .select_from(Maintenance)
+        .where(
+            func.date(Maintenance.date) == today,
+            Maintenance.status.in_(["Agendado", "Em andamento"]),
+        )
+    )
+
+    # Manutenções atrasadas:
+    # - data anterior a hoje
+    # - ainda não concluídas
+    maintenance_overdue = count(
+        select(func.count())
+        .select_from(Maintenance)
+        .where(
+            func.date(Maintenance.date) < today,
+            Maintenance.status.notin_(["Concluído"]),
+        )
+    )
+
+    # Manutenções concluídas
+    maintenance_completed = count(
+        select(func.count())
+        .select_from(Maintenance)
+        .where(Maintenance.status == "Concluído")
+    )
+
+    # Lista das manutenções em andamento para o alerta
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
@@ -360,28 +405,69 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         ).all()
     ]
 
+    # ============================================================
+    # DASHBOARD
+    # ============================================================
+
     return {
+        # Veículos disponíveis
         "available": count(
-            select(func.count()).select_from(Vehicle).where(Vehicle.status == "Disponível")
+            select(func.count())
+            .select_from(Vehicle)
+            .where(Vehicle.status == "Disponível")
         ),
-        "maintenance": count(
-            select(func.count()).select_from(Vehicle).where(Vehicle.status == "Manutenção")
-        ),
+
+        # IMPORTANTE:
+        # Agora "maintenance" representa os veículos que possuem
+        # manutenção com status "Em andamento".
+        "maintenance": vehicles_in_maintenance,
+
+        # Rotas de hoje
         "routes_today": count(
             select(func.count())
             .select_from(Route)
             .where(func.date(Route.scheduled_at) == today)
         ),
-        "products": count(select(func.count()).select_from(Product)),
+
+        # Mantém compatibilidade caso o frontend utilize "on_route"
+        "on_route": count(
+            select(func.count())
+            .select_from(Route)
+            .where(func.date(Route.scheduled_at) == today)
+        ),
+
+        # Produtos cadastrados
+        "products": count(
+            select(func.count())
+            .select_from(Product)
+        ),
+
+        # Produtos abaixo ou no estoque mínimo
         "low_stock": count(
             select(func.count())
             .select_from(Product)
             .where(Product.quantity <= Product.minimum_stock)
         ),
+
+        # Custo total de combustível
         "fuel_cost": float(
-            count(select(func.coalesce(func.sum(FuelRecord.total_value), 0)))
+            count(
+                select(
+                    func.coalesce(
+                        func.sum(FuelRecord.total_value),
+                        0
+                    )
+                )
+            )
         ),
-        "maintenance_alerts": maintenance_alerts,  # lista para o frontend mostrar o aviso
+
+        # Manutenções
+        "maintenance_today": maintenance_today,
+        "maintenance_overdue": maintenance_overdue,
+        "maintenance_completed": maintenance_completed,
+
+        # Lista utilizada pelos avisos do Dashboard
+        "maintenance_alerts": maintenance_alerts,
     }
 
 
