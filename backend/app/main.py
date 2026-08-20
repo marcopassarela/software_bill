@@ -417,9 +417,11 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     ),
 
     "maintenance": count(
-        select(func.count())
-        .select_from(Maintenance)
-        .where(Maintenance.status == "Em andamento")
+    select(func.count())
+    .select_from(Maintenance)
+    .where(
+        Maintenance.status.in_(["Em andamento", "Concluída"])
+    )
     ),
 
     "routes_today": count(
