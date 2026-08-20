@@ -416,18 +416,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         .where(Vehicle.status == "Disponível")
     ),
 
-    # Em andamento (mantém compatibilidade com o card já existente)
     "maintenance": count(
-        select(func.count())
-        .select_from(Maintenance)
-        .where(Maintenance.status == "Em andamento")
-    ),
-
-    # Novo campo para o card "Manutenções concluídas"
-    "maintenance_completed": count(
-        select(func.count())
-        .select_from(Maintenance)
-        .where(Maintenance.status == "Concluída")
+    select(func.count())
+    .select_from(Maintenance)
+    .where(
+        Maintenance.status.in_(["Em andamento", "Concluída"])
+    )
     ),
 
     "routes_today": count(
@@ -459,7 +453,6 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
 
     "maintenance_alerts": maintenance_alerts,
 }
-
 
 
 @app.get("/stock/movements")
