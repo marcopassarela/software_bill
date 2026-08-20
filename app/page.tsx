@@ -34,10 +34,13 @@ export default function Home(){
  return <main className="grid min-h-screen md:grid-cols-2">
   {/* Painel de identidade visual — some no celular, mostra o essencial em telas maiores */}
   <div className="hidden flex-col items-center justify-center bg-navy p-10 text-white md:flex">
-   <div className="text-6xl text-cyan-400">◆</div>
-   <h1 className="mt-6 text-3xl font-bold tracking-wide">BILL LOGÍSTICA</h1>
-   <p className="mt-3 max-w-sm text-center text-slate-300">Sistema interno de gestão logística — rotas, frota, manutenção, combustível e estoque.</p>
-  </div>
+  <img
+    src="/icon2.png"
+    alt="Logo Bill Logística"
+    className="h-24 w-24 object-contain"/>
+  <h1 className="mt-6 text-3xl font-bold tracking-wide">BILL LOGÍSTICA</h1>
+  <p className="mt-3 max-w-sm text-center text-slate-300">Sistema interno de gestão logística!</p>
+</div>
   {/* Formulário de login */}
   <div className="flex items-center justify-center bg-slate-100 p-4 md:bg-white">
    <form onSubmit={login} className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg md:shadow-none" autoComplete="off">
