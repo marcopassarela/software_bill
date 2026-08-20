@@ -265,7 +265,12 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
     <div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div>
    </header>
    {error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
-   {page==='dashboard'?<Dashboard metrics={metrics}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}
+   {page==='dashboard'
+  ? <Dashboard
+      metrics={metrics}
+      onNavigate={goTo}
+    />
+  : <Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}
   </main>
  </div>
 }
@@ -308,26 +313,173 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({metrics}:{metrics:any}){
- const [dismissed,setDismissed]=useState(true);
- useEffect(()=>{
-  const today=new Date().toISOString().slice(0,10);
-  setDismissed(localStorage.getItem('maint_alert_dismissed')===today);
- },[]);
- function dismiss(){
-  localStorage.setItem('maint_alert_dismissed',new Date().toISOString().slice(0,10));
-  setDismissed(true);
- }
- const cards=[['Veículos disponíveis',metrics?.available,'🚛'],['Em rota',metrics?.on_route,'🗺️'],['Em manutenção',metrics?.maintenance,'🔧'],['Manutenções concluídas',metrics?.maintenance_completed,'✅'],['Produtos em estoque',metrics?.products,'📦'],['Estoque baixo',metrics?.low_stock,'⚠️'],['Custo combustível',metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),'⛽']];
- const hasAlerts=!dismissed&&((metrics?.maintenance_today>0)||(metrics?.maintenance_overdue>0));
- return <>
-  {hasAlerts&&<section className="mb-6 space-y-2">
-   {metrics?.maintenance_overdue>0&&<div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><span className="flex items-center gap-3"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_overdue}</strong> manutenção(ões) atrasada(s) — verifique a aba Manutenção.</span></span><button onClick={dismiss} className="text-xs text-red-700 hover:underline">Dispensar</button></div>}
-   {metrics?.maintenance_today>0&&<div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><span className="flex items-center gap-3"><AlertTriangle size={20}/><span><strong>{metrics.maintenance_today}</strong> manutenção(ões) agendada(s) para hoje.</span></span><button onClick={dismiss} className="text-xs text-amber-700 hover:underline">Dispensar</button></div>}
-  </section>}
-  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([l,v,i])=><article key={String(l)} className="rounded-xl bg-white p-5 shadow-sm"><div className="text-xl">{i}</div><div className="mt-3 text-2xl font-bold">{v??'—'}</div><div className="text-sm text-slate-500">{l}</div></article>)}</section>
-  <section className="mt-6 rounded-xl bg-white p-6 shadow-sm"><h2 className="font-semibold">Acompanhamento operacional</h2><p className="mt-2 text-sm text-slate-500">Os indicadores são calculados diretamente no banco PostgreSQL. Cadastre veículos, produtos e abastecimentos para compor a visão gerencial.</p></section>
- </>;
+function Dashboard({metrics, onNavigate}:{metrics:any,onNavigate:(page:string)=>void}){
+
+  const [dismissed,setDismissed]=useState(true);
+
+  useEffect(()=>{
+    const today=new Date().toISOString().slice(0,10);
+    setDismissed(localStorage.getItem('maint_alert_dismissed')===today);
+  },[]);
+
+  function dismiss(){
+    localStorage.setItem('maint_alert_dismissed',new Date().toISOString().slice(0,10));
+    setDismissed(true);
+  }
+
+  const cards=[
+    {
+      label:'Veículos disponíveis',
+      value:metrics?.available,
+      icon:'🚛',
+      page:'vehicles'
+    },
+    {
+      label:'Em rota',
+      value:metrics?.on_route,
+      icon:'🗺️',
+      page:'vehicles'
+    },
+    {
+      label:'Em manutenção',
+      value:metrics?.maintenance,
+      icon:'🔧',
+      page:'maintenance'
+    },
+    {
+      label:'Manutenções concluídas',
+      value:metrics?.maintenance_completed,
+      icon:'✅',
+      page:'maintenance'
+    },
+    {
+      label:'Produtos em estoque',
+      value:metrics?.products,
+      icon:'📦',
+      page:'stock'
+    },
+    {
+      label:'Estoque baixo',
+      value:metrics?.low_stock,
+      icon:'⚠️',
+      page:'stock'
+    },
+    {
+      label:'Custo combustível',
+      value:metrics?.fuel_cost?.toLocaleString('pt-BR',{
+        style:'currency',
+        currency:'BRL'
+      }),
+      icon:'⛽',
+      page:'fuel'
+    }
+  ];
+
+  const hasAlerts=
+    !dismissed &&
+    (
+      (metrics?.maintenance_today>0) ||
+      (metrics?.maintenance_overdue>0)
+    );
+
+  return <>
+
+    {hasAlerts&&
+      <section className="mb-6 space-y-2">
+
+        {metrics?.maintenance_overdue>0&&
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+            <span className="flex items-center gap-3">
+              <AlertTriangle size={20}/>
+              <span>
+                <strong>{metrics.maintenance_overdue}</strong>
+                {' '}manutenção(ões) atrasada(s) — verifique a aba Manutenção.
+              </span>
+            </span>
+
+            <button
+              onClick={dismiss}
+              className="text-xs text-red-700 hover:underline"
+            >
+              Dispensar
+            </button>
+          </div>
+        }
+
+        {metrics?.maintenance_today>0&&
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+            <span className="flex items-center gap-3">
+              <AlertTriangle size={20}/>
+              <span>
+                <strong>{metrics.maintenance_today}</strong>
+                {' '}manutenção(ões) agendada(s) para hoje.
+              </span>
+            </span>
+
+            <button
+              onClick={dismiss}
+              className="text-xs text-amber-700 hover:underline"
+            >
+              Dispensar
+            </button>
+          </div>
+        }
+
+      </section>
+    }
+
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+      {cards.map(card=>
+
+        <article
+          key={card.label}
+          onClick={()=>onNavigate(card.page)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={e=>{
+            if(e.key==='Enter'||e.key===' '){
+              e.preventDefault();
+              onNavigate(card.page);
+            }
+          }}
+          className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]"
+        >
+
+          <div className="text-xl">
+            {card.icon}
+          </div>
+
+          <div className="mt-3 text-2xl font-bold">
+            {card.value??'—'}
+          </div>
+
+          <div className="text-sm text-slate-500">
+            {card.label}
+          </div>
+
+          <div className="mt-2 text-xs font-medium text-cyan-600">
+            Clique para acessar →
+          </div>
+
+        </article>
+
+      )}
+
+    </section>
+
+    <section className="mt-6 rounded-xl bg-white p-6 shadow-sm">
+      <h2 className="font-semibold">
+        Acompanhamento operacional
+      </h2>
+
+      <p className="mt-2 text-sm text-slate-500">
+        Os indicadores são calculados diretamente no banco PostgreSQL.
+        Cadastre veículos, produtos e abastecimentos para compor a visão gerencial.
+      </p>
+    </section>
+
+  </>;
 }
 
 const REPORT_SOURCES=[
