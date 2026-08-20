@@ -142,7 +142,6 @@ function readable(x:any):string{
   if(isIsoDateTime(x)){
     const d = new Date(x);
     if(isNaN(d.getTime())) return x;
-
     // Se o horário for exatamente 00:00, mostra só a data
     const isMidnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
     if (isMidnight) {
@@ -162,18 +161,34 @@ function resolveCell(key:string,value:any,lookups:any):string{
 }
 
 export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout:()=>void,onUserUpdate:(u:any)=>void}){
- const [page,setPage]=useState('dashboard'),[rows,setRows]=useState<any[]>([]),[metrics,setMetrics]=useState<any>(),[error,setError]=useState(''),[loading,setLoading]=useState(false);
+ const [page,setPage]=useState('dashboard');
+ const [rows,setRows]=useState<any[]>([]);
+ const [metrics,setMetrics]=useState<any>();
+ const [error,setError]=useState('');
+ const [loading,setLoading]=useState(false);
  const [lookups,setLookups]=useState<{vehicles:any[],drivers:any[],products:any[]}>({vehicles:[],drivers:[],products:[]});
  const [editingUser,setEditingUser]=useState<any>(null);
  const [editingResource,setEditingResource]=useState<any>(null);
  const [editingMovement,setEditingMovement]=useState<any>(null);
  const [showAccount,setShowAccount]=useState(false);
+ const [showMaintenanceAlert, setShowMaintenanceAlert] = useState(false);
+ const [alertShown, setAlertShown] = useState(false);
+
  const isMainAdmin=!!user.is_main_admin;
  const allowed=(key:string)=>isMainAdmin||(user.permissions?user.permissions.split(',').includes(key):(moduleAccess[user.role]||[]).includes('*')||(moduleAccess[user.role]||[]).includes(key));
+
  async function load(p=page){
   setError('');setLoading(true);
   try{
-   if(p==='dashboard') setMetrics(await request('/dashboard'));
+   if(p==='dashboard') {
+     const data = await request('/dashboard');
+     setMetrics(data);
+     // Mostra o popup só na primeira vez da sessão
+     if (!alertShown && data?.maintenance_alerts?.length > 0) {
+       setShowMaintenanceAlert(true);
+       setAlertShown(true);
+     }
+   }
    else if(p==='movements') setRows(await request('/stock/movements'));
    else if(p==='entry') setRows((await request('/stock/movements') as any[]).filter(m=>m.type==='ENTRADA'));
    else if(p==='output') setRows((await request('/stock/movements') as any[]).filter(m=>m.type==='SAÍDA'));
@@ -182,6 +197,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
    else setRows([]);
   }catch(e:any){setError(e.message)}finally{setLoading(false)}
  }
+
  useEffect(()=>{load();setEditingUser(null);setEditingResource(null);setEditingMovement(null)},[page]);
  useEffect(()=>{
   Promise.all([
@@ -190,6 +206,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
    request('/products').catch(()=>[]),
   ]).then(([vehicles,drivers,products])=>setLookups({vehicles,drivers,products}));
  },[]);
+
  async function create(data:any){
   setError('');
   try{
@@ -228,7 +245,61 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
   try{await request('/stock/movements/'+id,{method:'DELETE',body:JSON.stringify({password})});load()}catch(e:any){setError(e.message)}
  }
  async function logout(){await request('/auth/logout',{method:'POST'}).catch(()=>{});onLogout()}
- return <div className="min-h-screen md:flex"><aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64"><div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div><nav className="flex overflow-x-auto px-2 pb-3 md:block">{items.filter(([k])=>allowed(k)).map(([k,label,Icon])=><button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}><Icon size={18}/>{label}</button>)}</nav><button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button></aside><main className="min-w-0 flex-1 p-4 md:p-8"><header className="mb-7 flex items-center justify-between"><h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1><div className="relative"><button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>{showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}</div></header>{error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}{page==='dashboard'?<Dashboard metrics={metrics} onNavigate={setPage}/>:<Module page={page} rows={rows} loading={loading} create={create} isAdmin={isMainAdmin} lookups={lookups} editingUser={editingUser} setEditingUser={setEditingUser} updateUser={updateUser} deleteUser={deleteUser} editingResource={editingResource} setEditingResource={setEditingResource} updateResource={updateResource} deleteResource={deleteResource} editingMovement={editingMovement} setEditingMovement={setEditingMovement} updateMovement={updateMovement} deleteMovement={deleteMovement}/>}</main></div>
+
+ return (
+  <div className="min-h-screen md:flex">
+    <aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64">
+      <div className="p-5 text-lg font-bold text-white"><span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA</div>
+      <nav className="flex overflow-x-auto px-2 pb-3 md:block">
+        {items.filter(([k])=>allowed(k)).map(([k,label,Icon])=>(
+          <button key={k} onClick={()=>setPage(k)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-sm md:w-full ${page===k?'bg-cyan-700 text-white':'hover:bg-slate-700'}`}>
+            <Icon size={18}/>{label}
+          </button>
+        ))}
+      </nav>
+      <button onClick={logout} className="m-4 flex items-center gap-2 text-sm text-slate-300"><LogOut size={17}/> Sair</button>
+    </aside>
+    <main className="min-w-0 flex-1 p-4 md:p-8">
+      <header className="mb-7 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">{page==='dashboard'?'Visão geral':titleFor(page)}</h1>
+        <div className="relative">
+          <button onClick={()=>setShowAccount(s=>!s)} className="rounded-full bg-white px-3 py-2 text-sm shadow-sm">{user.name}</button>
+          {showAccount&&<AccountPanel user={user} onClose={()=>setShowAccount(false)} onUserUpdate={onUserUpdate}/>}
+        </div>
+      </header>
+      {error&&<div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
+      {page==='dashboard' ? (
+        <Dashboard 
+          metrics={metrics} 
+          onNavigate={setPage}
+          showAlert={showMaintenanceAlert}
+          onCloseAlert={() => setShowMaintenanceAlert(false)}
+        />
+      ) : (
+        <Module 
+          page={page} 
+          rows={rows} 
+          loading={loading} 
+          create={create} 
+          isAdmin={isMainAdmin} 
+          lookups={lookups} 
+          editingUser={editingUser} 
+          setEditingUser={setEditingUser} 
+          updateUser={updateUser} 
+          deleteUser={deleteUser} 
+          editingResource={editingResource} 
+          setEditingResource={setEditingResource} 
+          updateResource={updateResource} 
+          deleteResource={deleteResource} 
+          editingMovement={editingMovement} 
+          setEditingMovement={setEditingMovement} 
+          updateMovement={updateMovement} 
+          deleteMovement={deleteMovement}
+        />
+      )}
+    </main>
+  </div>
+ );
 }
 
 function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onUserUpdate:(u:any)=>void}){
@@ -269,17 +340,19 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=>void}){
+function Dashboard({
+  metrics, 
+  onNavigate, 
+  showAlert, 
+  onCloseAlert
+}:{
+  metrics:any, 
+  onNavigate:(page:string)=>void,
+  showAlert:boolean,
+  onCloseAlert:()=>void
+}){
   const alerts = metrics?.maintenance_alerts || [];
   const maintenanceCount = alerts.length;
-  const [showAlert, setShowAlert] = useState(false);
-
-  // Mostra o popup sempre que entrar e houver manutenções em andamento
-  useEffect(() => {
-    if (alerts.length > 0) {
-      setShowAlert(true);
-    }
-  }, [alerts.length]);
 
   const cards = [
     {
@@ -316,8 +389,8 @@ function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=
 
   return (
     <>
-      {/* POPUP DE AVISO */}
-      {showAlert && (
+      {/* POPUP DE AVISO - aparece só uma vez por sessão */}
+      {showAlert && alerts.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-4 flex items-center gap-3">
@@ -346,7 +419,7 @@ function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  setShowAlert(false);
+                  onCloseAlert();
                   onNavigate('maintenance');
                 }}
                 className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-white"
@@ -354,7 +427,7 @@ function Dashboard({metrics, onNavigate}:{metrics:any, onNavigate:(page:string)=
                 Ir para Manutenção
               </button>
               <button
-                onClick={() => setShowAlert(false)}
+                onClick={onCloseAlert}
                 className="flex-1 rounded-lg border border-slate-300 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Fechar
