@@ -251,7 +251,7 @@ export default function AppShell({user,onLogout,onUserUpdate}:{user:any,onLogout
     <aside className="w-full bg-navy text-slate-200 md:min-h-screen md:w-64">
       <div className="flex items-center gap-3 p-5 text-lg font-bold text-white">
         <img 
-          src="/icon.png" 
+          src="/icon2.png" 
           alt="Logo" 
           className="h-9 w-9 object-contain"/>LOGÍSTICAS BILL</div>
       <nav className="flex overflow-x-auto px-2 pb-3 md:block">
