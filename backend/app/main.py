@@ -410,65 +410,47 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     # ============================================================
 
     return {
-        # Veículos disponíveis
-        "available": count(
-            select(func.count())
-            .select_from(Vehicle)
-            .where(Vehicle.status == "Disponível")
-        ),
+    "available": count(
+        select(func.count())
+        .select_from(Vehicle)
+        .where(Vehicle.status == "Disponível")
+    ),
 
-        # IMPORTANTE:
-        # Agora "maintenance" representa os veículos que possuem
-        # manutenção com status "Em andamento".
-        "maintenance": vehicles_in_maintenance,
+    "maintenance": count(
+        select(func.count())
+        .select_from(Maintenance)
+        .where(Maintenance.status == "Em andamento")
+    ),
 
-        # Rotas de hoje
-        "routes_today": count(
-            select(func.count())
-            .select_from(Route)
-            .where(func.date(Route.scheduled_at) == today)
-        ),
+    "routes_today": count(
+        select(func.count())
+        .select_from(Route)
+        .where(func.date(Route.scheduled_at) == today)
+    ),
 
-        # Mantém compatibilidade caso o frontend utilize "on_route"
-        "on_route": count(
-            select(func.count())
-            .select_from(Route)
-            .where(func.date(Route.scheduled_at) == today)
-        ),
+    "products": count(
+        select(func.count()).select_from(Product)
+    ),
 
-        # Produtos cadastrados
-        "products": count(
-            select(func.count())
-            .select_from(Product)
-        ),
+    "low_stock": count(
+        select(func.count())
+        .select_from(Product)
+        .where(Product.quantity <= Product.minimum_stock)
+    ),
 
-        # Produtos abaixo ou no estoque mínimo
-        "low_stock": count(
-            select(func.count())
-            .select_from(Product)
-            .where(Product.quantity <= Product.minimum_stock)
-        ),
-
-        # Custo total de combustível
-        "fuel_cost": float(
-            count(
-                select(
-                    func.coalesce(
-                        func.sum(FuelRecord.total_value),
-                        0
-                    )
+    "fuel_cost": float(
+        count(
+            select(
+                func.coalesce(
+                    func.sum(FuelRecord.total_value),
+                    0
                 )
             )
-        ),
+        )
+    ),
 
-        # Manutenções
-        "maintenance_today": maintenance_today,
-        "maintenance_overdue": maintenance_overdue,
-        "maintenance_completed": maintenance_completed,
-
-        # Lista utilizada pelos avisos do Dashboard
-        "maintenance_alerts": maintenance_alerts,
-    }
+    "maintenance_alerts": maintenance_alerts,
+}
 
 
 @app.get("/stock/movements")
