@@ -607,29 +607,369 @@ function cleanRowForReport(r:any,lookups:any){
 }
 
 function exportExcelMulti(datasets:{cfg:any,rows:any[]}[]){
- const book=XLSX.utils.book_new();
- const today=new Date().toLocaleDateString('pt-BR');
- datasets.forEach(({cfg,rows})=>{
-  const sheet=XLSX.utils.aoa_to_sheet([['BILL LOGÍSTICA'],[`Relatório: ${cfg.label}`],[`Gerado em: ${today}`],[]]);
-  XLSX.utils.sheet_add_json(sheet,rows,{origin:-1});
-  XLSX.utils.book_append_sheet(book,sheet,cfg.label.slice(0,31));
- });
- XLSX.writeFile(book,`Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.xlsx`);
+  const book = XLSX.utils.book_new();
+
+  const today = new Date().toLocaleDateString('pt-BR');
+
+  const data:any[][] = [];
+
+  // Cabeçalho geral
+  data.push(['BILL LOGÍSTICA']);
+  data.push([`Relatório geral`]);
+  data.push([`Gerado em: ${today}`]);
+  data.push([]);
+
+  datasets.forEach(({cfg,rows}) => {
+
+    // Título do módulo
+    data.push([cfg.label]);
+
+    if(!rows.length){
+      data.push(['Nenhum registro encontrado.']);
+      data.push([]);
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+
+    // Cabeçalho da tabela
+    data.push(headers);
+
+    // Dados
+    rows.forEach(row => {
+      data.push(
+        headers.map(header => row[header] ?? '')
+      );
+    });
+
+    // Espaçamento entre módulos
+    data.push([]);
+    data.push([]);
+  });
+
+  const sheet = XLSX.utils.aoa_to_sheet(data);
+
+  /*
+   * Calcula automaticamente a largura das colunas
+   * baseada no maior conteúdo encontrado.
+   */
+  const columnCount = Math.max(
+    ...data.map(row => row.length)
+  );
+
+  const widths = Array.from(
+    {length: columnCount},
+    (_, colIndex) => {
+
+      let maxLength = 10;
+
+      data.forEach(row => {
+        const value = row[colIndex];
+
+        if(value !== undefined && value !== null){
+          const length = String(value).length;
+
+          if(length > maxLength){
+            maxLength = length;
+          }
+        }
+      });
+
+      // Evita colunas absurdamente largas
+      return {
+        wch: Math.min(
+          Math.max(maxLength + 2, 10),
+          35
+        )
+      };
+    }
+  );
+
+  sheet['!cols'] = widths;
+
+  /*
+   * Altura padrão das linhas.
+   */
+  sheet['!rows'] = data.map(() => ({
+    hpt: 18
+  }));
+
+  /*
+   * Congela o cabeçalho inicial.
+   */
+  sheet['!freeze'] = {
+    xSplit: 0,
+    ySplit: 4
+  };
+
+  XLSX.utils.book_append_sheet(
+    book,
+    sheet,
+    'Relatório'
+  );
+
+  XLSX.writeFile(
+    book,
+    `Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.xlsx`
+  );
 }
 
 function exportPdfMulti(datasets:{cfg:any,rows:any[]}[]){
- const doc=new jsPDF();
- const today=new Date().toLocaleDateString('pt-BR');
- datasets.forEach(({cfg,rows},i)=>{
-  if(i>0) doc.addPage();
-  doc.setFontSize(16); doc.text('BILL LOGÍSTICA',14,18);
-  doc.setFontSize(11); doc.text(`Relatório: ${cfg.label}`,14,26);
-  doc.text(`Gerado em: ${today}`,14,32);
-  const headers=rows.length?Object.keys(rows[0]):['Sem registros'];
-  const body=rows.map(r=>headers.map(h=>String(r[h]??'')));
-  autoTable(doc,{head:[headers],body,startY:38,styles:{fontSize:8}});
- });
- doc.save(`Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.pdf`);
+
+  /*
+   * A4 horizontal
+   */
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const today = new Date().toLocaleDateString('pt-BR');
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const margin = 7;
+
+  /*
+   * Cabeçalho
+   */
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(15);
+  doc.text(
+    'BILL LOGÍSTICA',
+    margin,
+    10
+  );
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+
+  doc.text(
+    'Relatório geral',
+    margin,
+    15
+  );
+
+  doc.text(
+    `Gerado em: ${today}`,
+    pageWidth - margin,
+    15,
+    {align:'right'}
+  );
+
+  let currentY = 20;
+
+  datasets.forEach(({cfg,rows}) => {
+
+    /*
+     * Título do módulo
+     */
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+
+    doc.text(
+      cfg.label,
+      margin,
+      currentY
+    );
+
+    currentY += 3;
+
+    /*
+     * Caso não existam registros
+     */
+    if(!rows.length){
+
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7);
+
+      doc.text(
+        'Nenhum registro encontrado.',
+        margin,
+        currentY + 4
+      );
+
+      currentY += 10;
+
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+
+    const body = rows.map(row =>
+      headers.map(header =>
+        String(row[header] ?? '')
+      )
+    );
+
+    /*
+     * Calcula o tamanho máximo de cada coluna.
+     */
+    const columnLengths = headers.map((header,index) => {
+
+      let max = String(header).length;
+
+      body.forEach(row => {
+
+        const value = String(
+          row[index] ?? ''
+        );
+
+        if(value.length > max){
+          max = value.length;
+        }
+
+      });
+
+      return max;
+    });
+
+    /*
+     * Largura disponível.
+     */
+    const availableWidth =
+      pageWidth - (margin * 2);
+
+    const totalLength =
+      columnLengths.reduce(
+        (sum,value) => sum + value,
+        0
+      );
+
+    /*
+     * Cria largura proporcional.
+     */
+    const columnStyles:any = {};
+
+    headers.forEach((_,index) => {
+
+      let width =
+        (columnLengths[index] / totalLength)
+        * availableWidth;
+
+      /*
+       * Impede colunas muito estreitas.
+       */
+      width = Math.max(width, 12);
+
+      /*
+       * Impede uma coluna de dominar a página.
+       */
+      width = Math.min(width, 55);
+
+      columnStyles[index] = {
+        cellWidth: width
+      };
+
+    });
+
+    /*
+     * Define tamanho da fonte conforme
+     * quantidade de colunas e registros.
+     */
+    let fontSize = 6.5;
+
+    if(headers.length >= 10){
+      fontSize = 5.5;
+    }
+
+    if(headers.length >= 14){
+      fontSize = 5;
+    }
+
+    /*
+     * Muitas linhas = fonte um pouco menor.
+     */
+    if(rows.length > 30){
+      fontSize -= 0.5;
+    }
+
+    if(rows.length > 60){
+      fontSize -= 0.5;
+    }
+
+    fontSize = Math.max(fontSize,4);
+
+    autoTable(doc,{
+      head:[headers],
+      body,
+
+      startY: currentY + 2,
+
+      margin:{
+        left:margin,
+        right:margin,
+        top:5,
+        bottom:5
+      },
+
+      tableWidth: availableWidth,
+
+      theme:'grid',
+
+      styles:{
+        font:'helvetica',
+        fontSize,
+        cellPadding:1,
+        overflow:'ellipsize',
+        valign:'middle',
+        lineWidth:0.1
+      },
+
+      headStyles:{
+        font:'helvetica',
+        fontStyle:'bold',
+        fontSize,
+        halign:'center',
+        valign:'middle',
+        cellPadding:1
+      },
+
+      bodyStyles:{
+        fontSize,
+        cellPadding:1,
+        valign:'middle'
+      },
+
+      columnStyles,
+
+      /*
+       * Não permite que uma tabela crie
+       * automaticamente uma nova página.
+       */
+      pageBreak:'avoid',
+
+      rowPageBreak:'avoid'
+    });
+
+    /*
+     * Descobre onde terminou a tabela.
+     */
+    const finalY =
+      (doc as any).lastAutoTable?.finalY ||
+      currentY + 10;
+
+    currentY = finalY + 5;
+
+  });
+
+  /*
+   * Rodapé
+   */
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(6);
+
+  doc.text(
+    'BILL LOGÍSTICA — Relatório gerado automaticamente',
+    margin,
+    pageHeight - 4
+  );
+
+  doc.save(
+    `Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.pdf`
+  );
 }
 
 function ReportsExport({lookups}:{lookups:any}){
