@@ -410,43 +410,15 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     # ============================================================
 
     return {
-    "available": count(
-        select(func.count())
-        .select_from(Vehicle)
-        .where(Vehicle.status == "Disponível")
-    ),
-
+    "available": count(select(func.count()).select_from(Vehicle).where(Vehicle.status=="Disponível")),
     "maintenance": vehicles_in_maintenance,
-
+    "maintenance_today": maintenance_today,
+    "maintenance_overdue": maintenance_overdue,
     "maintenance_completed": maintenance_completed,
-
-    "routes_today": count(
-        select(func.count())
-        .select_from(Route)
-        .where(func.date(Route.scheduled_at) == today)
-    ),
-
-    "products": count(
-        select(func.count()).select_from(Product)
-    ),
-
-    "low_stock": count(
-        select(func.count())
-        .select_from(Product)
-        .where(Product.quantity <= Product.minimum_stock)
-    ),
-
-    "fuel_cost": float(
-        count(
-            select(
-                func.coalesce(
-                    func.sum(FuelRecord.total_value),
-                    0
-                )
-            )
-        )
-    ),
-
+    "routes_today": count(select(func.count()).select_from(Route).where(func.date(Route.scheduled_at)==today)),
+    "products": count(select(func.count()).select_from(Product)),
+    "low_stock": count(select(func.count()).select_from(Product).where(Product.quantity<=Product.minimum_stock)),
+    "fuel_cost": float(count(select(func.coalesce(func.sum(FuelRecord.total_value),0)))),
     "maintenance_alerts": maintenance_alerts,
 }
 

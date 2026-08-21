@@ -313,274 +313,65 @@ function AccountPanel({user,onClose,onUserUpdate}:{user:any,onClose:()=>void,onU
  </div>
 }
 
-function Dashboard({
-  metrics,
-  onNavigate
-}:{
-  metrics:any,
-  onNavigate:(page:string)=>void
-}){
-
-  const [dismissed,setDismissed]=useState(true);
-
-  useEffect(()=>{
-    setDismissed(false);
-  },[metrics]);
-
-  function dismiss(){
-    localStorage.setItem('maint_alert_dismissed',new Date().toISOString().slice(0,10));
-    setDismissed(true);
-  }
-
-  const cards=[
-    {
-      label:'Veículos disponíveis',
-      value:metrics?.available,
-      icon:'🚛',
-      page:'vehicles'
-    },
-    {
-      label:'Em rota',
-      value:metrics?.on_route,
-      icon:'🗺️',
-      page:'vehicles'
-    },
-    {
-      label:'Em manutenção',
-      value:metrics?.maintenance,
-      icon:'🔧',
-      page:'maintenance'
-    },
-    {
-      label:'Manutenções concluídas',
-      value:metrics?.maintenance_completed,
-      icon:'✅',
-      page:'maintenance'
-    },
-    {
-      label:'Produtos em estoque',
-      value:metrics?.products,
-      icon:'📦',
-      page:'stock'
-    },
-    {
-      label:'Estoque baixo',
-      value:metrics?.low_stock,
-      icon:'⚠️',
-      page:'stock'
-    },
-    {
-      label:'Custo combustível',
-      value:metrics?.fuel_cost?.toLocaleString('pt-BR',{
-        style:'currency',
-        currency:'BRL'
-      }),
-      icon:'⛽',
-      page:'fuel'
-    }
-  ];
-
-  const hasAlerts=
-    !dismissed &&
-    (
-      (metrics?.maintenance_today>0) ||
-      (metrics?.maintenance_overdue>0)
-    );
-
-    {!dismissed &&
-  (
-    (metrics?.maintenance_today > 0) ||
-    (metrics?.maintenance_overdue > 0) ||
-    (metrics?.maintenance_alerts?.length > 0)
-  ) && (
-
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-
-    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-
-      <div className="mb-5 flex items-center gap-3">
-
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-2xl">
-          ⚠️
-        </div>
-
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">
-            Aviso de manutenção
-          </h2>
-
-          <p className="text-sm text-slate-500">
-            Existem manutenções que precisam da sua atenção.
-          </p>
-        </div>
-
-      </div>
-
-      <div className="space-y-3">
-
-        {metrics?.maintenance_today > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-
-            <div className="font-semibold text-amber-800">
-              📅 Manutenções de hoje
-            </div>
-
-            <div className="mt-1 text-sm text-amber-700">
-              Existem <strong>{metrics.maintenance_today}</strong>{' '}
-              manutenção(ões) agendada(s) para hoje.
-            </div>
-
-          </div>
-        )}
-
-        {metrics?.maintenance_overdue > 0 && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-
-            <div className="font-semibold text-red-800">
-              🚨 Manutenções atrasadas
-            </div>
-
-            <div className="mt-1 text-sm text-red-700">
-              Existem <strong>{metrics.maintenance_overdue}</strong>{' '}
-              manutenção(ões) atrasada(s).
-            </div>
-
-          </div>
-        )}
-
-        {metrics?.maintenance_alerts?.length > 0 && (
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-
-            <div className="font-semibold text-blue-800">
-              🔧 Manutenções em andamento
-            </div>
-
-            <div className="mt-1 text-sm text-blue-700">
-              Existem{' '}
-              <strong>{metrics.maintenance_alerts.length}</strong>{' '}
-              manutenção(ões) atualmente em andamento.
-            </div>
-
-          </div>
-        )}
-
-      </div>
-
-      <div className="mt-6 flex justify-end gap-3">
-
-        <button
-          onClick={dismiss}
-          className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
-        >
-          Fechar
-        </button>
-
-        <button
-          onClick={()=>{
-            dismiss();
-            onNavigate('maintenance');
-          }}
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          Ver manutenções
-        </button>
-
-      </div>
-
+function Dashboard({metrics,onNavigate}:{metrics:any,onNavigate:(page:string)=>void}){
+ const [dismissed,setDismissed]=useState(true);
+ useEffect(()=>{
+  const today=new Date().toISOString().slice(0,10);
+  setDismissed(localStorage.getItem('maint_alert_dismissed')===today);
+ },[]);
+ function dismiss(){
+  localStorage.setItem('maint_alert_dismissed',new Date().toISOString().slice(0,10));
+  setDismissed(true);
+ }
+ const cards=[
+  {label:'Veículos disponíveis',value:metrics?.available,icon:'🚛',page:'vehicles'},
+  {label:'Em manutenção',value:metrics?.maintenance,icon:'🔧',page:'maintenance'},
+  {label:'Manutenções concluídas',value:metrics?.maintenance_completed,icon:'✅',page:'maintenance'},
+  {label:'Produtos em estoque',value:metrics?.products,icon:'📦',page:'stock'},
+  {label:'Estoque baixo',value:metrics?.low_stock,icon:'⚠️',page:'stock'},
+  {label:'Custo combustível',value:metrics?.fuel_cost?.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),icon:'⛽',page:'fuel'},
+ ];
+ const hasAlerts=!dismissed&&((metrics?.maintenance_today>0)||(metrics?.maintenance_overdue>0)||(metrics?.maintenance_alerts?.length>0));
+ return <>
+  {hasAlerts&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+   <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+    <div className="mb-5 flex items-center gap-3">
+     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-2xl">⚠️</div>
+     <div>
+      <h2 className="text-lg font-bold text-slate-900">Aviso de manutenção</h2>
+      <p className="text-sm text-slate-500">Existem manutenções que precisam da sua atenção.</p>
+     </div>
     </div>
-
-  </div>
-)}
-
-  return <>
-
-    {hasAlerts&&
-      <section className="mb-6 space-y-2">
-
-        {metrics?.maintenance_overdue>0&&
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
-            <span className="flex items-center gap-3">
-              <AlertTriangle size={20}/>
-              <span>
-                <strong>{metrics.maintenance_overdue}</strong>
-                {' '}manutenção(ões) atrasada(s) — verifique a aba Manutenção.
-              </span>
-            </span>
-
-            <button
-              onClick={dismiss}
-              className="text-xs text-red-700 hover:underline"
-            >
-              Dispensar
-            </button>
-          </div>
-        }
-
-        {metrics?.maintenance_today>0&&
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
-            <span className="flex items-center gap-3">
-              <AlertTriangle size={20}/>
-              <span>
-                <strong>{metrics.maintenance_today}</strong>
-                {' '}manutenção(ões) agendada(s) para hoje.
-              </span>
-            </span>
-
-            <button
-              onClick={dismiss}
-              className="text-xs text-amber-700 hover:underline"
-            >
-              Dispensar
-            </button>
-          </div>
-        }
-
-      </section>
-    }
-
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-
-      {cards.map(card=>
-
-        <article
-          key={card.label}
-          onClick={()=>onNavigate(card.page)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={e=>{
-            if(e.key==='Enter'||e.key===' '){
-              e.preventDefault();
-              onNavigate(card.page);
-            }
-          }}
-          className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]"
-        >
-
-          <div className="text-xl">
-            {card.icon}
-          </div>
-
-          <div className="mt-3 text-2xl font-bold">
-            {card.value??'—'}
-          </div>
-
-          <div className="text-sm text-slate-500">
-            {card.label}
-          </div>
-
-          <div className="mt-2 text-xs font-medium text-cyan-600">
-            
-          </div>
-
-        </article>
-
-      )}
-
-    </section>
-
-    
-
-  </>;
+    <div className="space-y-3">
+     {metrics?.maintenance_today>0&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <div className="font-semibold text-amber-800">📅 Manutenções de hoje</div>
+      <div className="mt-1 text-sm text-amber-700">Existem <strong>{metrics.maintenance_today}</strong> manutenção(ões) agendada(s) para hoje.</div>
+     </div>}
+     {metrics?.maintenance_overdue>0&&<div className="rounded-xl border border-red-200 bg-red-50 p-4">
+      <div className="font-semibold text-red-800">🚨 Manutenções atrasadas</div>
+      <div className="mt-1 text-sm text-red-700">Existem <strong>{metrics.maintenance_overdue}</strong> manutenção(ões) atrasada(s).</div>
+     </div>}
+     {metrics?.maintenance_alerts?.length>0&&<div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <div className="font-semibold text-blue-800">🔧 Manutenções em andamento</div>
+      <div className="mt-1 text-sm text-blue-700">Existem <strong>{metrics.maintenance_alerts.length}</strong> manutenção(ões) atualmente em andamento.</div>
+     </div>}
+    </div>
+    <div className="mt-6 flex justify-end gap-3">
+     <button onClick={dismiss} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Fechar</button>
+     <button onClick={()=>{dismiss();onNavigate('maintenance')}} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">Ver manutenções</button>
+    </div>
+   </div>
+  </div>}
+  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+   {cards.map(card=>
+    <article key={card.label} onClick={()=>onNavigate(card.page)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onNavigate(card.page)}}} className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]">
+     <div className="text-xl">{card.icon}</div>
+     <div className="mt-3 text-2xl font-bold">{card.value??'—'}</div>
+     <div className="text-sm text-slate-500">{card.label}</div>
+    </article>
+   )}
+  </section>
+ </>;
 }
 
 const REPORT_SOURCES=[
