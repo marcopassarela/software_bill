@@ -885,6 +885,8 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
 
     fontSize = Math.max(fontSize,4);
 
+    
+
     autoTable(doc,{
   head:[headers],
   body,
