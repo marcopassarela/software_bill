@@ -886,65 +886,70 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
     fontSize = Math.max(fontSize,4);
 
     autoTable(doc,{
-      head:[headers],
-      body,
+  head:[headers],
+  body,
 
-      startY: currentY + 2,
+  startY: currentY + 2,
 
-      margin:{
-        left:margin,
-        right:margin,
-        top:5,
-        bottom:5
-      },
+  margin:{
+    left:margin,
+    right:margin,
+    top:5,
+    bottom:5
+  },
 
-      tableWidth: availableWidth,
+  // Nunca ultrapassa a largura disponível da folha
+  tableWidth:availableWidth,
 
-      theme:'grid',
+  // Mantém a tabela dentro da página
+  horizontalPageBreak:false,
 
-      styles:{
-        font:'helvetica',
-        fontSize,
-        cellPadding:1,
-        overflow:'ellipsize',
-        valign:'middle',
-        lineWidth:0.1
-      },
+  theme:'grid',
 
-      headStyles:{
-        font:'helvetica',
-        fontStyle:'bold',
-        fontSize,
-        halign:'center',
-        valign:'middle',
-        cellPadding:1
-      },
+  styles:{
+    font:'helvetica',
+    fontSize,
+    cellPadding:1,
+    overflow:'ellipsize',
+    valign:'middle',
+    lineWidth:0.1,
+    lineColor:[80,80,80],
 
-      bodyStyles:{
-        fontSize,
-        cellPadding:1,
-        valign:'middle'
-      },
+    // Garante que o conteúdo fique dentro da célula
+    minCellHeight:4
+  },
 
-      columnStyles,
+  headStyles:{
+    font:'helvetica',
+    fontStyle:'bold',
+    fontSize,
+    halign:'center',
+    valign:'middle',
+    cellPadding:1,
+    lineWidth:0.1,
+    lineColor:[50,50,50]
+  },
 
-      /*
-       * Não permite que uma tabela crie
-       * automaticamente uma nova página.
-       */
-      pageBreak:'avoid',
+  bodyStyles:{
+    fontSize,
+    cellPadding:1,
+    valign:'middle',
+    lineWidth:0.1,
+    lineColor:[100,100,100]
+  },
 
-      rowPageBreak:'avoid'
-    });
+  columnStyles,
 
-    /*
-     * Descobre onde terminou a tabela.
-     */
-    const finalY =
-      (doc as any).lastAutoTable?.finalY ||
-      currentY + 10;
+  // Não cria páginas adicionais automaticamente
+  pageBreak:'avoid',
+  rowPageBreak:'avoid'
+});
 
-    currentY = finalY + 5;
+const finalY =
+  (doc as any).lastAutoTable?.finalY ||
+  currentY + 10;
+
+currentY = finalY + 5;
 
   });
 
