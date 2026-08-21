@@ -832,7 +832,7 @@ def create_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     w = ScheduleWeek(start_date=body.start_date, label=body.label, status=WeekStatus.ATIVA)
     db.add(w)
     db.flush()
@@ -851,7 +851,7 @@ def archive_schedule_week(
     """Faz o 'backup' da semana: arquiva (não apaga, fica consultável no histórico).
     Depois de arquivar, chame POST /schedule/weeks para abrir a semana nova
     (mantendo sempre 3 semanas ativas)."""
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     w = db.get(ScheduleWeek, week_id)
     if not w:
         raise HTTPException(404, "Semana não encontrada")
@@ -869,7 +869,7 @@ def create_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     if not db.get(ScheduleWeek, body.week_id):
         raise HTTPException(404, "Semana não encontrada")
     rs = RouteSlot(**body.model_dump())
@@ -888,7 +888,7 @@ def update_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     rs = db.get(RouteSlot, slot_id)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
@@ -906,7 +906,7 @@ def delete_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     rs = db.get(RouteSlot, slot_id)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
@@ -923,7 +923,7 @@ def create_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     rs = db.get(RouteSlot, body.route_slot_id)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
@@ -956,7 +956,7 @@ def update_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     entry = db.get(ScheduleEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Cliente não encontrado")
@@ -975,7 +975,7 @@ def delete_schedule_entry(
     db: Session = Depends(get_db),
 ):
     """Ao excluir, reordena as posições dos clientes restantes e libera a vaga."""
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     entry = db.get(ScheduleEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Cliente não encontrado")
@@ -1002,7 +1002,7 @@ def create_schedule_extra(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     if not db.get(ScheduleEntry, body.entry_id):
         raise HTTPException(404, "Cliente não encontrado")
     extra = ScheduleExtra(**body.model_dump())
@@ -1020,7 +1020,7 @@ def delete_schedule_extra(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule")(user)
+    require("schedule", write=True)(user)
     extra = db.get(ScheduleExtra, extra_id)
     if not extra:
         raise HTTPException(404, "Item não encontrado")
