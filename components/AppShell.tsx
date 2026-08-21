@@ -994,10 +994,6 @@ function ReportsExport({lookups}:{lookups:any}){
   <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border p-3 sm:grid-cols-3">
    {REPORT_SOURCES.map(s=><label key={s.value} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={selected.includes(s.value)} onChange={()=>toggle(s.value)} className="h-4 w-4"/>{s.label}</label>)}
   </div>
-  <div className="mb-4 flex items-center gap-4">
-   <label className="flex items-center gap-2 text-xs"><input type="radio" checked={format==='xlsx'} onChange={()=>setFormat('xlsx')}/> Excel (.xlsx)</label>
-   <label className="flex items-center gap-2 text-xs"><input type="radio" checked={format==='pdf'} onChange={()=>setFormat('pdf')}/> PDF</label>
-  </div>
   <div className="mb-4 flex flex-wrap items-center gap-4">
 
   <label className="flex items-center gap-2 text-xs">
