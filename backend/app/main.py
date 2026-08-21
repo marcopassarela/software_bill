@@ -19,14 +19,25 @@ app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded,
-    lambda r, e: Response(
-        '{"detail":"Muitas tentativas. Aguarde."}',
-        429,
+
+
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    origin = request.headers.get("origin")
+    headers = {"Content-Type": "application/json"}
+    allowed = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if origin and origin in allowed:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return Response(
+        content='{"detail":"Muitas tentativas. Aguarde."}',
+        status_code=429,
         media_type="application/json",
-    ),
-)
+        headers=headers,
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -38,7 +49,23 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
+    import traceback
+    traceback.print_exc()  # mostra o erro real no terminal
+
+    origin = request.headers.get("origin")
+    headers = {}
+    allowed = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if origin and origin in allowed:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erro interno: {str(exc)}"},
+        headers=headers,
+    )
 
 
 def update_maintenance_status(db: Session):
@@ -354,18 +381,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     # MANUTENÇÕES
     # ============================================================
 
-    # Quantidade de veículos que possuem pelo menos uma manutenção
-    # atualmente em "Em andamento".
-    #
-    # DISTINCT evita contar o mesmo caminhão duas vezes caso ele
-    # possua mais de uma manutenção em andamento.
     vehicles_in_maintenance = count(
         select(func.count(func.distinct(Maintenance.vehicle_id)))
         .select_from(Maintenance)
         .where(Maintenance.status == "Em andamento")
     )
 
-    # Manutenções agendadas para hoje
     maintenance_today = count(
         select(func.count())
         .select_from(Maintenance)
@@ -375,9 +396,6 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         )
     )
 
-    # Manutenções atrasadas:
-    # - data anterior a hoje
-    # - ainda não concluídas
     maintenance_overdue = count(
         select(func.count())
         .select_from(Maintenance)
@@ -387,14 +405,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         )
     )
 
-    # Manutenções concluídas
     maintenance_completed = count(
         select(func.count())
         .select_from(Maintenance)
         .where(Maintenance.status == "Concluído")
     )
 
-    # Lista das manutenções em andamento para o alerta
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
@@ -410,45 +426,17 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     # ============================================================
 
     return {
-    "available": count(
-        select(func.count())
-        .select_from(Vehicle)
-        .where(Vehicle.status == "Disponível")
-    ),
-
-    "maintenance": vehicles_in_maintenance,
-
-    "maintenance_completed": maintenance_completed,
-
-    "routes_today": count(
-        select(func.count())
-        .select_from(Route)
-        .where(func.date(Route.scheduled_at) == today)
-    ),
-
-    "products": count(
-        select(func.count()).select_from(Product)
-    ),
-
-    "low_stock": count(
-        select(func.count())
-        .select_from(Product)
-        .where(Product.quantity <= Product.minimum_stock)
-    ),
-
-    "fuel_cost": float(
-        count(
-            select(
-                func.coalesce(
-                    func.sum(FuelRecord.total_value),
-                    0
-                )
-            )
-        )
-    ),
-
-    "maintenance_alerts": maintenance_alerts,
-}
+        "available": count(select(func.count()).select_from(Vehicle).where(Vehicle.status == "Disponível")),
+        "maintenance": vehicles_in_maintenance,
+        "maintenance_today": maintenance_today,
+        "maintenance_overdue": maintenance_overdue,
+        "maintenance_completed": maintenance_completed,
+        "routes_today": count(select(func.count()).select_from(Route).where(func.date(Route.scheduled_at) == today)),
+        "products": count(select(func.count()).select_from(Product)),
+        "low_stock": count(select(func.count()).select_from(Product).where(Product.quantity <= Product.minimum_stock)),
+        "fuel_cost": float(count(select(func.coalesce(func.sum(FuelRecord.total_value), 0)))),
+        "maintenance_alerts": maintenance_alerts,
+    }
 
 
 @app.get("/stock/movements")
