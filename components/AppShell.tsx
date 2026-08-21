@@ -720,7 +720,7 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
    * A4 horizontal
    */
   const doc = new jsPDF({
-    orientation: 'portrait',
+    orientation: 'landscape',
     unit: 'mm',
     format: 'a4'
   });
@@ -886,56 +886,31 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
     fontSize = Math.max(fontSize,4);
 
     autoTable(doc,{
-      head:[headers],
-      body,
+    head:[headers],
+    body,
+    startY:38,
 
-      startY: currentY + 2,
+    tableWidth:'auto',
 
-      margin:{
-        left:margin,
-        right:margin,
-        top:5,
-        bottom:5
-      },
+    styles:{
+      fontSize:fontSize,
+      cellPadding:1.5,
+      overflow:'linebreak',
+      valign:'middle'
+    },
 
-      tableWidth: availableWidth,
+    headStyles:{
+      fontSize:fontSize,
+      fontStyle:'bold'
+    },
 
-      theme:'grid',
-
-      styles:{
-        font:'helvetica',
-        fontSize,
-        cellPadding:1,
-        overflow:'ellipsize',
-        valign:'middle',
-        lineWidth:0.1
-      },
-
-      headStyles:{
-        font:'helvetica',
-        fontStyle:'bold',
-        fontSize,
-        halign:'center',
-        valign:'middle',
-        cellPadding:1
-      },
-
-      bodyStyles:{
-        fontSize,
-        cellPadding:1,
-        valign:'middle'
-      },
-
-      columnStyles,
-
-      /*
-       * Não permite que uma tabela crie
-       * automaticamente uma nova página.
-       */
-      pageBreak:'avoid',
-
-      rowPageBreak:'avoid'
-    });
+    margin:{
+      top:10,
+      right:8,
+      bottom:10,
+      left:8
+    }
+  });
 
     /*
      * Descobre onde terminou a tabela.
