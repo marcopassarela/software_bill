@@ -578,16 +578,7 @@ function Dashboard({
 
     </section>
 
-    <section className="mt-6 rounded-xl bg-white p-6 shadow-sm">
-      <h2 className="font-semibold">
-        Acompanhamento operacional
-      </h2>
-
-      <p className="mt-2 text-sm text-slate-500">
-        Os indicadores são calculados diretamente no banco PostgreSQL.
-        Cadastre veículos, produtos e abastecimentos para compor a visão gerencial.
-      </p>
-    </section>
+    
 
   </>;
 }
