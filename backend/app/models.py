@@ -1,7 +1,8 @@
 import enum
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -213,3 +214,83 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text)
+
+
+# ============================================================
+# MÓDULO DE AGENDAMENTO (instalações / postes)
+# ============================================================
+
+
+class WeekStatus(str, enum.Enum):
+    ATIVA = "Ativa"
+    ARQUIVADA = "Arquivada"
+
+
+class EntryStatus(str, enum.Enum):
+    NORMAL = "Normal"
+    REAGENDAMENTO = "Reagendamento"
+    FECHADO = "Fechado"
+    PENDENTE = "Pendente"
+
+
+class ScheduleWeek(Base):
+    """Uma das 3 semanas ativas da agenda de instalações. Ao arquivar vira backup consultável."""
+    __tablename__ = "schedule_weeks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    start_date: Mapped[date] = mapped_column(Date)  # segunda-feira da semana
+    label: Mapped[str | None] = mapped_column(String(60))  # ex: "Semana 24/08 a 28/08"
+    status: Mapped[WeekStatus] = mapped_column(Enum(WeekStatus), default=WeekStatus.ATIVA)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RouteSlot(Base):
+    """Uma rota de um dia específico, ex: '06 - (CR) - SXN-6G16 (GUILHERME | IVAN)'."""
+    __tablename__ = "route_slots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    week_id: Mapped[int] = mapped_column(ForeignKey("schedule_weeks.id", ondelete="CASCADE"))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    region_code: Mapped[str] = mapped_column(String(10))  # ex: "CR", "IB"
+    route_label: Mapped[str | None] = mapped_column(String(60))  # ex: "SXN-6G16"
+    total_slots: Mapped[int] = mapped_column(Integer, default=0)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
+    second_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class ScheduleEntry(Base):
+    """Um cliente agendado numa vaga da rota — consome 1 vaga."""
+    __tablename__ = "schedule_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_slot_id: Mapped[int] = mapped_column(ForeignKey("route_slots.id", ondelete="CASCADE"))
+    position: Mapped[int] = mapped_column(Integer)  # 01°, 02°, ...
+    service_description: Mapped[str] = mapped_column(String(200))  # "1 BI 7MT AE"
+    client_name: Mapped[str] = mapped_column(String(120))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    location_link: Mapped[str | None] = mapped_column(String(300))
+    no_comanda: Mapped[bool] = mapped_column(Boolean, default=False)
+    cooperativa: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
+    observation: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ScheduleExtra(Base):
+    """Item adicional dentro do mesmo cliente (ex: cavalete de água).
+    NÃO desconta vaga nova — é um sub-item de um ScheduleEntry."""
+    __tablename__ = "schedule_extras"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("schedule_entries.id", ondelete="CASCADE"))
+    description: Mapped[str] = mapped_column(String(200))  # "CAVALETE DE AGUA"
+    observation: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)

@@ -354,18 +354,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     # MANUTENÇÕES
     # ============================================================
 
-    # Quantidade de veículos que possuem pelo menos uma manutenção
-    # atualmente em "Em andamento".
-    #
-    # DISTINCT evita contar o mesmo caminhão duas vezes caso ele
-    # possua mais de uma manutenção em andamento.
     vehicles_in_maintenance = count(
         select(func.count(func.distinct(Maintenance.vehicle_id)))
         .select_from(Maintenance)
         .where(Maintenance.status == "Em andamento")
     )
 
-    # Manutenções agendadas para hoje
     maintenance_today = count(
         select(func.count())
         .select_from(Maintenance)
@@ -375,9 +369,6 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         )
     )
 
-    # Manutenções atrasadas:
-    # - data anterior a hoje
-    # - ainda não concluídas
     maintenance_overdue = count(
         select(func.count())
         .select_from(Maintenance)
@@ -387,14 +378,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
         )
     )
 
-    # Manutenções concluídas
     maintenance_completed = count(
         select(func.count())
         .select_from(Maintenance)
         .where(Maintenance.status == "Concluído")
     )
 
-    # Lista das manutenções em andamento para o alerta
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
@@ -643,7 +632,6 @@ def list_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
 
-    # Atualiza status das manutenções ao listar
     if resource == "maintenance":
         update_maintenance_status(db)
 
@@ -719,3 +707,356 @@ def delete_resource(
     audit(db, user, "EXCLUSÃO", module, record_id, request)
     db.commit()
     return {"ok": True}
+
+
+# ============================================================
+# MÓDULO DE AGENDAMENTO (instalações / postes)
+# ============================================================
+
+
+class RouteSlotCreate(BaseModel):
+    week_id: int
+    date: date
+    region_code: str = Field(min_length=1, max_length=10)
+    route_label: str | None = None
+    total_slots: int = Field(ge=0)
+    driver_id: int | None = None
+    second_driver_id: int | None = None
+    vehicle_id: int | None = None
+    notes: str | None = None
+
+
+class RouteSlotUpdate(BaseModel):
+    region_code: str | None = None
+    route_label: str | None = None
+    total_slots: int | None = Field(default=None, ge=0)
+    driver_id: int | None = None
+    second_driver_id: int | None = None
+    vehicle_id: int | None = None
+    closed: bool | None = None
+    notes: str | None = None
+
+
+class ScheduleEntryCreate(BaseModel):
+    route_slot_id: int
+    service_description: str = Field(min_length=1, max_length=200)
+    client_name: str = Field(min_length=1, max_length=120)
+    phone: str | None = None
+    location_link: str | None = None
+    no_comanda: bool = False
+    cooperativa: bool = False
+    status: str = "Normal"
+    observation: str | None = None
+
+
+class ScheduleEntryUpdate(BaseModel):
+    service_description: str | None = None
+    client_name: str | None = None
+    phone: str | None = None
+    location_link: str | None = None
+    no_comanda: bool | None = None
+    cooperativa: bool | None = None
+    status: str | None = None
+    observation: str | None = None
+
+
+class ScheduleExtraCreate(BaseModel):
+    entry_id: int
+    description: str = Field(min_length=1, max_length=200)
+    observation: str | None = None
+    status: str = "Normal"
+
+
+class ScheduleWeekCreate(BaseModel):
+    start_date: date
+    label: str | None = None
+
+
+def serialize_extra(x: ScheduleExtra):
+    return serialize(x)
+
+
+def serialize_entry(x: ScheduleEntry, db: Session):
+    d = serialize(x)
+    extras = db.scalars(
+        select(ScheduleExtra).where(ScheduleExtra.entry_id == x.id)
+    ).all()
+    d["extras"] = [serialize_extra(e) for e in extras]
+    return d
+
+
+def serialize_route_slot(x: RouteSlot, db: Session):
+    d = serialize(x)
+    entries = db.scalars(
+        select(ScheduleEntry)
+        .where(ScheduleEntry.route_slot_id == x.id)
+        .order_by(ScheduleEntry.position)
+    ).all()
+    d["entries"] = [serialize_entry(e, db) for e in entries]
+    d["slots_used"] = len(entries)
+    d["slots_available"] = max(x.total_slots - len(entries), 0)
+    driver = db.get(Driver, x.driver_id) if x.driver_id else None
+    second_driver = db.get(Driver, x.second_driver_id) if x.second_driver_id else None
+    d["driver"] = serialize(driver) if driver else None
+    d["second_driver"] = serialize(second_driver) if second_driver else None
+    return d
+
+
+def serialize_week(x: ScheduleWeek, db: Session):
+    slots = db.scalars(
+        select(RouteSlot).where(RouteSlot.week_id == x.id).order_by(RouteSlot.date)
+    ).all()
+    d = serialize(x)
+    d["route_slots"] = [serialize_route_slot(s, db) for s in slots]
+    return d
+
+
+@app.get("/schedule/weeks")
+def list_schedule_weeks(
+    include_archived: bool = False,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    q = select(ScheduleWeek).order_by(ScheduleWeek.start_date)
+    if not include_archived:
+        q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
+    weeks = db.scalars(q).all()
+    return [serialize_week(w, db) for w in weeks]
+
+
+@app.post("/schedule/weeks")
+def create_schedule_week(
+    body: ScheduleWeekCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    w = ScheduleWeek(start_date=body.start_date, label=body.label, status=WeekStatus.ATIVA)
+    db.add(w)
+    db.flush()
+    audit(db, user, "CRIAÇÃO_SEMANA", "schedule", w.id, request)
+    db.commit()
+    return serialize_week(w, db)
+
+
+@app.post("/schedule/weeks/{week_id}/archive")
+def archive_schedule_week(
+    week_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Faz o 'backup' da semana: arquiva (não apaga, fica consultável no histórico).
+    Depois de arquivar, chame POST /schedule/weeks para abrir a semana nova
+    (mantendo sempre 3 semanas ativas)."""
+    require("schedule")(user)
+    w = db.get(ScheduleWeek, week_id)
+    if not w:
+        raise HTTPException(404, "Semana não encontrada")
+    w.status = WeekStatus.ARQUIVADA
+    w.archived_at = func.now()
+    audit(db, user, "ARQUIVAMENTO_SEMANA", "schedule", week_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/schedule/route-slots")
+def create_route_slot(
+    body: RouteSlotCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    if not db.get(ScheduleWeek, body.week_id):
+        raise HTTPException(404, "Semana não encontrada")
+    rs = RouteSlot(**body.model_dump())
+    db.add(rs)
+    db.flush()
+    audit(db, user, "CRIAÇÃO", "schedule", rs.id, request)
+    db.commit()
+    return serialize_route_slot(rs, db)
+
+
+@app.patch("/schedule/route-slots/{slot_id}")
+def update_route_slot(
+    slot_id: int,
+    body: RouteSlotUpdate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    rs = db.get(RouteSlot, slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(rs, k, v)
+    audit(db, user, "ALTERAÇÃO", "schedule", slot_id, request)
+    db.commit()
+    return serialize_route_slot(rs, db)
+
+
+@app.delete("/schedule/route-slots/{slot_id}")
+def delete_route_slot(
+    slot_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    rs = db.get(RouteSlot, slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+    db.delete(rs)
+    audit(db, user, "EXCLUSÃO", "schedule", slot_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/schedule/entries")
+def create_schedule_entry(
+    body: ScheduleEntryCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    rs = db.get(RouteSlot, body.route_slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+    if rs.closed:
+        raise HTTPException(409, "Esta rota está fechada para novos clientes")
+    current_count = db.scalar(
+        select(func.count()).select_from(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id == rs.id
+        )
+    ) or 0
+    if rs.total_slots and current_count >= rs.total_slots:
+        raise HTTPException(409, "Não há vagas disponíveis nesta rota")
+    entry = ScheduleEntry(
+        **body.model_dump(exclude={"route_slot_id"}),
+        route_slot_id=rs.id,
+        position=current_count + 1,
+    )
+    db.add(entry)
+    db.flush()
+    audit(db, user, "CADASTRO", "schedule", entry.id, request)
+    db.commit()
+    return serialize_entry(entry, db)
+
+
+@app.patch("/schedule/entries/{entry_id}")
+def update_schedule_entry(
+    entry_id: int,
+    body: ScheduleEntryUpdate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    entry = db.get(ScheduleEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Cliente não encontrado")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(entry, k, v)
+    audit(db, user, "ALTERAÇÃO", "schedule", entry_id, request)
+    db.commit()
+    return serialize_entry(entry, db)
+
+
+@app.delete("/schedule/entries/{entry_id}")
+def delete_schedule_entry(
+    entry_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Ao excluir, reordena as posições dos clientes restantes e libera a vaga."""
+    require("schedule")(user)
+    entry = db.get(ScheduleEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Cliente não encontrado")
+    slot_id, removed_pos = entry.route_slot_id, entry.position
+    db.delete(entry)
+    db.flush()
+    later = db.scalars(
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id == slot_id,
+            ScheduleEntry.position > removed_pos,
+        )
+    ).all()
+    for e in later:
+        e.position -= 1
+    audit(db, user, "EXCLUSÃO", "schedule", entry_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/schedule/extras")
+def create_schedule_extra(
+    body: ScheduleExtraCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    if not db.get(ScheduleEntry, body.entry_id):
+        raise HTTPException(404, "Cliente não encontrado")
+    extra = ScheduleExtra(**body.model_dump())
+    db.add(extra)
+    db.flush()
+    audit(db, user, "CADASTRO", "schedule", extra.id, request)
+    db.commit()
+    return serialize_extra(extra)
+
+
+@app.delete("/schedule/extras/{extra_id}")
+def delete_schedule_extra(
+    extra_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    extra = db.get(ScheduleExtra, extra_id)
+    if not extra:
+        raise HTTPException(404, "Item não encontrado")
+    db.delete(extra)
+    audit(db, user, "EXCLUSÃO", "schedule", extra_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/schedule/route-slots/{slot_id}/export")
+def export_route_slot(
+    slot_id: int,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule")(user)
+    rs = db.get(RouteSlot, slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+    entries = db.scalars(
+        select(ScheduleEntry)
+        .where(ScheduleEntry.route_slot_id == rs.id)
+        .order_by(ScheduleEntry.position)
+    ).all()
+    lines = []
+    for e in entries:
+        lines.append(f"*{e.position:02d}°* - {e.client_name.upper()}")
+        if e.location_link:
+            lines.append(f"localização: {e.location_link}")
+        if e.phone:
+            lines.append(f"tel: {e.phone}")
+        extras = db.scalars(
+            select(ScheduleExtra).where(ScheduleExtra.entry_id == e.id)
+        ).all()
+        for extra in extras:
+            lines.append(f"+ {extra.description}")
+        lines.append("")
+    text = "\n".join(lines).strip()
+    return Response(content=text, media_type="text/plain; charset=utf-8")
