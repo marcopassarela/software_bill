@@ -714,7 +714,7 @@ function exportExcelMulti(datasets:{cfg:any,rows:any[]}[]){
   );
 }
 
-function exportPdfMulti(datasets:{cfg:any,rows:any[]}[]){
+function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'medium'|'large'){
 
   /*
    * A4 horizontal
@@ -871,23 +871,16 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[]){
      */
     let fontSize = 6.5;
 
-    if(headers.length >= 10){
-      fontSize = 5.5;
-    }
-
-    if(headers.length >= 14){
+    if(fontSizeOption === 'small'){
       fontSize = 5;
     }
 
-    /*
-     * Muitas linhas = fonte um pouco menor.
-     */
-    if(rows.length > 30){
-      fontSize -= 0.5;
+    if(fontSizeOption === 'medium'){
+      fontSize = 6.5;
     }
 
-    if(rows.length > 60){
-      fontSize -= 0.5;
+    if(fontSizeOption === 'large'){
+      fontSize = 8;
     }
 
     fontSize = Math.max(fontSize,4);
@@ -976,6 +969,7 @@ function ReportsExport({lookups}:{lookups:any}){
  const [selected,setSelected]=useState<string[]>([]);
  const [format,setFormat]=useState<'xlsx'|'pdf'>('xlsx');
  const [exporting,setExporting]=useState(false);
+ const [fontSize,setFontSize]=useState<'small'|'medium'|'large'>('medium');
  const [err,setErr]=useState('');
  function toggle(v:string){setSelected(s=>s.includes(v)?s.filter(x=>x!==v):[...s,v])}
  async function run(){
@@ -987,7 +981,11 @@ function ReportsExport({lookups}:{lookups:any}){
     const rows=await request(cfg.path) as any[];
     return {cfg,rows:rows.map(r=>cleanRowForReport(r,lookups))};
    }));
-   if(format==='xlsx') exportExcelMulti(datasets); else exportPdfMulti(datasets);
+   if(format==='xlsx') {
+  exportExcelMulti(datasets);
+} else {
+  exportPdfMulti(datasets, fontSize);
+}
   }catch(e:any){setErr(e.message)}finally{setExporting(false)}
  }
  return <div className="p-5 text-sm text-slate-600">
@@ -1000,6 +998,73 @@ function ReportsExport({lookups}:{lookups:any}){
    <label className="flex items-center gap-2 text-xs"><input type="radio" checked={format==='xlsx'} onChange={()=>setFormat('xlsx')}/> Excel (.xlsx)</label>
    <label className="flex items-center gap-2 text-xs"><input type="radio" checked={format==='pdf'} onChange={()=>setFormat('pdf')}/> PDF</label>
   </div>
+  <div className="mb-4 flex flex-wrap items-center gap-4">
+
+  <label className="flex items-center gap-2 text-xs">
+    <input
+      type="radio"
+      checked={format==='xlsx'}
+      onChange={()=>setFormat('xlsx')}
+    />
+    Excel (.xlsx)
+  </label>
+
+  <label className="flex items-center gap-2 text-xs">
+    <input
+      type="radio"
+      checked={format==='pdf'}
+      onChange={()=>setFormat('pdf')}
+    />
+    PDF
+  </label>
+
+</div>
+
+<div className="mb-4">
+  <label className="mb-2 block text-xs font-medium text-slate-600">
+    Tamanho da fonte do PDF
+  </label>
+
+  <div className="flex flex-wrap gap-2">
+
+    <button
+      type="button"
+      onClick={()=>setFontSize('small')}
+      className={`rounded-lg border px-4 py-2 text-xs ${
+        fontSize==='small'
+          ? 'border-brand bg-brand text-white'
+          : 'bg-white text-slate-600'
+      }`}
+    >
+      Pequena
+    </button>
+
+    <button
+      type="button"
+      onClick={()=>setFontSize('medium')}
+      className={`rounded-lg border px-4 py-2 text-sm ${
+        fontSize==='medium'
+          ? 'border-brand bg-brand text-white'
+          : 'bg-white text-slate-600'
+      }`}
+    >
+      Média
+    </button>
+
+    <button
+      type="button"
+      onClick={()=>setFontSize('large')}
+      className={`rounded-lg border px-4 py-2 text-base ${
+        fontSize==='large'
+          ? 'border-brand bg-brand text-white'
+          : 'bg-white text-slate-600'
+      }`}
+    >
+      Grande
+    </button>
+
+  </div>
+</div>
   <button onClick={run} disabled={exporting} className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-60">{exporting?'Gerando…':'Gerar relatório'}</button>
  </div>;
 }
