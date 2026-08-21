@@ -720,7 +720,7 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
    * A4 horizontal
    */
   const doc = new jsPDF({
-    orientation: 'landscape',
+    orientation: 'portrait',
     unit: 'mm',
     format: 'a4'
   });
