@@ -714,11 +714,11 @@ function exportExcelMulti(datasets:{cfg:any,rows:any[]}[]){
   );
 }
 
-function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'medium'|'large'){
-
-  /*
-   * A4 horizontal
-   */
+function exportPdfMulti(
+  datasets: { cfg: any; rows: any[] }[],
+  fontSizeOption: 'small' | 'medium' | 'large'
+) {
+  // A4 horizontal
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -730,20 +730,26 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
+  // Margem segura para garantir que nada saia da folha
   const margin = 7;
 
-  /*
-   * Cabeçalho
-   */
-  doc.setFont('helvetica','bold');
+  // Largura máxima utilizável da folha
+  const availableWidth = pageWidth - (margin * 2);
+
+  // =========================
+  // CABEÇALHO
+  // =========================
+
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
+
   doc.text(
     'BILL LOGÍSTICA',
     margin,
     10
   );
 
-  doc.setFont('helvetica','normal');
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
 
   doc.text(
@@ -756,17 +762,19 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
     `Gerado em: ${today}`,
     pageWidth - margin,
     15,
-    {align:'right'}
+    { align: 'right' }
   );
 
   let currentY = 20;
 
-  datasets.forEach(({cfg,rows}) => {
+  // =========================
+  // DATASETS
+  // =========================
 
-    /*
-     * Título do módulo
-     */
-    doc.setFont('helvetica','bold');
+  datasets.forEach(({ cfg, rows }) => {
+
+    // Título do módulo
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
 
     doc.text(
@@ -777,12 +785,12 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
 
     currentY += 3;
 
-    /*
-     * Caso não existam registros
-     */
-    if(!rows.length){
+    // =========================
+    // SEM REGISTROS
+    // =========================
 
-      doc.setFont('helvetica','normal');
+    if (!rows.length) {
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
 
       doc.text(
@@ -796,6 +804,10 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
       return;
     }
 
+    // =========================
+    // HEADERS E BODY
+    // =========================
+
     const headers = Object.keys(rows[0]);
 
     const body = rows.map(row =>
@@ -804,10 +816,11 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
       )
     );
 
-    /*
-     * Calcula o tamanho máximo de cada coluna.
-     */
-    const columnLengths = headers.map((header,index) => {
+    // =========================
+    // TAMANHO DAS COLUNAS
+    // =========================
+
+    const columnLengths = headers.map((header, index) => {
 
       let max = String(header).length;
 
@@ -817,7 +830,7 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
           row[index] ?? ''
         );
 
-        if(value.length > max){
+        if (value.length > max) {
           max = value.length;
         }
 
@@ -826,139 +839,194 @@ function exportPdfMulti(datasets:{cfg:any,rows:any[]}[],fontSizeOption:'small'|'
       return max;
     });
 
-    /*
-     * Largura disponível.
-     */
-    const availableWidth =
-      pageWidth - (margin * 2);
-
     const totalLength =
       columnLengths.reduce(
-        (sum,value) => sum + value,
+        (sum, value) => sum + value,
         0
       );
 
-    /*
-     * Cria largura proporcional.
-     */
-    const columnStyles:any = {};
+    // =========================
+    // LARGURA DAS COLUNAS
+    // =========================
 
-    headers.forEach((_,index) => {
+    const columnStyles: any = {};
+
+    headers.forEach((_, index) => {
 
       let width =
-        (columnLengths[index] / totalLength)
-        * availableWidth;
+        (columnLengths[index] / totalLength) *
+        availableWidth;
 
-      /*
-       * Impede colunas muito estreitas.
-       */
+      // Largura mínima
       width = Math.max(width, 12);
 
-      /*
-       * Impede uma coluna de dominar a página.
-       */
+      // Largura máxima
       width = Math.min(width, 55);
 
       columnStyles[index] = {
         cellWidth: width
       };
-
     });
 
-    /*
-     * Define tamanho da fonte conforme
-     * quantidade de colunas e registros.
-     */
+    // =========================
+    // TAMANHO DA FONTE
+    // =========================
+
     let fontSize = 6.5;
 
-    if(fontSizeOption === 'small'){
+    if (fontSizeOption === 'small') {
       fontSize = 5;
     }
 
-    if(fontSizeOption === 'medium'){
+    if (fontSizeOption === 'medium') {
       fontSize = 6.5;
     }
 
-    if(fontSizeOption === 'large'){
+    if (fontSizeOption === 'large') {
       fontSize = 8;
     }
 
-    fontSize = Math.max(fontSize,4);
+    // Nunca menor que 4
+    fontSize = Math.max(fontSize, 4);
 
-    
+    // =========================
+    // GARANTE QUE A TABELA
+    // NÃO ULTRAPASSE A FOLHA
+    // =========================
 
-    autoTable(doc,{
-  head:[headers],
-  body,
+    let totalColumnWidth = 0;
 
-  startY: currentY + 2,
+    headers.forEach((_, index) => {
+      totalColumnWidth +=
+        columnStyles[index].cellWidth;
+    });
 
-  margin:{
-    left:margin,
-    right:margin,
-    top:5,
-    bottom:5
-  },
+    // Se ultrapassar a largura disponível,
+    // reduz proporcionalmente todas as colunas
+    if (totalColumnWidth > availableWidth) {
 
-  // Nunca ultrapassa a largura disponível da folha
-  tableWidth:availableWidth,
+      const scale =
+        availableWidth / totalColumnWidth;
 
-  // Mantém a tabela dentro da página
-  horizontalPageBreak:false,
+      headers.forEach((_, index) => {
 
-  theme:'grid',
+        columnStyles[index].cellWidth =
+          columnStyles[index].cellWidth * scale;
 
-  styles:{
-    font:'helvetica',
-    fontSize,
-    cellPadding:1,
-    overflow:'ellipsize',
-    valign:'middle',
-    lineWidth:0.1,
-    lineColor:[80,80,80],
+      });
+    }
 
-    // Garante que o conteúdo fique dentro da célula
-    minCellHeight:4
-  },
+    // =========================
+    // TABELA
+    // =========================
 
-  headStyles:{
-    font:'helvetica',
-    fontStyle:'bold',
-    fontSize,
-    halign:'center',
-    valign:'middle',
-    cellPadding:1,
-    lineWidth:0.1,
-    lineColor:[50,50,50]
-  },
+    autoTable(doc, {
+      head: [headers],
 
-  bodyStyles:{
-    fontSize,
-    cellPadding:1,
-    valign:'middle',
-    lineWidth:0.1,
-    lineColor:[100,100,100]
-  },
+      body,
 
-  columnStyles,
+      startY: currentY + 2,
 
-  // Não cria páginas adicionais automaticamente
-  pageBreak:'avoid',
-  rowPageBreak:'avoid'
-});
+      margin: {
+        left: margin,
+        right: margin,
+        top: 5,
+        bottom: 8
+      },
 
-const finalY =
-  (doc as any).lastAutoTable?.finalY ||
-  currentY + 10;
+      // Largura máxima da tabela
+      tableWidth: availableWidth,
 
-currentY = finalY + 5;
+      // Não deixa criar página horizontal
+      horizontalPageBreak: false,
 
+      theme: 'grid',
+
+      styles: {
+        font: 'helvetica',
+        fontSize,
+
+        cellPadding: 1,
+
+        // Mantém o texto dentro da célula
+        overflow: 'ellipsize',
+
+        valign: 'middle',
+
+        lineWidth: 0.1,
+
+        lineColor: [80, 80, 80],
+
+        minCellHeight: 4
+      },
+
+      headStyles: {
+        font: 'helvetica',
+
+        fontStyle: 'bold',
+
+        fontSize,
+
+        halign: 'center',
+
+        valign: 'middle',
+
+        cellPadding: 1,
+
+        lineWidth: 0.1,
+
+        lineColor: [50, 50, 50]
+      },
+
+      bodyStyles: {
+        fontSize,
+
+        cellPadding: 1,
+
+        valign: 'middle',
+
+        lineWidth: 0.1,
+
+        lineColor: [100, 100, 100]
+      },
+
+      columnStyles,
+
+      // Evita quebra desnecessária
+      pageBreak: 'avoid',
+
+      rowPageBreak: 'avoid'
+    });
+
+    // =========================
+    // POSIÇÃO APÓS A TABELA
+    // =========================
+
+    const finalY =
+      (doc as any).lastAutoTable?.finalY ||
+      currentY + 10;
+
+    currentY = finalY + 5;
+
+    // =========================
+    // PROTEÇÃO VERTICAL
+    // =========================
+
+    // Se o próximo módulo não couber,
+    // cria uma nova página.
+    if (currentY > pageHeight - 15) {
+
+      doc.addPage();
+
+      currentY = 12;
+    }
   });
 
-  /*
-   * Rodapé
-   */
-  doc.setFont('helvetica','normal');
+  // =========================
+  // RODAPÉ
+  // =========================
+
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
 
   doc.text(
@@ -967,8 +1035,12 @@ currentY = finalY + 5;
     pageHeight - 4
   );
 
+  // =========================
+  // EXPORTAÇÃO
+  // =========================
+
   doc.save(
-    `Bill_Logistica_Relatorio_${today.replace(/\//g,'-')}.pdf`
+    `Bill_Logistica_Relatorio_${today.replace(/\//g, '-')}.pdf`
   );
 }
 
