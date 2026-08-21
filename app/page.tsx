@@ -45,7 +45,9 @@ export default function Home(){
   <div className="flex items-center justify-center bg-slate-100 p-4 md:bg-white">
    <form onSubmit={login} className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg md:shadow-none" autoComplete="off">
     <div className="mb-6 md:hidden">
-     <p className="flex items-center gap-2 text-sm font-semibold text-cyan-700"><span className="text-lg">◆</span>LOGÍSTICAS BILL</p>
+  <p className="flex items-center gap-2 text-sm font-semibold text-cyan-700">
+    <img
+      src="/icon2.png" alt="Logísticas Bill" className="w-7 h-7 object-contain"/>LOGÍSTICAS BILL</p>
     </div>
     <h1 className="mb-6 text-2xl font-bold">Acesso ao sistema</h1>
     {error&&<p className="mb-3 text-sm text-red-600">{error}</p>}
