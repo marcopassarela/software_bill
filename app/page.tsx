@@ -36,16 +36,16 @@ export default function Home(){
   <div className="hidden flex-col items-center justify-center bg-navy p-10 text-white md:flex">
   <img
     src="/icon2.png"
-    alt="Logo Bill Logística"
+    alt="Logo Logísiticas Bill"
     className="h-24 w-24 object-contain"/>
-  <h1 className="mt-6 text-3xl font-bold tracking-wide">BILL LOGÍSTICA</h1>
+  <h1 className="mt-6 text-3xl font-bold tracking-wide">LOGÍSTICAS BILL</h1>
   <p className="mt-3 max-w-sm text-center text-slate-300">Sistema interno de gestão logística!</p>
 </div>
   {/* Formulário de login */}
   <div className="flex items-center justify-center bg-slate-100 p-4 md:bg-white">
    <form onSubmit={login} className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg md:shadow-none" autoComplete="off">
     <div className="mb-6 md:hidden">
-     <p className="flex items-center gap-2 text-sm font-semibold text-cyan-700"><span className="text-lg">◆</span>BILL LOGÍSTICA</p>
+     <p className="flex items-center gap-2 text-sm font-semibold text-cyan-700"><span className="text-lg">◆</span>LOGÍSTICAS BILL</p>
     </div>
     <h1 className="mb-6 text-2xl font-bold">Acesso ao sistema</h1>
     {error&&<p className="mb-3 text-sm text-red-600">{error}</p>}
