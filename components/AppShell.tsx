@@ -1218,7 +1218,7 @@ function exportPdfMulti(
         font: 'helvetica',
         fontStyle: 'bold',
         fontSize,
-        fillColor: [30, 30, 30],
+        fillColor: [15, 40, 70],
         textColor: [255, 255, 255],
         halign: 'center',
         valign: 'middle',
