@@ -35,7 +35,14 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[Role] = mapped_column(Enum(Role,name="role",values_callable=lambda enum: [item.value for item in enum],),default=Role.CONSULTA,)
+    role: Mapped[Role] = mapped_column(
+        Enum(
+            Role,
+            name="role",
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        default=Role.VIEWER,
+    )
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -240,8 +247,8 @@ class ScheduleWeek(Base):
     __tablename__ = "schedule_weeks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    start_date: Mapped[date] = mapped_column(Date)  # segunda-feira da semana
-    label: Mapped[str | None] = mapped_column(String(60))  # ex: "Semana 24/08 a 28/08"
+    start_date: Mapped[date] = mapped_column(Date)
+    label: Mapped[str | None] = mapped_column(String(60))
     status: Mapped[WeekStatus] = mapped_column(Enum(WeekStatus), default=WeekStatus.ATIVA)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -256,8 +263,8 @@ class RouteSlot(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     week_id: Mapped[int] = mapped_column(ForeignKey("schedule_weeks.id", ondelete="CASCADE"))
     date: Mapped[date] = mapped_column(Date, index=True)
-    region_code: Mapped[str] = mapped_column(String(10))  # ex: "CR", "IB"
-    route_label: Mapped[str | None] = mapped_column(String(60))  # ex: "SXN-6G16"
+    region_code: Mapped[str] = mapped_column(String(10))
+    route_label: Mapped[str | None] = mapped_column(String(60))
     total_slots: Mapped[int] = mapped_column(Integer, default=0)
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     second_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
@@ -272,17 +279,17 @@ class ScheduleEntry(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     route_slot_id: Mapped[int] = mapped_column(ForeignKey("route_slots.id", ondelete="CASCADE"))
-    position: Mapped[int] = mapped_column(Integer)  # 01°, 02°, ...
+    position: Mapped[int] = mapped_column(Integer)
     service_description: Mapped[str] = mapped_column(String(200))
     client_name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str | None] = mapped_column(String(30))
     location_link: Mapped[str | None] = mapped_column(String(300))
     no_comanda: Mapped[bool] = mapped_column(Boolean, default=False)
-    comanda: Mapped[str | None] = mapped_column(String(30))                    # NOVO
-    cooperativa: Mapped[bool] = mapped_column(Boolean, default=False)          # mantido
-    cooperativa_nome: Mapped[str | None] = mapped_column(String(120))          # NOVO
-    pago: Mapped[bool] = mapped_column(Boolean, default=False)                 # NOVO
-    slots_consumed: Mapped[int] = mapped_column(Integer, default=1)            # NOVO
+    comanda: Mapped[str | None] = mapped_column(String(30))
+    cooperativa: Mapped[bool] = mapped_column(Boolean, default=False)
+    cooperativa_nome: Mapped[str | None] = mapped_column(String(120))
+    pago: Mapped[bool] = mapped_column(Boolean, default=False)
+    slots_consumed: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
     observation: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
@@ -297,6 +304,6 @@ class ScheduleExtra(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     entry_id: Mapped[int] = mapped_column(ForeignKey("schedule_entries.id", ondelete="CASCADE"))
-    description: Mapped[str] = mapped_column(String(200))  # "CAVALETE DE AGUA"
+    description: Mapped[str] = mapped_column(String(200))
     observation: Mapped[str | None] = mapped_column(Text)
     status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
