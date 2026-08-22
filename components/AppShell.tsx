@@ -284,7 +284,7 @@ const USER_EDIT_FIELDS: FieldDef[] = [
     key: 'role',
     label: 'Perfil',
     type: 'select',
-    options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ESTOQUE', 'MOTORISTA', 'CONSULTA'],
+    options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR'],
     required: true,
   },
   { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
@@ -1254,6 +1254,26 @@ function exportPdfMulti(
   return doc;
 }
 
+const SCHEDULE_REPORT_FIELDS = [
+  { key: 'Semana', label: 'Semana' },
+  { key: 'Status_Semana', label: 'Status da semana' },
+  { key: 'Data', label: 'Data' },
+  { key: 'Região', label: 'Região' },
+  { key: 'Rota', label: 'Rota' },
+  { key: 'Posição', label: 'Posição' },
+  { key: 'Cliente', label: 'Cliente' },
+  { key: 'Serviço', label: 'Serviço' },
+  { key: 'Telefone', label: 'Telefone' },
+  { key: 'Localização', label: 'Localização' },
+  { key: 'Comanda', label: 'Comanda' },
+  { key: 'Pago', label: 'Pago' },
+  { key: 'Cooperativa', label: 'Cooperativa' },
+  { key: 'Sem Comanda', label: 'Sem Comanda' },
+  { key: 'Status', label: 'Status' },
+  { key: 'Observação', label: 'Observação' },
+  { key: 'Vagas', label: 'Vagas' },
+];
+
 function ReportsExport({ lookups }: { lookups: any }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'pdf'>('xlsx');
@@ -1261,11 +1281,23 @@ function ReportsExport({ lookups }: { lookups: any }) {
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState<{ cfg: any; rows: any[] }[] | null>(null);
-
+  const [scheduleFields, setScheduleFields] = useState<string[]>(
+  SCHEDULE_REPORT_FIELDS.map((f) => f.key)
+);
+  function toggleScheduleField(key: string) {
+    setScheduleFields((s) =>
+      s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
+    );
+  }
+  function selectAllScheduleFields() {
+    setScheduleFields(SCHEDULE_REPORT_FIELDS.map((f) => f.key));
+  }
+  function clearScheduleFields() {
+    setScheduleFields([]);
+  }
   function toggle(v: string) {
     setSelected((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]));
   }
-
   async function loadPreview() {
     if (!selected.length) {
       setErr('Selecione pelo menos um módulo.');
@@ -1279,34 +1311,42 @@ function ReportsExport({ lookups }: { lookups: any }) {
           const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
 
           if (v === 'schedule') {
-            const weeks = (await request(cfg.path)) as any[];
-            const flat: any[] = [];
-            weeks.forEach((week) => {
-              (week.route_slots || []).forEach((slot: any) => {
-                (slot.entries || []).forEach((e: any) => {
-                  flat.push({
-                    Semana: week.label || week.start_date,
-                    Status_Semana: week.status,
-                    Data: slot.date,
-                    Região: slot.region_code,
-                    Rota: slot.route_label || slot.vehicle?.plate || '',
-                    Posição: e.position,
-                    Cliente: e.client_name,
-                    Serviço: e.service_description,
-                    Telefone: e.phone || '',
-                    Localização: e.location_link || '',
-                    Comanda: e.comanda || '',
-                    Pago: e.pago ? 'Sim' : 'Não',
-                    Cooperativa: e.cooperativa_nome || '',
-                    'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
-                    Status: e.status || '',
-                    Observação: e.observation || '',
-                    Vagas: e.slots_consumed || 1,
-                  });
+          if (!scheduleFields.length) {
+            throw new Error('Selecione pelo menos um campo do Agendamento.');
+          }
+          const weeks = (await request(cfg.path)) as any[];
+          const flat: any[] = [];
+          weeks.forEach((week) => {
+            (week.route_slots || []).forEach((slot: any) => {
+              (slot.entries || []).forEach((e: any) => {
+                const full: Record<string, any> = {
+                  Semana: week.label || week.start_date,
+                  Status_Semana: week.status,
+                  Data: slot.date,
+                  Região: slot.region_code,
+                  Rota: slot.route_label || slot.vehicle?.plate || '',
+                  Posição: e.position,
+                  Cliente: e.client_name,
+                  Serviço: e.service_description,
+                  Telefone: e.phone || '',
+                  Localização: e.location_link || '',
+                  Comanda: e.comanda || '',
+                  Pago: e.pago ? 'Sim' : 'Não',
+                  Cooperativa: e.cooperativa_nome || '',
+                  'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
+                  Status: e.status || '',
+                  Observação: e.observation || '',
+                  Vagas: e.slots_consumed || 1,
+                };
+                const row: Record<string, any> = {};
+                scheduleFields.forEach((key) => {
+                  if (key in full) row[key] = full[key];
                 });
+                flat.push(row);
               });
             });
-            return { cfg, rows: flat };
+          });
+          return { cfg, rows: flat };
           }
 
           const rows = (await request(cfg.path)) as any[];
@@ -1361,6 +1401,48 @@ function ReportsExport({ lookups }: { lookups: any }) {
           </label>
         ))}
       </div>
+
+      {selected.includes('schedule') && (
+      <div className="mb-4 rounded-lg border p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium text-slate-700">
+            Campos do Agendamento
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={selectAllScheduleFields}
+              className="text-xs text-brand hover:underline"
+            >
+              Marcar todos
+            </button>
+            <button
+              type="button"
+              onClick={clearScheduleFields}
+              className="text-xs text-slate-500 hover:underline"
+            >
+              Limpar
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+          {SCHEDULE_REPORT_FIELDS.map((f) => (
+            <label
+              key={f.key}
+              className="flex items-center gap-2 text-xs text-slate-700"
+            >
+              <input
+                type="checkbox"
+                checked={scheduleFields.includes(f.key)}
+                onChange={() => toggleScheduleField(f.key)}
+                className="h-4 w-4"
+              />
+              {f.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      )}
 
       <div className="mb-4">
         <label className="mb-2 block text-xs font-medium text-slate-600">
