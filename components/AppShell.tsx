@@ -2194,18 +2194,101 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     } catch (e: any) { setError(e.message); }
   }
 
-  async function deleteWeek(weekId: number) {
-    const password = window.prompt('Digite a senha do Administrador Principal para excluir a semana permanentemente:');
-    if (password === null) return;
-    if (!confirm('ATENÇÃO: Isso apaga a semana e TODAS as rotas/clientes dela. Deseja continuar?')) return;
+  async function confirmDeleteWeek() {
+    if (!deleteWeekId || !deletePassword) return;
+    setDeletingWeek(true);
     try {
-      await request(`/schedule/weeks/${weekId}`, {
+      await request(`/schedule/weeks/${deleteWeekId}`, {
         method: 'DELETE',
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: deletePassword }),
       });
+      setShowDeleteWeek(false);
+      setDeleteWeekId(null);
+      setDeletePassword('');
       setSelectedWeekId(null);
       load();
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDeletingWeek(false);
+    }
+  }
+
+  function exportWeekPdf(week: any) {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const margin = 8;
+    let y = 12;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('BILL LOGÍSTICA — Agenda de Instalações', margin, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Semana: ${week.label || week.start_date}  |  Status: ${week.status}`, margin, y);
+    y += 8;
+
+    const slots = week.route_slots || [];
+    const byDate: Record<string, any[]> = {};
+    slots.forEach((s: any) => {
+      if (!byDate[s.date]) byDate[s.date] = [];
+      byDate[s.date].push(s);
+    });
+
+    Object.keys(byDate)
+      .sort()
+      .forEach((date) => {
+        if (y > 180) {
+          doc.addPage();
+          y = 12;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(date, margin, y);
+        y += 5;
+
+        byDate[date].forEach((slot: any) => {
+          const plate = slot.vehicle?.plate || slot.route_label || '';
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.text(
+            `${String(slot.total_slots).padStart(2, '0')} - (${slot.region_code}) ${plate}`,
+            margin,
+            y
+          );
+          y += 4;
+
+          const rows = (slot.entries || []).map((e: any) => [
+            `${String(e.position).padStart(2, '0')}°`,
+            e.client_name || '',
+            e.service_description || '',
+            e.phone || '',
+            e.comanda || '',
+            e.pago ? 'Sim' : 'Não',
+            e.cooperativa_nome || '',
+            e.observation || '',
+          ]);
+
+          if (rows.length) {
+            autoTable(doc, {
+              startY: y,
+              head: [['Pos', 'Cliente', 'Serviço', 'Telefone', 'Comanda', 'Pago', 'Cooperativa', 'Obs']],
+              body: rows,
+              margin: { left: margin, right: margin },
+              styles: { fontSize: 7, cellPadding: 1 },
+              headStyles: { fillColor: [30, 30, 30] },
+            });
+            y = (doc as any).lastAutoTable.finalY + 6;
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.text('Sem clientes', margin + 2, y);
+            y += 5;
+          }
+        });
+      });
+
+    doc.save(`Agenda_${week.label || week.start_date}.pdf`);
   }
 
   async function createSlot(data: any) {
@@ -2360,15 +2443,29 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           ))}
         </div>
 
-        {selectedWeek && canWrite && (
-          <div className="mt-3 flex flex-wrap gap-4">
-            {selectedWeek.status === 'Ativa' && (
+        {selectedWeek && (
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            {selectedWeek.status === 'Ativa' && canWrite && (
               <button onClick={() => archiveWeek(selectedWeek.id)} className="text-sm text-amber-700 hover:underline">
                 Arquivar esta semana (backup)
               </button>
             )}
+            {selectedWeek.status === 'Arquivada' && (
+              <button
+                onClick={() => exportWeekPdf(selectedWeek)}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Baixar PDF da semana
+              </button>
+            )}
             {isMainAdmin && (
-              <button onClick={() => deleteWeek(selectedWeek.id)} className="text-sm text-red-600 hover:underline">
+              <button
+                onClick={() => {
+                  setDeleteWeekId(selectedWeek.id);
+                  setShowDeleteWeek(true);
+                }}
+                className="text-sm text-red-600 hover:underline"
+              >
                 Excluir semana permanentemente
               </button>
             )}
@@ -2401,6 +2498,9 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                       key={slot.id}
                       slot={slot}
                       canWrite={canWrite}
+                      canEdit={canEdit}
+                      canDelete={canDelete}
+                      canExport={canExport}
                       onEdit={() => setEditingSlot(slot)}
                       onDelete={() => deleteSlot(slot.id)}
                       onAddEntry={() => setAddingEntryTo(slot.id)}
@@ -2440,12 +2540,72 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       {addingExtraTo && (
         <NewExtraModal entryId={addingExtraTo} onClose={() => setAddingExtraTo(null)} onSubmit={createExtra} />
       )}
+
+      {showDeleteWeek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-700">Excluir semana permanentemente</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Esta ação apaga a semana e todas as rotas/clientes. Não tem volta.
+            </p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Selecione a semana *</span>
+              <select
+                value={deleteWeekId ?? ''}
+                onChange={(e) => setDeleteWeekId(Number(e.target.value))}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="">Selecione</option>
+                {weeks.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label || `Semana ${w.start_date}`} ({w.status})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Senha do Administrador Principal *</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                className="w-full rounded-lg border p-2"
+                placeholder="Digite sua senha"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteWeek(false);
+                  setDeletePassword('');
+                }}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletingWeek || !deleteWeekId || !deletePassword}
+                onClick={confirmDeleteWeek}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deletingWeek ? 'Excluindo…' : 'Excluir definitivamente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function RouteSlotCard({
-  slot, canWrite, onEdit, onDelete, onAddEntry, onEditEntry,
+  slot, canWrite, canEdit, canDelete, canExport, onEdit, onDelete, onAddEntry, onEditEntry,
   onAddExtra, onDeleteEntry, onDeleteExtra, onMoveEntry, onExport, onToggleClosed,
 }: any) {
   const entries = slot.entries || [];
@@ -2489,16 +2649,44 @@ function RouteSlotCard({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button onClick={onExport} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Exportar TXT</button>
+          <button
+            onClick={onExport}
+            disabled={!canExport}
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Exportar TXT
+          </button>
           {canWrite && (
             <>
-              <button onClick={onToggleClosed} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
+              <button
+                onClick={onToggleClosed}
+                disabled={!canEdit}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
                 {isClosed ? 'Reabrir' : 'Fechar rota'}
               </button>
-              <button onClick={onEdit} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Editar</button>
-              <button onClick={onDelete} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">Excluir</button>
+              <button
+                onClick={onEdit}
+                disabled={!canEdit}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Editar
+              </button>
+              <button
+                onClick={onDelete}
+                disabled={!canDelete}
+                className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Excluir
+              </button>
               {!isClosed && !isFull && (
-                <button onClick={onAddEntry} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90">+ Cliente</button>
+                <button
+                  onClick={onAddEntry}
+                  disabled={!canEdit}
+                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  + Cliente
+                </button>
               )}
             </>
           )}
@@ -2571,10 +2759,28 @@ function RouteSlotCard({
                     </td>
                     {canWrite && (
                       <td className="px-3 py-2">
-                        <div className="flex flex-row flex-wrap items-center gap-1">
-                          <button onClick={() => onEditEntry(entry)} className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200">Editar</button>
-                          <button onClick={() => onAddExtra(entry.id)} className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200">+ Extra</button>
-                          <button onClick={() => onDeleteEntry(entry.id)} className="rounded bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100">Remover</button>
+                        <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+                          <button
+                            onClick={() => onEditEntry(entry)}
+                            disabled={!canEdit}
+                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => onAddExtra(entry.id)}
+                            disabled={!canEdit}
+                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            + Extra
+                          </button>
+                          <button
+                            onClick={() => onDeleteEntry(entry.id)}
+                            disabled={!canDelete}
+                            className="rounded bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Remover
+                          </button>
                         </div>
                       </td>
                     )}
