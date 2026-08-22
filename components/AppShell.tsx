@@ -2634,7 +2634,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
         {selectedWeek && (
           <div className="mt-3 flex flex-wrap items-center gap-4">
-            {selectedWeek.status === 'Ativa' && canWrite && (
+            {selectedWeek.status === 'Ativa' && canArchive && (
               <button
               onClick={() => archiveWeek(selectedWeek.id)}
                   className="text-sm text-amber-700 hover:underline">
