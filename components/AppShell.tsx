@@ -1021,11 +1021,8 @@ const REPORT_SOURCES = [
   { value: 'maintenance', label: 'Manutenção', path: '/maintenance' },
   { value: 'fuel', label: 'Combustível', path: '/fuel' },
   { value: 'products', label: 'Estoque', path: '/products' },
-  {
-    value: 'movements',
-    label: 'Movimentações de estoque',
-    path: '/stock/movements',
-  },
+  { value: 'movements', label: 'Movimentações de estoque', path: '/stock/movements' },
+  { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
 ];
 
 function cleanRowForReport(r: any, lookups: any) {
