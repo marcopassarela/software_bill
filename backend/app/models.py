@@ -35,14 +35,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[Role] = mapped_column(
-        Enum(
-            Role,
-            name="role",
-            values_callable=lambda enum: [item.value for item in enum],
-        ),
-        default=Role.VIEWER,
-    )
+    role: Mapped[Role] = mapped_column(Enum(Role, name="role"), default=Role.VIEWER)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
