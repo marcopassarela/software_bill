@@ -621,8 +621,11 @@ export default function AppShell({
     <div className="min-h-screen md:flex">
       <div className="flex items-center justify-between bg-navy p-4 text-white md:hidden">
         <span className="flex items-center gap-2 font-bold">
-          <span className="text-cyan-400">◆</span>BILL LOGÍSTICA
-        </span>
+          <img
+              src="/icon2.png"
+              alt="Logísticas Bill"
+              className="h-8 w-auto object-contain"/>
+          </span>
         <button onClick={() => setMobileMenuOpen(true)} aria-label="Abrir menu">
           <Menu size={24} />
         </button>
@@ -641,8 +644,11 @@ export default function AppShell({
         }`}
       >
         <div className="flex items-center justify-between p-5 text-lg font-bold text-white">
-          <span>
-            <span className="mr-2 text-cyan-400">◆</span>BILL LOGÍSTICA
+          <span className="flex items-center gap-2 font-bold">
+            <img
+            src="/icon2.png"
+            alt="Logísticas Bill"
+            className="h-8 w-auto object-contain"/>
           </span>
           <button
             className="md:hidden"
@@ -1056,7 +1062,7 @@ function exportExcelMulti(datasets: { cfg: any; rows: any[] }[]) {
   const today = new Date().toLocaleDateString('pt-BR');
   const data: any[][] = [];
 
-  data.push(['BILL LOGÍSTICA']);
+  data.push(['LOGÍSTICAS BILL']);
   data.push([`Relatório geral`]);
   data.push([`Gerado em: ${today}`]);
   data.push([]);
@@ -1118,7 +1124,7 @@ function exportPdfMulti(
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
-  doc.text('BILL LOGÍSTICA', margin, 10);
+  doc.text('LOGÍSTICAS BILL', margin, 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.text('Relatório geral', margin, 15);
@@ -1238,7 +1244,7 @@ function exportPdfMulti(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.text(
-    'BILL LOGÍSTICA — Relatório gerado automaticamente',
+    'LOGÍSTICAS BILL — Relatório gerado automaticamente',
     margin,
     pageHeight - 4
   );
@@ -2315,7 +2321,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('BILL LOGÍSTICA — Agenda de Instalações', margin, y);
+    doc.text('LOGÍSTICAS BILL — Agenda de Instalações', margin, y);
     y += 6;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
