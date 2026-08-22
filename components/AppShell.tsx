@@ -844,11 +844,11 @@ function AccountPanel({
         <input
           type="password"
           autoComplete="new-password"
-          placeholder="Nova senha (mín. 12 caracteres)"
+          placeholder="Nova senha"
           value={next}
           onChange={(e) => setNext(e.target.value)}
           required
-          minLength={12}
+          minLength={1}
           className="w-full rounded-lg border p-2 text-sm"
         />
         <button
