@@ -1386,8 +1386,8 @@ function ReportsExport({ lookups }: { lookups: any }) {
 
       {/* ========== PREVIEW ========== */}
       {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3">
+          <div className="flex h-[96vh] w-[98vw] max-w-none flex-col rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-5 py-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Preview do relatório</h3>
@@ -1403,7 +1403,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="min-h-0 flex-1 overflow-auto p-3">
               {preview.map(({ cfg, rows }) => (
                 <div key={cfg.value} className="mb-6">
                   <h4 className="mb-2 font-semibold text-slate-800">
@@ -1416,7 +1416,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
                     <p className="text-sm text-slate-400">Nenhum registro encontrado.</p>
                   ) : (
                     <div className="overflow-x-auto rounded-lg border">
-                      <table className="min-w-full text-left text-[11px]">
+                      <table className="min-w-full text-left text-[12px]">
                         <thead className="bg-slate-100 sticky top-0">
                           <tr>
                             {Object.keys(rows[0]).map((h) => (
