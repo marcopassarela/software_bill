@@ -77,9 +77,15 @@ function titleFor(k: string) {
   );
 }
 
-const MODULE_OPTIONS = items
-  .filter(([k]) => k !== 'users')
-  .map(([k, label]) => ({ value: k as string, label: label as string }));
+const MODULE_OPTIONS = [
+  ...items
+    .filter(([k]) => k !== 'users')
+    .map(([k, label]) => ({ value: k as string, label: label as string })),
+  // Permissões finas do Agendamento
+  { value: 'schedule_edit', label: 'Agendamento → Editar / Adicionar' },
+  { value: 'schedule_delete', label: 'Agendamento → Excluir' },
+  { value: 'schedule_export', label: 'Agendamento → Exportar TXT/PDF' },
+];
 
 function expandPermissions(keys: string[]): string[] {
   const s = new Set(keys);
@@ -2133,17 +2139,24 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [addingExtraTo, setAddingExtraTo] = useState<number | null>(null);
 
-  const canWrite =
-  user.is_main_admin ||
-  user.role === 'ADMINISTRADOR' ||
-  user.role === 'GERENTE' ||
-  (user.permissions && user.permissions.split(',').includes('schedule'));
-
   const perms = (user.permissions || '').split(',').filter(Boolean);
-  const canEdit = canWrite || perms.includes('schedule_edit');
-  const canDelete = user.is_main_admin || user.role === 'ADMINISTRADOR' || perms.includes('schedule_delete');
-  const canExport = canWrite || perms.includes('schedule_export') || true; // quem vê a agenda pode exportar
   const isMainAdmin = !!user.is_main_admin;
+  const isAdminOrManager =
+    isMainAdmin || user.role === 'ADMINISTRADOR' || user.role === 'GERENTE';
+  // Ver a agenda: role ou permissão "schedule"
+  const canView =
+    isAdminOrManager || perms.includes('schedule');
+  // Editar / adicionar / fechar rota
+  const canEdit =
+    isAdminOrManager || perms.includes('schedule_edit');
+  // Excluir cliente / rota
+  const canDelete =
+    isMainAdmin || user.role === 'ADMINISTRADOR' || perms.includes('schedule_delete');
+  // Exportar TXT / PDF
+  const canExport =
+    isAdminOrManager || perms.includes('schedule_export');
+  // Quem pode criar semana / rota (mesma regra de edição)
+  const canWrite = canEdit;
 
   async function load() {
     setLoading(true);
