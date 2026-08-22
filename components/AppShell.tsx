@@ -622,10 +622,11 @@ export default function AppShell({
       <div className="flex items-center justify-between bg-navy p-4 text-white md:hidden">
         <span className="flex items-center gap-2 font-bold">
           <img
-              src="/icon2.png"
-              alt="Logísticas Bill"
-              className="h-8 w-auto object-contain"/>
-          </span>
+            src="/icon2.png"
+            alt="Logísticas Bill"
+            className="h-8 w-auto object-contain"/>
+          <span>LOGÍSTICAS BILL</span>
+        </span>
         <button onClick={() => setMobileMenuOpen(true)} aria-label="Abrir menu">
           <Menu size={24} />
         </button>
@@ -644,11 +645,12 @@ export default function AppShell({
         }`}
       >
         <div className="flex items-center justify-between p-5 text-lg font-bold text-white">
-          <span className="flex items-center gap-2 font-bold">
+          <span className="flex items-center gap-2">
             <img
-            src="/icon2.png"
-            alt="Logísticas Bill"
-            className="h-8 w-auto object-contain"/>
+              src="/icon2.png"
+              alt="Logísticas Bill"
+              className="h-9 w-auto object-contain"/>
+            <span className="text-white">LOGÍSTICAS BILL</span>
           </span>
           <button
             className="md:hidden"
