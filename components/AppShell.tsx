@@ -1113,11 +1113,11 @@ function exportPdfMulti(
   const today = new Date().toLocaleDateString('pt-BR');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 7;
+  const margin = 6;
   const availableWidth = pageWidth - margin * 2;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(14);
   doc.text('BILL LOGÍSTICA', margin, 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -1127,6 +1127,11 @@ function exportPdfMulti(
   let currentY = 20;
 
   datasets.forEach(({ cfg, rows }) => {
+    if (currentY > pageHeight - 25) {
+      doc.addPage();
+      currentY = 12;
+    }
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text(cfg.label, margin, currentY);
@@ -1151,36 +1156,37 @@ function exportPdfMulti(
         const value = String(row[index] ?? '');
         if (value.length > max) max = value.length;
       });
-      return max;
+      return Math.min(max, 40);
     });
 
-    const totalLength = columnLengths.reduce((sum, value) => sum + value, 0);
+    const totalLength = columnLengths.reduce((sum, value) => sum + value, 0) || 1;
     const columnStyles: any = {};
-
     headers.forEach((_, index) => {
       let width = (columnLengths[index] / totalLength) * availableWidth;
-      width = Math.max(width, 12);
-      width = Math.min(width, 55);
+      width = Math.max(width, 10);
+      width = Math.min(width, 45);
       columnStyles[index] = { cellWidth: width };
     });
-
-    let fontSize = 6.5;
-    if (fontSizeOption === 'small') fontSize = 5;
-    if (fontSizeOption === 'medium') fontSize = 6.5;
-    if (fontSizeOption === 'large') fontSize = 8;
-    fontSize = Math.max(fontSize, 4);
 
     let totalColumnWidth = 0;
     headers.forEach((_, index) => {
       totalColumnWidth += columnStyles[index].cellWidth;
     });
-
     if (totalColumnWidth > availableWidth) {
       const scale = availableWidth / totalColumnWidth;
       headers.forEach((_, index) => {
-        columnStyles[index].cellWidth = columnStyles[index].cellWidth * scale;
+        columnStyles[index].cellWidth *= scale;
       });
     }
+
+    let fontSize = 6;
+    if (fontSizeOption === 'small') fontSize = 5;
+    if (fontSizeOption === 'medium') fontSize = 6;
+    if (fontSizeOption === 'large') fontSize = 7.5;
+
+    // Muitas colunas (ex: Agendamento) → fonte ainda menor
+    if (headers.length >= 12) fontSize = Math.min(fontSize, 5);
+    if (headers.length >= 16) fontSize = Math.min(fontSize, 4.5);
 
     autoTable(doc, {
       head: [headers],
@@ -1193,8 +1199,8 @@ function exportPdfMulti(
       styles: {
         font: 'helvetica',
         fontSize,
-        cellPadding: 1,
-        overflow: 'ellipsize',
+        cellPadding: 0.8,
+        overflow: 'linebreak', // ← não corta mais o texto
         valign: 'middle',
         lineWidth: 0.1,
         lineColor: [80, 80, 80],
@@ -1204,26 +1210,24 @@ function exportPdfMulti(
         font: 'helvetica',
         fontStyle: 'bold',
         fontSize,
+        fillColor: [30, 30, 30],
+        textColor: [255, 255, 255],
         halign: 'center',
         valign: 'middle',
-        cellPadding: 1,
-        lineWidth: 0.1,
-        lineColor: [50, 50, 50],
+        cellPadding: 0.8,
       },
       bodyStyles: {
         fontSize,
-        cellPadding: 1,
+        cellPadding: 0.8,
         valign: 'middle',
-        lineWidth: 0.1,
-        lineColor: [100, 100, 100],
       },
       columnStyles,
-      pageBreak: 'avoid',
+      pageBreak: 'auto',
       rowPageBreak: 'avoid',
     });
 
     const finalY = (doc as any).lastAutoTable?.finalY || currentY + 10;
-    currentY = finalY + 5;
+    currentY = finalY + 6;
 
     if (currentY > pageHeight - 15) {
       doc.addPage();
@@ -1239,7 +1243,7 @@ function exportPdfMulti(
     pageHeight - 4
   );
 
-  doc.save(`Logisticas_Bill_Relatorio_${today.replace(/\//g, '-')}.pdf`);
+  return doc;
 }
 
 function ReportsExport({ lookups }: { lookups: any }) {
@@ -1248,78 +1252,94 @@ function ReportsExport({ lookups }: { lookups: any }) {
   const [exporting, setExporting] = useState(false);
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [err, setErr] = useState('');
+  const [preview, setPreview] = useState<{ cfg: any; rows: any[] }[] | null>(null);
 
   function toggle(v: string) {
     setSelected((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]));
   }
 
-  async function run() {
-  if (!selected.length) {
-    setErr('Selecione pelo menos um módulo.');
-    return;
-  }
-  setExporting(true);
-  setErr('');
-  try {
-    const datasets = await Promise.all(
-      selected.map(async (v) => {
-        const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
+  async function loadPreview() {
+    if (!selected.length) {
+      setErr('Selecione pelo menos um módulo.');
+      return;
+    }
+    setExporting(true);
+    setErr('');
+    try {
+      const datasets = await Promise.all(
+        selected.map(async (v) => {
+          const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
 
-        if (v === 'schedule') {
-          const weeks = (await request(cfg.path)) as any[];
-          const flat: any[] = [];
-          weeks.forEach((week) => {
-            (week.route_slots || []).forEach((slot: any) => {
-              (slot.entries || []).forEach((e: any) => {
-                flat.push({
-                  Semana: week.label || week.start_date,
-                  Status_Semana: week.status,
-                  Data: slot.date,
-                  Região: slot.region_code,
-                  Rota: slot.route_label || slot.vehicle?.plate || '',
-                  Posição: e.position,
-                  Cliente: e.client_name,
-                  Serviço: e.service_description,
-                  Telefone: e.phone || '',
-                  Localização: e.location_link || '',
-                  Comanda: e.comanda || '',
-                  Pago: e.pago ? 'Sim' : 'Não',
-                  Cooperativa: e.cooperativa_nome || '',
-                  'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
-                  Status: e.status || '',
-                  Observação: e.observation || '',
-                  Vagas: e.slots_consumed || 1,
+          if (v === 'schedule') {
+            const weeks = (await request(cfg.path)) as any[];
+            const flat: any[] = [];
+            weeks.forEach((week) => {
+              (week.route_slots || []).forEach((slot: any) => {
+                (slot.entries || []).forEach((e: any) => {
+                  flat.push({
+                    Semana: week.label || week.start_date,
+                    Status_Semana: week.status,
+                    Data: slot.date,
+                    Região: slot.region_code,
+                    Rota: slot.route_label || slot.vehicle?.plate || '',
+                    Posição: e.position,
+                    Cliente: e.client_name,
+                    Serviço: e.service_description,
+                    Telefone: e.phone || '',
+                    Localização: e.location_link || '',
+                    Comanda: e.comanda || '',
+                    Pago: e.pago ? 'Sim' : 'Não',
+                    Cooperativa: e.cooperativa_nome || '',
+                    'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
+                    Status: e.status || '',
+                    Observação: e.observation || '',
+                    Vagas: e.slots_consumed || 1,
+                  });
                 });
               });
             });
-          });
-          return { cfg, rows: flat };
-        }
+            return { cfg, rows: flat };
+          }
 
-        const rows = (await request(cfg.path)) as any[];
-        return { cfg, rows: rows.map((r) => cleanRowForReport(r, lookups)) };
-      })
-    );
-
-    if (format === 'xlsx') {
-      exportExcelMulti(datasets);
-    } else {
-      exportPdfMulti(datasets, fontSize);
+          const rows = (await request(cfg.path)) as any[];
+          return { cfg, rows: rows.map((r) => cleanRowForReport(r, lookups)) };
+        })
+      );
+      setPreview(datasets);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setExporting(false);
     }
-  } catch (e: any) {
-    setErr(e.message);
-  } finally {
-    setExporting(false);
   }
-}
+
+  function downloadExcel() {
+    if (!preview) return;
+    exportExcelMulti(preview);
+  }
+
+  function downloadPdf() {
+    if (!preview) return;
+    const doc = exportPdfMulti(preview, fontSize);
+    const today = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    doc.save(`Bill_Logistica_Relatorio_${today}.pdf`);
+  }
+
+  function printPdf() {
+    if (!preview) return;
+    const doc = exportPdfMulti(preview, fontSize);
+    doc.autoPrint();
+    window.open(doc.output('bloburl'), '_blank');
+  }
 
   return (
     <div className="p-5 text-sm text-slate-600">
       <p className="mb-3">
-        Selecione um ou mais módulos e o formato de exportação. O relatório sai com nome
-        da empresa, data de geração e datas sem horário — pronto para apresentação.
+        Selecione um ou mais módulos. Ao clicar em <strong>Gerar relatório</strong> você verá o
+        preview completo antes de salvar ou imprimir.
       </p>
       {err && <p className="mb-2 text-red-600">{err}</p>}
+
       <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border p-3 sm:grid-cols-3">
         {REPORT_SOURCES.map((s) => (
           <label key={s.value} className="flex items-center gap-2 text-xs text-slate-700">
@@ -1333,71 +1353,133 @@ function ReportsExport({ lookups }: { lookups: any }) {
           </label>
         ))}
       </div>
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="radio"
-            checked={format === 'xlsx'}
-            onChange={() => setFormat('xlsx')}
-          />
-          Excel (.xlsx)
-        </label>
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="radio"
-            checked={format === 'pdf'}
-            onChange={() => setFormat('pdf')}
-          />
-          PDF
-        </label>
-      </div>
+
       <div className="mb-4">
         <label className="mb-2 block text-xs font-medium text-slate-600">
           Tamanho da fonte do PDF
         </label>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setFontSize('small')}
-            className={`rounded-lg border px-4 py-2 text-xs ${
-              fontSize === 'small'
-                ? 'border-brand bg-brand text-white'
-                : 'bg-white text-slate-600'
-            }`}
-          >
-            Pequena
-          </button>
-          <button
-            type="button"
-            onClick={() => setFontSize('medium')}
-            className={`rounded-lg border px-4 py-2 text-sm ${
-              fontSize === 'medium'
-                ? 'border-brand bg-brand text-white'
-                : 'bg-white text-slate-600'
-            }`}
-          >
-            Média
-          </button>
-          <button
-            type="button"
-            onClick={() => setFontSize('large')}
-            className={`rounded-lg border px-4 py-2 text-base ${
-              fontSize === 'large'
-                ? 'border-brand bg-brand text-white'
-                : 'bg-white text-slate-600'
-            }`}
-          >
-            Grande
-          </button>
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <button
+              key={size}
+              type="button"
+              onClick={() => setFontSize(size)}
+              className={`rounded-lg border px-4 py-2 text-xs ${
+                fontSize === size
+                  ? 'border-brand bg-brand text-white'
+                  : 'bg-white text-slate-600'
+              }`}
+            >
+              {size === 'small' ? 'Pequena' : size === 'medium' ? 'Média' : 'Grande'}
+            </button>
+          ))}
         </div>
       </div>
+
       <button
-        onClick={run}
+        onClick={loadPreview}
         disabled={exporting}
         className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-60"
       >
-        {exporting ? 'Gerando…' : 'Gerar relatório'}
+        {exporting ? 'Carregando…' : 'Gerar relatório'}
       </button>
+
+      {/* ========== PREVIEW ========== */}
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Preview do relatório</h3>
+                <p className="text-xs text-slate-500">
+                  Confira os dados abaixo. Depois escolha salvar em Excel, PDF ou imprimir.
+                </p>
+              </div>
+              <button
+                onClick={() => setPreview(null)}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4">
+              {preview.map(({ cfg, rows }) => (
+                <div key={cfg.value} className="mb-6">
+                  <h4 className="mb-2 font-semibold text-slate-800">
+                    {cfg.label}{' '}
+                    <span className="text-sm font-normal text-slate-500">
+                      ({rows.length} registro{rows.length !== 1 ? 's' : ''})
+                    </span>
+                  </h4>
+                  {!rows.length ? (
+                    <p className="text-sm text-slate-400">Nenhum registro encontrado.</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border">
+                      <table className="min-w-full text-left text-[11px]">
+                        <thead className="bg-slate-100 sticky top-0">
+                          <tr>
+                            {Object.keys(rows[0]).map((h) => (
+                              <th
+                                key={h}
+                                className="whitespace-nowrap border-b px-2 py-1.5 font-semibold text-slate-700"
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => (
+                            <tr key={i} className="border-t hover:bg-slate-50">
+                              {Object.keys(rows[0]).map((h) => (
+                                <td
+                                  key={h}
+                                  className="max-w-[220px] whitespace-pre-wrap break-words px-2 py-1 text-slate-700"
+                                  title={String(row[h] ?? '')}
+                                >
+                                  {String(row[h] ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-4">
+              <button
+                onClick={() => setPreview(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={downloadExcel}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Salvar Excel
+              </button>
+              <button
+                onClick={downloadPdf}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Salvar PDF
+              </button>
+              <button
+                onClick={printPdf}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Imprimir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
