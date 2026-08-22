@@ -22,8 +22,10 @@ class Role(str, enum.Enum):
     MANAGER = "GERENTE"
     LOGISTICS = "LOGÍSTICA"
     STOCK = "ESTOQUE"
+    STOCK_ALMOX = "ALMOXARIFADO"
     DRIVER = "MOTORISTA"
     VIEWER = "CONSULTA"
+    SELLER = "VENDEDOR"
 
 
 class User(Base):

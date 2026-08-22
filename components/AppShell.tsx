@@ -52,8 +52,10 @@ const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
   GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
   LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
-  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'],
+  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
+  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
   MOTORISTA: [],
+  VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
 };
 
@@ -270,7 +272,7 @@ const FIELDS: Record<string, FieldDef[]> = {
       key: 'role',
       label: 'Perfil',
       type: 'select',
-      options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ESTOQUE', 'MOTORISTA', 'CONSULTA'],
+      options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR'],
       required: true,
     },
     { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
