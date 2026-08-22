@@ -87,6 +87,7 @@ const MODULE_OPTIONS = [
   { value: 'schedule_edit', label: 'Agendamento → Editar / Adicionar' },
   { value: 'schedule_delete', label: 'Agendamento → Excluir' },
   { value: 'schedule_export', label: 'Agendamento → Exportar TXT/PDF' },
+  { value: 'schedule_archive', label: 'Agendamento → Arquivar semana (backup)' },
 ];
 
 function expandPermissions(keys: string[]): string[] {
@@ -2323,6 +2324,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const canEdit =
     isAdminOrManager || perms.includes('schedule_edit');
   // Excluir cliente / rota
+  const canArchive =
+    isMainAdmin || perms.includes('schedule_archive');
   const canDelete =
     isMainAdmin || user.role === 'ADMINISTRADOR' || perms.includes('schedule_delete');
   // Exportar TXT / PDF
@@ -2632,7 +2635,9 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         {selectedWeek && (
           <div className="mt-3 flex flex-wrap items-center gap-4">
             {selectedWeek.status === 'Ativa' && canWrite && (
-              <button onClick={() => archiveWeek(selectedWeek.id)} className="text-sm text-amber-700 hover:underline">
+              <button
+              onClick={() => archiveWeek(selectedWeek.id)}
+                  className="text-sm text-amber-700 hover:underline">
                 Arquivar esta semana (backup)
               </button>
             )}
