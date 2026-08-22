@@ -2100,11 +2100,15 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [addingExtraTo, setAddingExtraTo] = useState<number | null>(null);
 
   const canWrite =
-    user.is_main_admin ||
-    user.role === 'ADMINISTRADOR' ||
-    user.role === 'GERENTE' ||
-    (user.permissions && user.permissions.split(',').includes('schedule'));
+  user.is_main_admin ||
+  user.role === 'ADMINISTRADOR' ||
+  user.role === 'GERENTE' ||
+  (user.permissions && user.permissions.split(',').includes('schedule'));
 
+  const perms = (user.permissions || '').split(',').filter(Boolean);
+  const canEdit = canWrite || perms.includes('schedule_edit');
+  const canDelete = user.is_main_admin || user.role === 'ADMINISTRADOR' || perms.includes('schedule_delete');
+  const canExport = canWrite || perms.includes('schedule_export') || true; // quem vê a agenda pode exportar
   const isMainAdmin = !!user.is_main_admin;
 
   async function load() {
@@ -2520,7 +2524,7 @@ function RouteSlotCard({
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
                         {entry.no_comanda && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">SEM COMANDA</span>}
-                        {hasComanda && <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">COMANDA {entry.comanda}</span>}
+                        {hasComanda && (<span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">{entry.comanda}</span>)}
                         {entry.cooperativa_nome && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">{entry.cooperativa_nome}</span>}
                         {entry.pago && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">PAGO</span>}
                         {isReagendamento && <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">REAGENDAMENTO</span>}
