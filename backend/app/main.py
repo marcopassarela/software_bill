@@ -914,22 +914,42 @@ def delete_schedule_week(
     return {"ok": True}
 
 
-@app.post("/schedule/route-slots")
-def create_route_slot(
-    body: RouteSlotCreate,
+@app.post("/schedule/weeks/{week_id}/archive")
+def archive_schedule_week(
+    week_id: int,
     request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    if not db.get(ScheduleWeek, body.week_id):
+    if user.id != 1:
+        permissions = (user.permissions or "").split(",")
+
+        if "schedule_archive" not in permissions:
+            raise HTTPException(
+                403,
+                "Você não possui permissão para arquivar semanas."
+            )
+
+    w = db.get(ScheduleWeek, week_id)
+
+    if not w:
         raise HTTPException(404, "Semana não encontrada")
-    rs = RouteSlot(**body.model_dump())
-    db.add(rs)
-    db.flush()
-    audit(db, user, "CRIAÇÃO", "schedule", rs.id, request)
+
+    w.status = WeekStatus.ARQUIVADA
+    w.archived_at = func.now()
+
+    audit(
+        db,
+        user,
+        "ARQUIVAMENTO_SEMANA",
+        "schedule",
+        week_id,
+        request
+    )
+
     db.commit()
-    return serialize_route_slot(rs, db)
+
+    return {"ok": True}
 
 
 @app.patch("/schedule/route-slots/{slot_id}")
