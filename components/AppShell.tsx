@@ -1233,7 +1233,7 @@ function exportPdfMulti(
     pageHeight - 4
   );
 
-  doc.save(`Bill_Logistica_Relatorio_${today.replace(/\//g, '-')}.pdf`);
+  doc.save(`Logisticas_Bill_Relatorio_${today.replace(/\//g, '-')}.pdf`);
 }
 
 function ReportsExport({ lookups }: { lookups: any }) {
@@ -2374,7 +2374,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             )}
           </div>
         )}
-      </section>
+        </section>
 
       {selectedWeek ? (
         <div className="space-y-6">
