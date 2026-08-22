@@ -2074,25 +2074,11 @@ function MovementEditForm({
 // ============================================================
 
 const COOPERATIVAS = [
-  'COOPERATIVA 01',
-  'COOPERATIVA 02',
-  'COOPERATIVA 03',
-  'COOPERATIVA 04',
-  'COOPERATIVA 05',
-  'COOPERATIVA 06',
-  'COOPERATIVA 07',
-  'COOPERATIVA 08',
-  'COOPERATIVA 09',
-  'COOPERATIVA 10',
-  'COOPERATIVA 11',
-  'COOPERATIVA 12',
-  'COOPERATIVA 13',
-  'COOPERATIVA 14',
-  'COOPERATIVA 15',
-  'COOPERATIVA 16',
-  'COOPERATIVA 17',
-  'COOPERATIVA 18',
-  'OUTRA',
+  'COOPERATIVA 01', 'COOPERATIVA 02', 'COOPERATIVA 03', 'COOPERATIVA 04',
+  'COOPERATIVA 05', 'COOPERATIVA 06', 'COOPERATIVA 07', 'COOPERATIVA 08',
+  'COOPERATIVA 09', 'COOPERATIVA 10', 'COOPERATIVA 11', 'COOPERATIVA 12',
+  'COOPERATIVA 13', 'COOPERATIVA 14', 'COOPERATIVA 15', 'COOPERATIVA 16',
+  'COOPERATIVA 17', 'COOPERATIVA 18', 'OUTRA',
 ];
 
 function calcularVagas(service: string): number {
@@ -2119,6 +2105,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     user.role === 'GERENTE' ||
     (user.permissions && user.permissions.split(',').includes('schedule'));
 
+  const isMainAdmin = !!user.is_main_admin;
+
   async function load() {
     setLoading(true);
     setError('');
@@ -2136,9 +2124,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, [includeArchived]);
+  useEffect(() => { load(); }, [includeArchived]);
 
   const selectedWeek = weeks.find((w) => w.id === selectedWeekId);
 
@@ -2158,9 +2144,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       await request('/schedule/weeks', { method: 'POST', body: JSON.stringify(data) });
       setShowNewWeek(false);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function archiveWeek(weekId: number) {
@@ -2169,9 +2153,21 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       await request(`/schedule/weeks/${weekId}/archive`, { method: 'POST' });
       setSelectedWeekId(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function deleteWeek(weekId: number) {
+    const password = window.prompt('Digite a senha do Administrador Principal para excluir a semana permanentemente:');
+    if (password === null) return;
+    if (!confirm('ATENÇÃO: Isso apaga a semana e TODAS as rotas/clientes dela. Deseja continuar?')) return;
+    try {
+      await request(`/schedule/weeks/${weekId}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ password }),
+      });
+      setSelectedWeekId(null);
+      load();
+    } catch (e: any) { setError(e.message); }
   }
 
   async function createSlot(data: any) {
@@ -2179,22 +2175,15 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       await request('/schedule/route-slots', { method: 'POST', body: JSON.stringify(data) });
       setShowNewSlot(false);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function updateSlot(slotId: number, data: any) {
     try {
-      await request(`/schedule/route-slots/${slotId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      });
+      await request(`/schedule/route-slots/${slotId}`, { method: 'PATCH', body: JSON.stringify(data) });
       setEditingSlot(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function deleteSlot(slotId: number) {
@@ -2202,9 +2191,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/route-slots/${slotId}`, { method: 'DELETE' });
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function createEntry(data: any) {
@@ -2212,22 +2199,15 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       await request('/schedule/entries', { method: 'POST', body: JSON.stringify(data) });
       setAddingEntryTo(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function updateEntry(entryId: number, data: any) {
     try {
-      await request(`/schedule/entries/${entryId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      });
+      await request(`/schedule/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(data) });
       setEditingEntry(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function deleteEntry(entryId: number) {
@@ -2235,9 +2215,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/entries/${entryId}`, { method: 'DELETE' });
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function moveEntry(entryId: number, direction: 'up' | 'down') {
@@ -2247,9 +2225,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         body: JSON.stringify({ direction }),
       });
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function createExtra(data: any) {
@@ -2257,9 +2233,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       await request('/schedule/extras', { method: 'POST', body: JSON.stringify(data) });
       setAddingExtraTo(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function deleteExtra(extraId: number) {
@@ -2267,9 +2241,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/extras/${extraId}`, { method: 'DELETE' });
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    } catch (e: any) { setError(e.message); }
   }
 
   async function exportSlot(slotId: number, slot: any) {
@@ -2295,11 +2267,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   function formatDate(d: string) {
     const [y, m, day] = d.split('-');
     const date = new Date(Number(y), Number(m) - 1, Number(day));
-    return date.toLocaleDateString('pt-BR', {
-      weekday: 'short',
-      day: '2-digit',
-      month: '2-digit',
-    });
+    return date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
   }
 
   if (loading) {
@@ -2315,30 +2283,18 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-lg font-semibold">Agenda de Instalações</h2>
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={includeArchived}
-                onChange={(e) => setIncludeArchived(e.target.checked)}
-                className="h-4 w-4"
-              />
+              <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} className="h-4 w-4" />
               Mostrar arquivadas
             </label>
           </div>
-
           <div className="flex flex-wrap gap-2">
             {canWrite && (
               <>
-                <button
-                  onClick={() => setShowNewWeek(true)}
-                  className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                >
+                <button onClick={() => setShowNewWeek(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
                   + Nova semana
                 </button>
                 {selectedWeek && selectedWeek.status === 'Ativa' && (
-                  <button
-                    onClick={() => setShowNewSlot(true)}
-                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                  >
+                  <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90">
                     + Nova rota
                   </button>
                 )}
@@ -2361,21 +2317,23 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               }`}
             >
               {w.label || `Semana ${w.start_date}`}
-              {w.status === 'Arquivada' && (
-                <span className="ml-2 text-xs opacity-70">(Arquivada)</span>
-              )}
+              {w.status === 'Arquivada' && <span className="ml-2 text-xs opacity-70">(Arquivada)</span>}
             </button>
           ))}
         </div>
 
-        {selectedWeek && canWrite && selectedWeek.status === 'Ativa' && (
-          <div className="mt-3">
-            <button
-              onClick={() => archiveWeek(selectedWeek.id)}
-              className="text-sm text-amber-700 hover:underline"
-            >
-              Arquivar esta semana (backup)
-            </button>
+        {selectedWeek && canWrite && (
+          <div className="mt-3 flex flex-wrap gap-4">
+            {selectedWeek.status === 'Ativa' && (
+              <button onClick={() => archiveWeek(selectedWeek.id)} className="text-sm text-amber-700 hover:underline">
+                Arquivar esta semana (backup)
+              </button>
+            )}
+            {isMainAdmin && (
+              <button onClick={() => deleteWeek(selectedWeek.id)} className="text-sm text-red-600 hover:underline">
+                Excluir semana permanentemente
+              </button>
+            )}
           </div>
         )}
       </section>
@@ -2387,10 +2345,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               Nenhuma rota cadastrada nesta semana.
               {canWrite && (
                 <div className="mt-3">
-                  <button
-                    onClick={() => setShowNewSlot(true)}
-                    className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white"
-                  >
+                  <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
                     Criar primeira rota
                   </button>
                 </div>
@@ -2400,11 +2355,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             dates.map((date) => (
               <section key={date} className="overflow-hidden rounded-xl bg-white shadow-sm">
                 <div className="border-b bg-slate-50 px-5 py-3">
-                  <h3 className="font-semibold capitalize text-slate-800">
-                    {formatDate(date)}
-                  </h3>
+                  <h3 className="font-semibold capitalize text-slate-800">{formatDate(date)}</h3>
                 </div>
-
                 <div className="divide-y">
                   {slotsByDate[date].map((slot: any) => (
                     <RouteSlotCard
@@ -2434,71 +2386,29 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         </div>
       )}
 
-      {showNewWeek && (
-        <NewWeekModal onClose={() => setShowNewWeek(false)} onSubmit={createWeek} />
-      )}
-
+      {showNewWeek && <NewWeekModal onClose={() => setShowNewWeek(false)} onSubmit={createWeek} />}
       {showNewSlot && selectedWeek && (
-        <NewSlotModal
-          weekId={selectedWeek.id}
-          lookups={lookups}
-          onClose={() => setShowNewSlot(false)}
-          onSubmit={createSlot}
-        />
+        <NewSlotModal weekId={selectedWeek.id} lookups={lookups} onClose={() => setShowNewSlot(false)} onSubmit={createSlot} />
       )}
-
       {editingSlot && (
-        <EditSlotModal
-          slot={editingSlot}
-          lookups={lookups}
-          onClose={() => setEditingSlot(null)}
-          onSubmit={(data: any) => updateSlot(editingSlot.id, data)}
-        />
+        <EditSlotModal slot={editingSlot} lookups={lookups} onClose={() => setEditingSlot(null)} onSubmit={(data: any) => updateSlot(editingSlot.id, data)} />
       )}
-
       {addingEntryTo && (
-        <EntryFormModal
-          routeSlotId={addingEntryTo}
-          onClose={() => setAddingEntryTo(null)}
-          onSubmit={createEntry}
-          title="Adicionar cliente"
-        />
+        <EntryFormModal routeSlotId={addingEntryTo} onClose={() => setAddingEntryTo(null)} onSubmit={createEntry} title="Adicionar cliente" />
       )}
-
       {editingEntry && (
-        <EntryFormModal
-          routeSlotId={editingEntry.route_slot_id}
-          initial={editingEntry}
-          onClose={() => setEditingEntry(null)}
-          onSubmit={(data: any) => updateEntry(editingEntry.id, data)}
-          title="Editar cliente"
-        />
+        <EntryFormModal routeSlotId={editingEntry.route_slot_id} initial={editingEntry} onClose={() => setEditingEntry(null)} onSubmit={(data: any) => updateEntry(editingEntry.id, data)} title="Editar cliente" />
       )}
-
       {addingExtraTo && (
-        <NewExtraModal
-          entryId={addingExtraTo}
-          onClose={() => setAddingExtraTo(null)}
-          onSubmit={createExtra}
-        />
+        <NewExtraModal entryId={addingExtraTo} onClose={() => setAddingExtraTo(null)} onSubmit={createExtra} />
       )}
     </div>
   );
 }
 
 function RouteSlotCard({
-  slot,
-  canWrite,
-  onEdit,
-  onDelete,
-  onAddEntry,
-  onEditEntry,
-  onAddExtra,
-  onDeleteEntry,
-  onDeleteExtra,
-  onMoveEntry,
-  onExport,
-  onToggleClosed,
+  slot, canWrite, onEdit, onDelete, onAddEntry, onEditEntry,
+  onAddExtra, onDeleteEntry, onDeleteExtra, onMoveEntry, onExport, onToggleClosed,
 }: any) {
   const entries = slot.entries || [];
   const used = entries.reduce(
@@ -2509,7 +2419,6 @@ function RouteSlotCard({
   const available = Math.max(total - used, 0);
   const isFull = total > 0 && used >= total;
   const isClosed = slot.closed;
-
   const driverName = slot.driver?.name || '—';
   const secondName = slot.second_driver?.name;
   const vehiclePlate = slot.vehicle?.plate || slot.route_label || '';
@@ -2523,86 +2432,35 @@ function RouteSlotCard({
               {String(total).padStart(2, '0')} - ({slot.region_code})
               {vehiclePlate ? ` - ${vehiclePlate}` : ''}
             </span>
-            {isClosed && (
-              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
-                Fechada
-              </span>
-            )}
-            {isFull && !isClosed && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                Lotada
-              </span>
-            )}
+            {isClosed && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Fechada</span>}
+            {isFull && !isClosed && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Lotada</span>}
           </div>
           <div className="mt-1 text-sm text-slate-600">
-            {driverName}
-            {secondName ? ` | ${secondName}` : ''}
+            {driverName}{secondName ? ` | ${secondName}` : ''}
           </div>
 
-          {/* Contador de vagas bem visível */}
           <div className="mt-2 inline-flex items-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 shadow-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Vagas
-            </span>
-            <span
-              className={`text-xl font-bold ${
-                available === 0
-                  ? 'text-red-600'
-                  : available <= 2
-                  ? 'text-amber-600'
-                  : 'text-green-600'
-              }`}
-            >
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Vagas</span>
+            <span className={`text-xl font-bold ${available === 0 ? 'text-red-600' : available <= 2 ? 'text-amber-600' : 'text-green-600'}`}>
               {used}/{total || '∞'}
             </span>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                available === 0
-                  ? 'bg-red-100 text-red-700'
-                  : available <= 2
-                  ? 'bg-amber-100 text-amber-700'
-                  : 'bg-green-100 text-green-700'
-              }`}
-            >
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${available === 0 ? 'bg-red-100 text-red-700' : available <= 2 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
               {available} livres
             </span>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={onExport}
-            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
-          >
-            Exportar TXT
-          </button>
+          <button onClick={onExport} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Exportar TXT</button>
           {canWrite && (
             <>
-              <button
-                onClick={onToggleClosed}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
-              >
+              <button onClick={onToggleClosed} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
                 {isClosed ? 'Reabrir' : 'Fechar rota'}
               </button>
-              <button
-                onClick={onEdit}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
-              >
-                Editar
-              </button>
-              <button
-                onClick={onDelete}
-                className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
-              >
-                Excluir
-              </button>
+              <button onClick={onEdit} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Editar</button>
+              <button onClick={onDelete} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">Excluir</button>
               {!isClosed && !isFull && (
-                <button
-                  onClick={onAddEntry}
-                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
-                >
-                  + Cliente
-                </button>
+                <button onClick={onAddEntry} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90">+ Cliente</button>
               )}
             </>
           )}
@@ -2619,7 +2477,7 @@ function RouteSlotCard({
               <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
               <th className="min-w-[180px] px-3 py-2">Observação</th>
-              {canWrite && <th className="w-40 px-3 py-2">Ações</th>}
+              {canWrite && <th className="w-44 px-3 py-2">Ações</th>}
             </tr>
           </thead>
           <tbody>
@@ -2630,166 +2488,69 @@ function RouteSlotCard({
 
               return (
                 <React.Fragment key={entry.id}>
-                  <tr
-                    className={`border-t ${
-                      isReagendamento
-                        ? 'bg-amber-50'
-                        : entry.pago
-                        ? 'bg-green-50/50'
-                        : 'hover:bg-slate-50/50'
-                    }`}
-                  >
+                  <tr className={`border-t ${isReagendamento ? 'bg-amber-50' : entry.pago ? 'bg-green-50/50' : 'hover:bg-slate-50/50'}`}>
                     <td className="px-3 py-2">
                       <div className="flex flex-col items-center gap-1">
-                        <span className="font-bold text-slate-800">
-                          {String(entry.position).padStart(2, '0')}°
-                        </span>
-                        {slots > 1 && (
-                          <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
-                            {slots} vagas
-                          </span>
-                        )}
+                        <span className="font-bold text-slate-800">{String(entry.position).padStart(2, '0')}°</span>
+                        {slots > 1 && <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">{slots} vagas</span>}
                         {canWrite && (
                           <div className="flex gap-0.5">
-                            <button
-                              onClick={() => onMoveEntry(entry.id, 'up')}
-                              disabled={idx === 0}
-                              className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30"
-                              title="Subir"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              onClick={() => onMoveEntry(entry.id, 'down')}
-                              disabled={idx === entries.length - 1}
-                              className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30"
-                              title="Descer"
-                            >
-                              ↓
-                            </button>
+                            <button onClick={() => onMoveEntry(entry.id, 'up')} disabled={idx === 0} className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30" title="Subir">↑</button>
+                            <button onClick={() => onMoveEntry(entry.id, 'down')} disabled={idx === entries.length - 1} className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30" title="Descer">↓</button>
                           </div>
                         )}
                       </div>
                     </td>
-
                     <td className="px-3 py-2">
                       <div className="font-medium text-slate-900">{entry.client_name}</div>
                       <div className="text-xs text-slate-500">{entry.service_description}</div>
                     </td>
-
                     <td className="px-3 py-2">
                       {entry.phone ? (
-                        <a
-                          href={`https://wa.me/55${entry.phone.replace(/\D/g, '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-green-600 hover:underline"
-                        >
+                        <a href={`https://wa.me/55${entry.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="font-medium text-green-600 hover:underline">
                           {entry.phone}
                         </a>
-                      ) : (
-                        '—'
-                      )}
+                      ) : '—'}
                     </td>
-
                     <td className="px-3 py-2">
                       {entry.location_link ? (
-                        <a
-                          href={entry.location_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-brand hover:underline"
-                        >
-                          Maps
-                        </a>
-                      ) : (
-                        '—'
-                      )}
+                        <a href={entry.location_link} target="_blank" rel="noopener noreferrer" className="text-xs text-brand hover:underline">Maps</a>
+                      ) : '—'}
                     </td>
-
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
-                        {entry.no_comanda && (
-                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                            SEM COMANDA
-                          </span>
-                        )}
-                        {hasComanda && (
-                          <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
-                            COMANDA {entry.comanda}
-                          </span>
-                        )}
-                        {entry.cooperativa_nome && (
-                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                            {entry.cooperativa_nome}
-                          </span>
-                        )}
-                        {entry.pago && (
-                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                            PAGO
-                          </span>
-                        )}
-                        {isReagendamento && (
-                          <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                            REAGENDAMENTO
-                          </span>
-                        )}
+                        {entry.no_comanda && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">SEM COMANDA</span>}
+                        {hasComanda && <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">COMANDA {entry.comanda}</span>}
+                        {entry.cooperativa_nome && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">{entry.cooperativa_nome}</span>}
+                        {entry.pago && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">PAGO</span>}
+                        {isReagendamento && <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">REAGENDAMENTO</span>}
                       </div>
                     </td>
-
                     <td className="px-3 py-2">
-                      <div
-                        className="max-w-[240px] whitespace-pre-wrap break-words text-xs text-slate-600"
-                        title={entry.observation || ''}
-                      >
+                      <div className="max-w-[240px] whitespace-pre-wrap break-words text-xs text-slate-600" title={entry.observation || ''}>
                         {entry.observation || '—'}
                       </div>
                     </td>
-
                     {canWrite && (
                       <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            onClick={() => onEditEntry(entry)}
-                            className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-200"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => onAddExtra(entry.id)}
-                            className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-200"
-                          >
-                            + Extra
-                          </button>
-                          <button
-                            onClick={() => onDeleteEntry(entry.id)}
-                            className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100"
-                          >
-                            Remover
-                          </button>
+                        <div className="flex flex-row flex-wrap items-center gap-1">
+                          <button onClick={() => onEditEntry(entry)} className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200">Editar</button>
+                          <button onClick={() => onAddExtra(entry.id)} className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200">+ Extra</button>
+                          <button onClick={() => onDeleteEntry(entry.id)} className="rounded bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100">Remover</button>
                         </div>
                       </td>
                     )}
                   </tr>
-
                   {(entry.extras || []).map((extra: any) => (
                     <tr key={extra.id} className="bg-slate-50/80 text-xs">
                       <td className="px-3 py-1.5"></td>
                       <td className="px-3 py-1.5 text-slate-600" colSpan={4}>
-                        <span className="text-slate-400">↳</span>{' '}
-                        <span className="font-medium">+ {extra.description}</span>
-                        {extra.observation && (
-                          <span className="ml-2 text-slate-400">({extra.observation})</span>
-                        )}
+                        <span className="text-slate-400">↳</span> <span className="font-medium">+ {extra.description}</span>
+                        {extra.observation && <span className="ml-2 text-slate-400">({extra.observation})</span>}
                       </td>
                       {canWrite && (
                         <td className="px-3 py-1.5">
-                          <button
-                            onClick={() => onDeleteExtra(extra.id)}
-                            className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100"
-                          >
-                            Remover
-                          </button>
+                          <button onClick={() => onDeleteExtra(extra.id)} className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100">Remover</button>
                         </td>
                       )}
                     </tr>
@@ -2797,12 +2558,9 @@ function RouteSlotCard({
                 </React.Fragment>
               );
             })}
-
             {entries.length === 0 && (
               <tr>
-                <td colSpan={canWrite ? 7 : 6} className="px-3 py-6 text-center text-slate-400">
-                  Nenhum cliente agendado nesta rota
-                </td>
+                <td colSpan={canWrite ? 7 : 6} className="px-3 py-6 text-center text-slate-400">Nenhum cliente agendado nesta rota</td>
               </tr>
             )}
           </tbody>
@@ -2812,13 +2570,7 @@ function RouteSlotCard({
   );
 }
 
-function EntryFormModal({
-  routeSlotId,
-  initial,
-  onClose,
-  onSubmit,
-  title,
-}: any) {
+function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any) {
   const [form, setForm] = useState({
     service_description: initial?.service_description || '',
     client_name: initial?.client_name || '',
@@ -2837,9 +2589,7 @@ function EntryFormModal({
   function set(key: string, v: any) {
     setForm((s) => {
       const next = { ...s, [key]: v };
-      if (key === 'service_description') {
-        next.slots_consumed = calcularVagas(v);
-      }
+      if (key === 'service_description') next.slots_consumed = calcularVagas(v);
       return next;
     });
   }
@@ -2874,141 +2624,60 @@ function EntryFormModal({
         <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block text-slate-600">Nome do cliente *</span>
-            <input
-              type="text"
-              required
-              value={form.client_name}
-              onChange={(e) => set('client_name', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
+            <input type="text" required value={form.client_name} onChange={(e) => set('client_name', e.target.value)} className="w-full rounded-lg border p-2" />
           </label>
-
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block text-slate-600">Descrição do serviço *</span>
-            <input
-              type="text"
-              required
-              value={form.service_description}
-              onChange={(e) => set('service_description', e.target.value)}
-              className="w-full rounded-lg border p-2"
-              placeholder="2 MONO 1CX 8M AE - (GAROPABA)"
-            />
+            <input type="text" required value={form.service_description} onChange={(e) => set('service_description', e.target.value)} className="w-full rounded-lg border p-2" placeholder="2 MONO 1CX 8M AE - (GAROPABA)" />
             <span className="mt-1 block text-xs text-slate-500">
-              Vagas que este cliente consome:{' '}
-              <strong className="text-brand">
-                {form.slots_consumed || calcularVagas(form.service_description)}
-              </strong>
+              Vagas que este cliente consome: <strong className="text-brand">{form.slots_consumed || calcularVagas(form.service_description)}</strong>
             </span>
           </label>
-
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Telefone</span>
-            <input
-              type="text"
-              value={form.phone}
-              onChange={(e) => set('phone', e.target.value)}
-              className="w-full rounded-lg border p-2"
-              placeholder="48999999999"
-            />
+            <input type="text" value={form.phone} onChange={(e) => set('phone', e.target.value)} className="w-full rounded-lg border p-2" placeholder="48999999999" />
           </label>
-
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Status</span>
-            <select
-              value={form.status}
-              onChange={(e) => set('status', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+            <select value={form.status} onChange={(e) => set('status', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="Normal">Normal</option>
               <option value="Reagendamento">Reagendamento</option>
               <option value="Pendente">Pendente</option>
               <option value="Fechado">Fechado</option>
             </select>
           </label>
-
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block text-slate-600">Link de localização (Maps)</span>
-            <input
-              type="url"
-              value={form.location_link}
-              onChange={(e) => set('location_link', e.target.value)}
-              className="w-full rounded-lg border p-2"
-              placeholder="https://maps.app.goo.gl/..."
-            />
+            <input type="url" value={form.location_link} onChange={(e) => set('location_link', e.target.value)} className="w-full rounded-lg border p-2" placeholder="https://maps.app.goo.gl/..." />
           </label>
-
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Nº da Comanda</span>
-            <input
-              type="text"
-              value={form.comanda}
-              onChange={(e) => set('comanda', e.target.value)}
-              className="w-full rounded-lg border p-2"
-              placeholder="22967"
-            />
+            <input type="text" value={form.comanda} onChange={(e) => set('comanda', e.target.value)} className="w-full rounded-lg border p-2" placeholder="22967" />
           </label>
-
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Cooperativa</span>
-            <select
-              value={form.cooperativa_nome}
-              onChange={(e) => set('cooperativa_nome', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+            <select value={form.cooperativa_nome} onChange={(e) => set('cooperativa_nome', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Nenhuma</option>
-              {COOPERATIVAS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+              {COOPERATIVAS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
-
           <div className="flex flex-wrap gap-4 sm:col-span-2">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.no_comanda}
-                onChange={(e) => set('no_comanda', e.target.checked)}
-                className="h-4 w-4"
-              />
+              <input type="checkbox" checked={form.no_comanda} onChange={(e) => set('no_comanda', e.target.checked)} className="h-4 w-4" />
               <span className="font-medium text-red-600">SEM COMANDA</span>
             </label>
-
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.pago}
-                onChange={(e) => set('pago', e.target.checked)}
-                className="h-4 w-4"
-              />
+              <input type="checkbox" checked={form.pago} onChange={(e) => set('pago', e.target.checked)} className="h-4 w-4" />
               <span className="font-medium text-emerald-600">PAGO</span>
             </label>
           </div>
-
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block text-slate-600">Observação</span>
-            <textarea
-              value={form.observation}
-              onChange={(e) => set('observation', e.target.value)}
-              className="h-24 w-full rounded-lg border p-2"
-              rows={4}
-            />
+            <textarea value={form.observation} onChange={(e) => set('observation', e.target.value)} className="h-24 w-full rounded-lg border p-2" rows={4} />
           </label>
-
           <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
               {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>
@@ -3019,28 +2688,15 @@ function EntryFormModal({
 }
 
 function NewSlotModal({ weekId, lookups, onClose, onSubmit }: any) {
-  const [form, setForm] = useState({
-    date: '',
-    region_code: '',
-    vehicle_id: '',
-    total_slots: '6',
-    driver_id: '',
-    second_driver_id: '',
-    notes: '',
-  });
+  const [form, setForm] = useState({ date: '', region_code: '', vehicle_id: '', total_slots: '6', driver_id: '', second_driver_id: '', notes: '' });
   const [saving, setSaving] = useState(false);
-
-  function set(key: string, v: string) {
-    setForm((s) => ({ ...s, [key]: v }));
-  }
+  function set(key: string, v: string) { setForm((s) => ({ ...s, [key]: v })); }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      const vehicle = (lookups.vehicles || []).find(
-        (v: any) => String(v.id) === form.vehicle_id
-      );
+      const vehicle = (lookups.vehicles || []).find((v: any) => String(v.id) === form.vehicle_id);
       await onSubmit({
         week_id: weekId,
         date: form.date,
@@ -3052,9 +2708,7 @@ function NewSlotModal({ weekId, lookups, onClose, onSubmit }: any) {
         vehicle_id: form.vehicle_id ? Number(form.vehicle_id) : null,
         notes: form.notes || null,
       });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   return (
@@ -3062,108 +2716,31 @@ function NewSlotModal({ weekId, lookups, onClose, onSubmit }: any) {
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold">Nova rota</h3>
         <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Data *</span>
-            <input
-              type="date"
-              required
-              value={form.date}
-              onChange={(e) => set('date', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Região (ex: CR) *</span>
-            <input
-              type="text"
-              required
-              maxLength={10}
-              value={form.region_code}
-              onChange={(e) => set('region_code', e.target.value)}
-              className="w-full rounded-lg border p-2 uppercase"
-              placeholder="CR"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Caminhão (placa) *</span>
-            <select
-              required
-              value={form.vehicle_id}
-              onChange={(e) => set('vehicle_id', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Data *</span><input type="date" required value={form.date} onChange={(e) => set('date', e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Região (ex: CR) *</span><input type="text" required maxLength={10} value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" placeholder="CR" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminhão (placa) *</span>
+            <select required value={form.vehicle_id} onChange={(e) => set('vehicle_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione a placa</option>
-              {(lookups.vehicles || []).map((v: any) => (
-                <option key={v.id} value={v.id}>
-                  {v.plate} — {v.brand} {v.model}
-                </option>
-              ))}
+              {(lookups.vehicles || []).map((v: any) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}</option>)}
             </select>
           </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Total de vagas *</span>
-            <input
-              type="number"
-              min={0}
-              required
-              value={form.total_slots}
-              onChange={(e) => set('total_slots', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Motorista</span>
-            <select
-              value={form.driver_id}
-              onChange={(e) => set('driver_id', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Total de vagas *</span><input type="number" min={0} required value={form.total_slots} onChange={(e) => set('total_slots', e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Motorista</span>
+            <select value={form.driver_id} onChange={(e) => set('driver_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
-              {(lookups.drivers || []).map((d: any) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">2º Motorista</span>
-            <select
-              value={form.second_driver_id}
-              onChange={(e) => set('second_driver_id', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+          <label className="text-sm"><span className="mb-1 block text-slate-600">2º Motorista</span>
+            <select value={form.second_driver_id} onChange={(e) => set('second_driver_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
-              {(lookups.drivers || []).map((d: any) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Observações</span>
-            <textarea
-              value={form.notes}
-              onChange={(e) => set('notes', e.target.value)}
-              className="h-16 w-full rounded-lg border p-2"
-            />
-          </label>
+          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Observações</span><textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} className="h-16 w-full rounded-lg border p-2" /></label>
           <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {saving ? 'Salvando…' : 'Criar rota'}
-            </button>
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Salvando…' : 'Criar rota'}</button>
           </div>
         </form>
       </div>
@@ -3182,18 +2759,13 @@ function EditSlotModal({ slot, lookups, onClose, onSubmit }: any) {
     notes: slot.notes || '',
   });
   const [saving, setSaving] = useState(false);
-
-  function set(key: string, v: any) {
-    setForm((s) => ({ ...s, [key]: v }));
-  }
+  function set(key: string, v: any) { setForm((s) => ({ ...s, [key]: v })); }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      const vehicle = (lookups.vehicles || []).find(
-        (v: any) => String(v.id) === form.vehicle_id
-      );
+      const vehicle = (lookups.vehicles || []).find((v: any) => String(v.id) === form.vehicle_id);
       await onSubmit({
         region_code: form.region_code.toUpperCase(),
         route_label: vehicle ? vehicle.plate : null,
@@ -3204,9 +2776,7 @@ function EditSlotModal({ slot, lookups, onClose, onSubmit }: any) {
         closed: form.closed,
         notes: form.notes || null,
       });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   return (
@@ -3214,103 +2784,34 @@ function EditSlotModal({ slot, lookups, onClose, onSubmit }: any) {
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold">Editar rota</h3>
         <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Região *</span>
-            <input
-              type="text"
-              required
-              value={form.region_code}
-              onChange={(e) => set('region_code', e.target.value)}
-              className="w-full rounded-lg border p-2 uppercase"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Caminhão (placa)</span>
-            <select
-              value={form.vehicle_id}
-              onChange={(e) => set('vehicle_id', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Região *</span><input type="text" required value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminhão (placa)</span>
+            <select value={form.vehicle_id} onChange={(e) => set('vehicle_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
-              {(lookups.vehicles || []).map((v: any) => (
-                <option key={v.id} value={v.id}>
-                  {v.plate} — {v.brand} {v.model}
-                </option>
-              ))}
+              {(lookups.vehicles || []).map((v: any) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}</option>)}
             </select>
           </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Total de vagas</span>
-            <input
-              type="number"
-              min={0}
-              value={form.total_slots}
-              onChange={(e) => set('total_slots', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Total de vagas</span><input type="number" min={0} value={form.total_slots} onChange={(e) => set('total_slots', e.target.value)} className="w-full rounded-lg border p-2" /></label>
           <label className="flex items-center gap-2 pt-6 text-sm">
-            <input
-              type="checkbox"
-              checked={form.closed}
-              onChange={(e) => set('closed', e.target.checked)}
-              className="h-4 w-4"
-            />
+            <input type="checkbox" checked={form.closed} onChange={(e) => set('closed', e.target.checked)} className="h-4 w-4" />
             <span className="text-slate-600">Rota fechada</span>
           </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Motorista</span>
-            <select
-              value={form.driver_id}
-              onChange={(e) => set('driver_id', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Motorista</span>
+            <select value={form.driver_id} onChange={(e) => set('driver_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
-              {(lookups.drivers || []).map((d: any) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">2º Motorista</span>
-            <select
-              value={form.second_driver_id}
-              onChange={(e) => set('second_driver_id', e.target.value)}
-              className="w-full rounded-lg border p-2"
-            >
+          <label className="text-sm"><span className="mb-1 block text-slate-600">2º Motorista</span>
+            <select value={form.second_driver_id} onChange={(e) => set('second_driver_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
-              {(lookups.drivers || []).map((d: any) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Observações</span>
-            <textarea
-              value={form.notes}
-              onChange={(e) => set('notes', e.target.value)}
-              className="h-16 w-full rounded-lg border p-2"
-            />
-          </label>
+          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Observações</span><textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} className="h-16 w-full rounded-lg border p-2" /></label>
           <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {saving ? 'Salvando…' : 'Salvar alterações'}
-            </button>
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Salvando…' : 'Salvar alterações'}</button>
           </div>
         </form>
       </div>
@@ -3326,56 +2827,21 @@ function NewWeekModal({ onClose, onSubmit }: any) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    try {
-      await onSubmit({ start_date: startDate, label: label || undefined });
-    } finally {
-      setSaving(false);
-    }
+    try { await onSubmit({ start_date: startDate, label: label || undefined }); }
+    finally { setSaving(false); }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold">Nova semana</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Informe a data da segunda-feira da semana.
-        </p>
+        <p className="mt-1 text-sm text-slate-500">Informe a data da segunda-feira da semana.</p>
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-600">Data de início (segunda) *</span>
-            <input
-              type="date"
-              required
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-600">Rótulo (opcional)</span>
-            <input
-              type="text"
-              placeholder="Ex: Semana 24/08 a 28/08"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Data de início (segunda) *</span><input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Rótulo (opcional)</span><input type="text" placeholder="Ex: Semana 24/08 a 28/08" value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-lg border p-2" /></label>
           <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {saving ? 'Criando…' : 'Criar semana'}
-            </button>
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Criando…' : 'Criar semana'}</button>
           </div>
         </form>
       </div>
@@ -3392,60 +2858,21 @@ function NewExtraModal({ entryId, onClose, onSubmit }: any) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSubmit({
-        entry_id: entryId,
-        description,
-        observation: observation || null,
-        status: 'Normal',
-      });
-    } finally {
-      setSaving(false);
-    }
+      await onSubmit({ entry_id: entryId, description, observation: observation || null, status: 'Normal' });
+    } finally { setSaving(false); }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold">Adicionar extra</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Extras (ex: cavalete de água) <strong>não descontam vaga</strong>.
-        </p>
+        <p className="mt-1 text-sm text-slate-500">Extras (ex: cavalete de água) <strong>não descontam vaga</strong>.</p>
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-600">Descrição *</span>
-            <input
-              type="text"
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full rounded-lg border p-2"
-              placeholder="CAVALETE DE AGUA"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-600">Observação</span>
-            <input
-              type="text"
-              value={observation}
-              onChange={(e) => setObservation(e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Descrição *</span><input type="text" required value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-lg border p-2" placeholder="CAVALETE DE AGUA" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Observação</span><input type="text" value={observation} onChange={(e) => setObservation(e.target.value)} className="w-full rounded-lg border p-2" /></label>
           <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {saving ? 'Salvando…' : 'Adicionar extra'}
-            </button>
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Salvando…' : 'Adicionar extra'}</button>
           </div>
         </form>
       </div>

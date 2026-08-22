@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, date
 from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -744,7 +745,11 @@ class ScheduleEntryCreate(BaseModel):
     phone: str | None = None
     location_link: str | None = None
     no_comanda: bool = False
+    comanda: str | None = None
     cooperativa: bool = False
+    cooperativa_nome: str | None = None
+    pago: bool = False
+    slots_consumed: int | None = None
     status: str = "Normal"
     observation: str | None = None
 
@@ -755,7 +760,11 @@ class ScheduleEntryUpdate(BaseModel):
     phone: str | None = None
     location_link: str | None = None
     no_comanda: bool | None = None
+    comanda: str | None = None
     cooperativa: bool | None = None
+    cooperativa_nome: str | None = None
+    pago: bool | None = None
+    slots_consumed: int | None = None
     status: str | None = None
     observation: str | None = None
 
@@ -772,6 +781,19 @@ class ScheduleWeekCreate(BaseModel):
     label: str | None = None
 
 
+class MoveEntryBody(BaseModel):
+    direction: str  # "up" ou "down"
+
+
+class DeleteWeekBody(BaseModel):
+    password: str
+
+
+def calcular_vagas(service_description: str) -> int:
+    match = re.match(r'^(\d+)', (service_description or '').strip())
+    return int(match.group(1)) if match else 1
+
+
 def serialize_extra(x: ScheduleExtra):
     return serialize(x)
 
@@ -782,6 +804,11 @@ def serialize_entry(x: ScheduleEntry, db: Session):
         select(ScheduleExtra).where(ScheduleExtra.entry_id == x.id)
     ).all()
     d["extras"] = [serialize_extra(e) for e in extras]
+    # Garante que os novos campos sempre apareçam
+    d["comanda"] = x.comanda
+    d["pago"] = bool(x.pago)
+    d["cooperativa_nome"] = x.cooperativa_nome
+    d["slots_consumed"] = x.slots_consumed or calcular_vagas(x.service_description)
     return d
 
 
@@ -793,12 +820,18 @@ def serialize_route_slot(x: RouteSlot, db: Session):
         .order_by(ScheduleEntry.position)
     ).all()
     d["entries"] = [serialize_entry(e, db) for e in entries]
-    d["slots_used"] = len(entries)
-    d["slots_available"] = max(x.total_slots - len(entries), 0)
+    # Soma real de vagas consumidas
+    used = sum(
+        (e.slots_consumed or calcular_vagas(e.service_description)) for e in entries
+    )
+    d["slots_used"] = used
+    d["slots_available"] = max(x.total_slots - used, 0)
     driver = db.get(Driver, x.driver_id) if x.driver_id else None
     second_driver = db.get(Driver, x.second_driver_id) if x.second_driver_id else None
+    vehicle = db.get(Vehicle, x.vehicle_id) if x.vehicle_id else None
     d["driver"] = serialize(driver) if driver else None
     d["second_driver"] = serialize(second_driver) if second_driver else None
+    d["vehicle"] = serialize(vehicle) if vehicle else None
     return d
 
 
@@ -848,9 +881,6 @@ def archive_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Faz o 'backup' da semana: arquiva (não apaga, fica consultável no histórico).
-    Depois de arquivar, chame POST /schedule/weeks para abrir a semana nova
-    (mantendo sempre 3 semanas ativas)."""
     require("schedule", write=True)(user)
     w = db.get(ScheduleWeek, week_id)
     if not w:
@@ -858,6 +888,28 @@ def archive_schedule_week(
     w.status = WeekStatus.ARQUIVADA
     w.archived_at = func.now()
     audit(db, user, "ARQUIVAMENTO_SEMANA", "schedule", week_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/schedule/weeks/{week_id}")
+def delete_schedule_week(
+    week_id: int,
+    body: DeleteWeekBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Exclui permanentemente a semana. Somente Admin Principal + senha."""
+    if user.id != 1 or user.role != Role.ADMIN:
+        raise HTTPException(403, "Apenas o Administrador Principal pode excluir semanas")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Senha incorreta")
+    w = db.get(ScheduleWeek, week_id)
+    if not w:
+        raise HTTPException(404, "Semana não encontrada")
+    db.delete(w)
+    audit(db, user, "EXCLUSÃO_SEMANA", "schedule", week_id, request)
     db.commit()
     return {"ok": True}
 
@@ -929,17 +981,33 @@ def create_schedule_entry(
         raise HTTPException(404, "Rota não encontrada")
     if rs.closed:
         raise HTTPException(409, "Esta rota está fechada para novos clientes")
-    current_count = db.scalar(
-        select(func.count()).select_from(ScheduleEntry).where(
-            ScheduleEntry.route_slot_id == rs.id
-        )
-    ) or 0
-    if rs.total_slots and current_count >= rs.total_slots:
-        raise HTTPException(409, "Não há vagas disponíveis nesta rota")
+
+    slots_needed = body.slots_consumed or calcular_vagas(body.service_description)
+
+    # Calcula vagas já usadas
+    entries = db.scalars(
+        select(ScheduleEntry).where(ScheduleEntry.route_slot_id == rs.id)
+    ).all()
+    used = sum((e.slots_consumed or calcular_vagas(e.service_description)) for e in entries)
+
+    if rs.total_slots and (used + slots_needed) > rs.total_slots:
+        raise HTTPException(409, "Não há vagas suficientes nesta rota")
+
     entry = ScheduleEntry(
-        **body.model_dump(exclude={"route_slot_id"}),
         route_slot_id=rs.id,
-        position=current_count + 1,
+        position=len(entries) + 1,
+        service_description=body.service_description,
+        client_name=body.client_name,
+        phone=body.phone,
+        location_link=body.location_link,
+        no_comanda=body.no_comanda,
+        comanda=body.comanda,
+        cooperativa=body.cooperativa,
+        cooperativa_nome=body.cooperativa_nome,
+        pago=body.pago,
+        slots_consumed=slots_needed,
+        status=body.status,
+        observation=body.observation,
     )
     db.add(entry)
     db.flush()
@@ -960,8 +1028,16 @@ def update_schedule_entry(
     entry = db.get(ScheduleEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Cliente não encontrado")
-    for k, v in body.model_dump(exclude_unset=True).items():
+
+    data = body.model_dump(exclude_unset=True)
+
+    # Se mudou o serviço, recalcula slots_consumed
+    if "service_description" in data and "slots_consumed" not in data:
+        data["slots_consumed"] = calcular_vagas(data["service_description"])
+
+    for k, v in data.items():
         setattr(entry, k, v)
+
     audit(db, user, "ALTERAÇÃO", "schedule", entry_id, request)
     db.commit()
     return serialize_entry(entry, db)
@@ -974,7 +1050,6 @@ def delete_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Ao excluir, reordena as posições dos clientes restantes e libera a vaga."""
     require("schedule", write=True)(user)
     entry = db.get(ScheduleEntry, entry_id)
     if not entry:
@@ -991,6 +1066,43 @@ def delete_schedule_entry(
     for e in later:
         e.position -= 1
     audit(db, user, "EXCLUSÃO", "schedule", entry_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/schedule/entries/{entry_id}/move")
+def move_schedule_entry(
+    entry_id: int,
+    body: MoveEntryBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule", write=True)(user)
+    entry = db.get(ScheduleEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Cliente não encontrado")
+
+    direction = body.direction.lower()
+    if direction not in ("up", "down"):
+        raise HTTPException(400, "direction deve ser 'up' ou 'down'")
+
+    new_pos = entry.position - 1 if direction == "up" else entry.position + 1
+    if new_pos < 1:
+        raise HTTPException(400, "Já está na primeira posição")
+
+    other = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id == entry.route_slot_id,
+            ScheduleEntry.position == new_pos,
+        )
+    )
+    if not other:
+        raise HTTPException(400, "Não há cliente nessa posição")
+
+    # Troca as posições
+    entry.position, other.position = other.position, entry.position
+    audit(db, user, "REORDENAÇÃO", "schedule", entry_id, request)
     db.commit()
     return {"ok": True}
 
@@ -1052,6 +1164,8 @@ def export_route_slot(
             lines.append(f"localização: {e.location_link}")
         if e.phone:
             lines.append(f"tel: {e.phone}")
+        if e.observation:
+            lines.append(f"*obs: {e.observation}*")          # ← OBS em negrito
         extras = db.scalars(
             select(ScheduleExtra).where(ScheduleExtra.entry_id == e.id)
         ).all()

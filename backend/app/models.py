@@ -265,18 +265,22 @@ class RouteSlot(Base):
 
 
 class ScheduleEntry(Base):
-    """Um cliente agendado numa vaga da rota — consome 1 vaga."""
+    """Um cliente agendado numa vaga da rota — consome 1 ou mais vagas."""
     __tablename__ = "schedule_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     route_slot_id: Mapped[int] = mapped_column(ForeignKey("route_slots.id", ondelete="CASCADE"))
     position: Mapped[int] = mapped_column(Integer)  # 01°, 02°, ...
-    service_description: Mapped[str] = mapped_column(String(200))  # "1 BI 7MT AE"
+    service_description: Mapped[str] = mapped_column(String(200))
     client_name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str | None] = mapped_column(String(30))
     location_link: Mapped[str | None] = mapped_column(String(300))
     no_comanda: Mapped[bool] = mapped_column(Boolean, default=False)
-    cooperativa: Mapped[bool] = mapped_column(Boolean, default=False)
+    comanda: Mapped[str | None] = mapped_column(String(30))                    # NOVO
+    cooperativa: Mapped[bool] = mapped_column(Boolean, default=False)          # mantido
+    cooperativa_nome: Mapped[str | None] = mapped_column(String(120))          # NOVO
+    pago: Mapped[bool] = mapped_column(Boolean, default=False)                 # NOVO
+    slots_consumed: Mapped[int] = mapped_column(Integer, default=1)            # NOVO
     status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
     observation: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
