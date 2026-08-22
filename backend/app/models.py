@@ -21,8 +21,10 @@ class Role(str, enum.Enum):
     ADMINISTRADOR = "ADMINISTRADOR"
     GERENTE = "GERENTE"
     LOGÍSTICA = "LOGÍSTICA"
+    ESTOQUE = "ESTOQUE"
     ALMOXARIFADO = "ALMOXARIFADO"
     MOTORISTA = "MOTORISTA"
+    CONSULTA = "CONSULTA"
     VENDEDOR = "VENDEDOR"
 
 
@@ -33,7 +35,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[Role] = mapped_column(Enum(Role, values_callable=lambda x: [e.value for e in x]),default=Role.VENDEDOR,)
+    role: Mapped[Role] = mapped_column(Enum(Role,name="role",values_callable=lambda enum: [item.value for item in enum],),default=Role.CONSULTA,)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
