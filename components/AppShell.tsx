@@ -1248,31 +1248,64 @@ function ReportsExport({ lookups }: { lookups: any }) {
   }
 
   async function run() {
-    if (!selected.length) {
-      setErr('Selecione pelo menos um módulo.');
-      return;
-    }
-    setExporting(true);
-    setErr('');
-    try {
-      const datasets = await Promise.all(
-        selected.map(async (v) => {
-          const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
-          const rows = (await request(cfg.path)) as any[];
-          return { cfg, rows: rows.map((r) => cleanRowForReport(r, lookups)) };
-        })
-      );
-      if (format === 'xlsx') {
-        exportExcelMulti(datasets);
-      } else {
-        exportPdfMulti(datasets, fontSize);
-      }
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setExporting(false);
-    }
+  if (!selected.length) {
+    setErr('Selecione pelo menos um módulo.');
+    return;
   }
+  setExporting(true);
+  setErr('');
+  try {
+    const datasets = await Promise.all(
+      selected.map(async (v) => {
+        const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
+
+        if (v === 'schedule') {
+          const weeks = (await request(cfg.path)) as any[];
+          const flat: any[] = [];
+          weeks.forEach((week) => {
+            (week.route_slots || []).forEach((slot: any) => {
+              (slot.entries || []).forEach((e: any) => {
+                flat.push({
+                  Semana: week.label || week.start_date,
+                  Status_Semana: week.status,
+                  Data: slot.date,
+                  Região: slot.region_code,
+                  Rota: slot.route_label || slot.vehicle?.plate || '',
+                  Posição: e.position,
+                  Cliente: e.client_name,
+                  Serviço: e.service_description,
+                  Telefone: e.phone || '',
+                  Localização: e.location_link || '',
+                  Comanda: e.comanda || '',
+                  Pago: e.pago ? 'Sim' : 'Não',
+                  Cooperativa: e.cooperativa_nome || '',
+                  'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
+                  Status: e.status || '',
+                  Observação: e.observation || '',
+                  Vagas: e.slots_consumed || 1,
+                });
+              });
+            });
+          });
+          return { cfg, rows: flat };
+        }
+
+        const rows = (await request(cfg.path)) as any[];
+        return { cfg, rows: rows.map((r) => cleanRowForReport(r, lookups)) };
+      })
+    );
+
+    if (format === 'xlsx') {
+      exportExcelMulti(datasets);
+    } else {
+      exportPdfMulti(datasets, fontSize);
+    }
+  } catch (e: any) {
+    setErr(e.message);
+  } finally {
+    setExporting(false);
+  }
+}
 
   return (
     <div className="p-5 text-sm text-slate-600">
@@ -2087,6 +2120,10 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [weeks, setWeeks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showDeleteWeek, setShowDeleteWeek] = useState(false);
+  const [deleteWeekId, setDeleteWeekId] = useState<number | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingWeek, setDeletingWeek] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
   const [showNewWeek, setShowNewWeek] = useState(false);
