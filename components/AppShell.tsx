@@ -1,5 +1,5 @@
 'use client';
-import { StockMovementForm, printProductLabels } from './QrTools';
+import { StockMovementForm, printProductLabels } from '@/components/QrTools';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
