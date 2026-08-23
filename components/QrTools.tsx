@@ -18,6 +18,7 @@ export function QrScannerModal({
   onClose: () => void;
 }) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const handledRef = useRef(false); // evita processar o mesmo QR 2x
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(true);
 
@@ -30,20 +31,30 @@ export function QrScannerModal({
       try {
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          (decodedText) => {
-            if (cancelled) return;
-            scanner
-              .stop()
-              .catch(() => {})
-              .finally(() => {
-                onScan(decodedText.trim());
-              });
+          {
+            fps: 8,
+            qrbox: { width: 250, height: 250 },
+          },
+          async (decodedText) => {
+            if (cancelled || handledRef.current) return;
+            handledRef.current = true;
+
+            // Para a câmera ANTES de chamar onScan
+            try {
+              await scanner.stop();
+            } catch {
+              // ignore
+            }
+
+            if (!cancelled) {
+              onScan(decodedText.trim());
+            }
           },
           () => {
             // frame sem QR — ignora
           }
         );
+
         if (!cancelled) setStarting(false);
       } catch (e: any) {
         if (!cancelled) {
@@ -61,21 +72,63 @@ export function QrScannerModal({
     return () => {
       cancelled = true;
       const s = scannerRef.current;
-      if (s) {
-        s.stop()
-          .catch(() => {})
-          .finally(() => {
-            try {
-              s.clear();
-            } catch {
-              // ignore
-            }
-          });
-      }
       scannerRef.current = null;
+      if (s) {
+        s.isScanning
+          ? s
+              .stop()
+              .catch(() => {})
+              .finally(() => {
+                try {
+                  s.clear();
+                } catch {
+                  // ignore
+                }
+              })
+          : (() => {
+              try {
+                s.clear();
+              } catch {
+                // ignore
+              }
+            })();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold">Escanear QR Code do produto</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            Fechar
+          </button>
+        </div>
+
+        {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        {starting && !error && (
+          <p className="mb-2 text-sm text-slate-500">Iniciando câmera…</p>
+        )}
+
+        <div
+          id={SCANNER_ELEMENT_ID}
+          className="min-h-[250px] overflow-hidden rounded-lg bg-slate-100"
+        />
+
+        <p className="mt-2 text-xs text-slate-500">
+          Aponte a câmera para o QR Code. Funciona em <strong>localhost</strong> ou site com{' '}
+          <strong>HTTPS</strong>.
+        </p>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -248,23 +301,32 @@ export function StockMovementForm({
   }
 
   function handleScan(text: string) {
-    setShowScanner(false);
-    const code = text.trim();
-    const product = (lookups.products || []).find(
-      (p: any) => String(p.code).trim() === code
-    );
-    if (!product) {
-      setError(
-        `Nenhum produto encontrado com o código "${code}". Cadastre o produto ou use o modo manual.`
-      );
-      setScannedProduct(null);
-      setProductId('');
-      return;
-    }
-    setError('');
-    setScannedProduct(product);
-    setProductId(String(product.id));
+  // Fecha o modal primeiro (evita re-render com scanner ainda vivo)
+  setShowScanner(false);
+
+  const code = (text || '').trim();
+  if (!code) {
+    setError('QR Code vazio ou inválido.');
+    return;
   }
+
+  const product = (lookups.products || []).find(
+    (p: any) => String(p.code ?? '').trim() === code
+  );
+
+  if (!product) {
+    setError(
+      `Nenhum produto encontrado com o código "${code}". Cadastre o produto ou use o modo manual.`
+    );
+    setScannedProduct(null);
+    setProductId('');
+    return;
+  }
+
+  setError('');
+  setScannedProduct(product);
+  setProductId(String(product.id));
+}
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
