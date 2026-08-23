@@ -1,4 +1,5 @@
 'use client';
+import { StockMovementForm, printProductLabels } from './QrTools';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -1633,13 +1634,20 @@ function Module({
   return (
     <>
       <section className="rounded-xl bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b p-5">
           <h2 className="font-semibold">
             {page === 'reports' ? 'Relatórios' : titleFor(page)}
           </h2>
-          {page !== 'reports' && (
-            <span className="text-sm text-slate-500">{rows.length} registros</span>
-          )}
+        <div className="flex items-center gap-3">
+            {page === 'stock' && rows.length > 0 && (
+        <button
+          onClick={() => printProductLabels(rows)}
+          className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Imprimir etiquetas (todos)</button>
+        )}
+            {page !== 'reports' && (
+              <span className="text-sm text-slate-500">{rows.length} registros</span>
+            )}
+          </div>
         </div>
         {page === 'reports' ? (
           <ReportsExport lookups={lookups} />
@@ -1676,6 +1684,14 @@ function Module({
                     ))}
                     {showActions && (
                       <td className="whitespace-nowrap">
+                        {page === 'stock' && (
+                        <button
+                          onClick={() => printProductLabels([r])}
+                          className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                        >
+                        Etiqueta
+                        </button>
+                        )}
                         <button
                           onClick={() =>
                             isUsers
@@ -1779,8 +1795,10 @@ function Module({
 
       {createAllowed && (
         <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
-          <h3 className="font-semibold">Novo registro</h3>
-          <ResourceForm page={page} lookups={lookups} onSubmit={create} />
+        <h3 className="font-semibold">Novo registro</h3>
+        {(page === 'entry' || page === 'output')
+        ? <StockMovementForm page={page as 'entry' | 'output'} lookups={lookups} onSubmit={create} />
+        : <ResourceForm page={page} lookups={lookups} onSubmit={create} />}
         </section>
       )}
     </>
