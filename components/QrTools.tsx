@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
@@ -9,7 +10,6 @@ const SCANNER_ELEMENT_ID = 'qr-scanner-region';
 // ============================================================
 // Modal de escaneamento via câmera
 // ============================================================
-
 export function QrScannerModal({
   onScan,
   onClose,
@@ -19,27 +19,60 @@ export function QrScannerModal({
 }) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState('');
+  const [starting, setStarting] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
     scannerRef.current = scanner;
-    scanner
-      .start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: 250 },
-        (decodedText) => {
-          scanner.stop().catch(() => {});
-          onScan(decodedText);
-        },
-        () => {
-          // erro de leitura de um frame — ignora, tenta o próximo
+
+    const start = async () => {
+      try {
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decodedText) => {
+            if (cancelled) return;
+            scanner
+              .stop()
+              .catch(() => {})
+              .finally(() => {
+                onScan(decodedText.trim());
+              });
+          },
+          () => {
+            // frame sem QR — ignora
+          }
+        );
+        if (!cancelled) setStarting(false);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(
+            'Não foi possível acessar a câmera. Use HTTPS ou localhost e permita o acesso. ' +
+              (e?.message || String(e))
+          );
+          setStarting(false);
         }
-      )
-      .catch((e) => setError('Não foi possível acessar a câmera: ' + e));
+      }
+    };
+
+    start();
 
     return () => {
-      scanner.stop().catch(() => {});
-      scanner.clear();
+      cancelled = true;
+      const s = scannerRef.current;
+      if (s) {
+        s.stop()
+          .catch(() => {})
+          .finally(() => {
+            try {
+              s.clear();
+            } catch {
+              // ignore
+            }
+          });
+      }
+      scannerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -49,14 +82,28 @@ export function QrScannerModal({
       <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="font-semibold">Escanear QR Code do produto</h3>
-          <button onClick={onClose} className="text-sm text-slate-500 hover:underline">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-slate-500 hover:underline"
+          >
             Fechar
           </button>
         </div>
+
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
-        <div id={SCANNER_ELEMENT_ID} className="overflow-hidden rounded-lg" />
+        {starting && !error && (
+          <p className="mb-2 text-sm text-slate-500">Iniciando câmera…</p>
+        )}
+
+        <div
+          id={SCANNER_ELEMENT_ID}
+          className="min-h-[250px] overflow-hidden rounded-lg bg-slate-100"
+        />
+
         <p className="mt-2 text-xs text-slate-500">
-          Aponte a câmera para o QR Code impresso no produto. Precisa de HTTPS (ou localhost) para a câmera funcionar.
+          Aponte a câmera para o QR Code. Funciona em <strong>localhost</strong> ou site com{' '}
+          <strong>HTTPS</strong>.
         </p>
       </div>
     </div>
@@ -66,62 +113,110 @@ export function QrScannerModal({
 // ============================================================
 // Geração de QR e impressão de etiquetas
 // ============================================================
-
 export async function generateQrDataUrl(text: string): Promise<string> {
-  return QRCode.toDataURL(text, { margin: 1, width: 300 });
+  return QRCode.toDataURL(String(text), {
+    margin: 1,
+    width: 300,
+    errorCorrectionLevel: 'M',
+  });
 }
 
+/**
+ * Gera PDF com etiquetas QR (código + nome + unidade).
+ * Chame com a lista de produtos do estoque.
+ */
 export async function printProductLabels(products: any[]) {
-  if (!products.length) return;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const pageW = 210,
-    pageH = 297;
-  const marginX = 10,
-    marginY = 10;
-  const labelW = 60,
-    labelH = 30,
-    gapX = 5,
-    gapY = 5;
-  const perRow = Math.max(1, Math.floor((pageW - 2 * marginX + gapX) / (labelW + gapX)));
-  let x = marginX,
-    y = marginY,
-    col = 0;
-
-  for (const p of products) {
-    const dataUrl = await generateQrDataUrl(String(p.code));
-    if (y + labelH > pageH - marginY) {
-      doc.addPage();
-      x = marginX;
-      y = marginY;
-      col = 0;
-    }
-    doc.setDrawColor(180);
-    doc.rect(x, y, labelW, labelH);
-    doc.addImage(dataUrl, 'PNG', x + 2, y + 2, labelH - 4, labelH - 4);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(String(p.name || ''), x + labelH, y + 10, { maxWidth: labelW - labelH - 4 });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Código: ${p.code}`, x + labelH, y + 16, { maxWidth: labelW - labelH - 4 });
-    if (p.unit) doc.text(`Un: ${p.unit}`, x + labelH, y + 22);
-
-    col++;
-    if (col >= perRow) {
-      col = 0;
-      x = marginX;
-      y += labelH + gapY;
-    } else {
-      x += labelW + gapX;
-    }
+  const list = (products || []).filter((p) => p && (p.code || p.id));
+  if (!list.length) {
+    alert('Nenhum produto válido para gerar etiqueta (precisa ter código).');
+    return;
   }
-  doc.save('Etiquetas_QR_Produtos.pdf');
+
+  try {
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageW = 210;
+    const pageH = 297;
+    const marginX = 10;
+    const marginY = 10;
+    const labelW = 60;
+    const labelH = 32;
+    const gapX = 5;
+    const gapY = 5;
+    const perRow = Math.max(
+      1,
+      Math.floor((pageW - 2 * marginX + gapX) / (labelW + gapX))
+    );
+
+    let x = marginX;
+    let y = marginY;
+    let col = 0;
+
+    for (const p of list) {
+      const code = String(p.code ?? p.id ?? '').trim();
+      if (!code) continue;
+
+      const dataUrl = await generateQrDataUrl(code);
+
+      if (y + labelH > pageH - marginY) {
+        doc.addPage();
+        x = marginX;
+        y = marginY;
+        col = 0;
+      }
+
+      // borda da etiqueta
+      doc.setDrawColor(160);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, labelW, labelH);
+
+      // QR
+      const qrSize = 26;
+      doc.addImage(dataUrl, 'PNG', x + 2, y + 3, qrSize, qrSize);
+
+      // textos
+      const textX = x + qrSize + 5;
+      const maxTextW = labelW - qrSize - 8;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(String(p.name || 'Sem nome').slice(0, 40), textX, y + 9, {
+        maxWidth: maxTextW,
+      });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text(`Cód: ${code}`, textX, y + 16, { maxWidth: maxTextW });
+
+      if (p.unit) {
+        doc.text(`Un: ${p.unit}`, textX, y + 21, { maxWidth: maxTextW });
+      }
+      if (p.location) {
+        doc.text(`Loc: ${String(p.location).slice(0, 18)}`, textX, y + 26, {
+          maxWidth: maxTextW,
+        });
+      }
+
+      col++;
+      if (col >= perRow) {
+        col = 0;
+        x = marginX;
+        y += labelH + gapY;
+      } else {
+        x += labelW + gapX;
+      }
+    }
+
+    const today = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    doc.save(`Etiquetas_QR_Produtos_${today}.pdf`);
+  } catch (e: any) {
+    console.error('Erro ao gerar etiquetas QR:', e);
+    alert('Erro ao gerar etiquetas: ' + (e?.message || String(e)));
+  }
 }
 
 // ============================================================
-// Formulário de Entrada/Saída com opção Manual ou Escanear QR Code
+// Formulário de Entrada/Saída com Manual ou Escanear QR
 // ============================================================
-
 export function StockMovementForm({
   page,
   lookups,
@@ -154,9 +249,16 @@ export function StockMovementForm({
 
   function handleScan(text: string) {
     setShowScanner(false);
-    const product = (lookups.products || []).find((p: any) => String(p.code) === text.trim());
+    const code = text.trim();
+    const product = (lookups.products || []).find(
+      (p: any) => String(p.code).trim() === code
+    );
     if (!product) {
-      setError(`Nenhum produto encontrado com o código "${text}". Cadastre o produto ou use o modo manual.`);
+      setError(
+        `Nenhum produto encontrado com o código "${code}". Cadastre o produto ou use o modo manual.`
+      );
+      setScannedProduct(null);
+      setProductId('');
       return;
     }
     setError('');
@@ -170,8 +272,18 @@ export function StockMovementForm({
       setError('Selecione ou escaneie um produto.');
       return;
     }
+    if (!values.quantity || Number(values.quantity) <= 0) {
+      setError('Informe uma quantidade válida.');
+      return;
+    }
+    if (page === 'output' && !values.recipient?.trim()) {
+      setError('Informe quem retirou o material.');
+      return;
+    }
+
     setSaving(true);
     setError('');
+
     const data: any = {
       product_id: Number(productId),
       quantity: Number(values.quantity),
@@ -180,12 +292,14 @@ export function StockMovementForm({
       observation: values.observation || null,
       unit_value: values.unit_value ? Number(values.unit_value) : null,
     };
+
     if (page === 'entry') {
       data.invoice = values.invoice || null;
     } else {
       data.vehicle_id = values.vehicle_id ? Number(values.vehicle_id) : null;
       data.recipient = values.recipient || null;
     }
+
     try {
       await onSubmit(data);
       setValues({
@@ -201,7 +315,7 @@ export function StockMovementForm({
       setProductId('');
       setScannedProduct(null);
     } catch (e: any) {
-      setError(e.message);
+      setError(e?.message || 'Erro ao salvar');
     } finally {
       setSaving(false);
     }
@@ -216,6 +330,7 @@ export function StockMovementForm({
             setMode('manual');
             setScannedProduct(null);
             setProductId('');
+            setError('');
           }}
           className={`rounded-lg px-4 py-2 text-sm font-medium ${
             mode === 'manual' ? 'bg-brand text-white' : 'bg-slate-100 text-slate-600'
@@ -229,6 +344,7 @@ export function StockMovementForm({
             setMode('scan');
             setProductId('');
             setScannedProduct(null);
+            setError('');
           }}
           className={`rounded-lg px-4 py-2 text-sm font-medium ${
             mode === 'scan' ? 'bg-brand text-white' : 'bg-slate-100 text-slate-600'
@@ -265,7 +381,9 @@ export function StockMovementForm({
               <div className="flex items-center justify-between rounded-lg border bg-green-50 p-3">
                 <div>
                   <div className="font-medium text-slate-900">{scannedProduct.name}</div>
-                  <div className="text-xs text-slate-500">Código: {scannedProduct.code}</div>
+                  <div className="text-xs text-slate-500">
+                    Código: {scannedProduct.code}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -293,11 +411,13 @@ export function StockMovementForm({
             required
             type="number"
             step="0.01"
+            min="0.01"
             value={values.quantity}
             onChange={(e) => set('quantity', e.target.value)}
             className="w-full rounded-lg border p-2"
           />
         </label>
+
         <label className="text-sm">
           <span className="mb-1 block text-slate-600">
             {page === 'entry' ? 'Responsável' : 'Responsável (quem entregou)'}
@@ -308,6 +428,7 @@ export function StockMovementForm({
             className="w-full rounded-lg border p-2"
           />
         </label>
+
         <label className="text-sm">
           <span className="mb-1 block text-slate-600">Setor</span>
           <input
@@ -316,6 +437,7 @@ export function StockMovementForm({
             className="w-full rounded-lg border p-2"
           />
         </label>
+
         {page === 'entry' ? (
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">Nota fiscal</span>
@@ -353,6 +475,7 @@ export function StockMovementForm({
             </label>
           </>
         )}
+
         <label className="text-sm">
           <span className="mb-1 block text-slate-600">Valor unitário</span>
           <input
@@ -363,6 +486,7 @@ export function StockMovementForm({
             className="w-full rounded-lg border p-2"
           />
         </label>
+
         <label className="text-sm sm:col-span-2">
           <span className="mb-1 block text-slate-600">Observação</span>
           <textarea
@@ -374,6 +498,7 @@ export function StockMovementForm({
 
         <div className="sm:col-span-2">
           <button
+            type="submit"
             disabled={saving}
             className="mt-1 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
@@ -382,7 +507,12 @@ export function StockMovementForm({
         </div>
       </form>
 
-      {showScanner && <QrScannerModal onScan={handleScan} onClose={() => setShowScanner(false)} />}
+      {showScanner && (
+        <QrScannerModal
+          onScan={handleScan}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </div>
   );
 }
