@@ -1,5 +1,5 @@
 'use client';
-import { StockMovementForm, printProductLabels } from '@/components/QrTools';
+import { printProductLabels } from './QrTools';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -1636,20 +1636,21 @@ function Module({
       <section className="rounded-xl bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b p-5">
           <h2 className="font-semibold">
-            {page === 'reports' ? 'Relatórios' : titleFor(page)}
+          {page === 'reports' ? 'Relatórios' : titleFor(page)}
           </h2>
         <div className="flex items-center gap-3">
-            {page === 'stock' && rows.length > 0 && (
+          {page === 'stock' && rows.length > 0 && (
         <button
+          type="button"
           onClick={() => printProductLabels(rows)}
-          className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
-          >
-          Imprimir etiquetas (todos)
-          </button>
+          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+        >
+        Imprimir etiquetas QR (todos)
+        </button>
         )}
-            {page !== 'reports' && (
-              <span className="text-sm text-slate-500">{rows.length} registros</span>
-            )}
+          {page !== 'reports' && (
+        <span className="text-sm text-slate-500">{rows.length} registros</span>
+        )}
           </div>
         </div>
         {page === 'reports' ? (
@@ -1689,11 +1690,12 @@ function Module({
                       <td className="whitespace-nowrap">
                         {page === 'stock' && (
                         <button
+                          type="button"
                           onClick={() => printProductLabels([r])}
-                          className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
-                        >
-                        Etiqueta
-                        </button>
+                          className="mr-2 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                          >
+                          Etiqueta QR
+                          </button>
                         )}
                         <button
                           onClick={() =>
