@@ -462,6 +462,14 @@ export default function AppShell({
   const [editingMovement, setEditingMovement] = useState<any>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [deletePasswordModal, setDeletePasswordModal] = useState<{
+  open: boolean;
+  title: string;
+  message: string;
+  onConfirm: (password: string) => Promise<void>;
+  } | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const isMainAdmin = !!user.is_main_admin;
 
@@ -590,25 +598,42 @@ export default function AppShell({
     }
   }
 
-  async function deleteMovement(id: number) {
-    const password = window.prompt('Confirme sua senha para excluir este registro:');
-    if (password === null) return;
-    if (
-      !confirm(
-        'Tem certeza que deseja excluir esta movimentação? O estoque será ajustado de volta.'
-      )
-    )
-      return;
+    function askPassword(
+    title: string,
+    message: string,
+    onConfirm: (password: string) => Promise<void>
+  ) {
+    setDeletePassword('');
+    setDeletePasswordModal({ open: true, title, message, onConfirm });
+  }
+
+  async function confirmDeleteWithPassword() {
+    if (!deletePasswordModal || !deletePassword) return;
+    setDeleting(true);
     setError('');
     try {
-      await request('/stock/movements/' + id, {
-        method: 'DELETE',
-        body: JSON.stringify({ password }),
-      });
-      load();
+      await deletePasswordModal.onConfirm(deletePassword);
+      setDeletePasswordModal(null);
+      setDeletePassword('');
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setDeleting(false);
     }
+  }
+
+  async function deleteMovement(id: number) {
+    askPassword(
+      'Excluir movimentação',
+      'Confirme sua senha. O estoque será ajustado de volta.',
+      async (password) => {
+        await request('/stock/movements/' + id, {
+          method: 'DELETE',
+          body: JSON.stringify({ password }),
+        });
+        load();
+      }
+    );
   }
 
   async function logout() {
@@ -741,6 +766,53 @@ export default function AppShell({
           />
         )}
       </main>
+    {deletePasswordModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">
+              {deletePasswordModal.title}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">{deletePasswordModal.message}</p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Senha *</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                className="w-full rounded-lg border p-2"
+                placeholder="Digite sua senha"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmDeleteWithPassword();
+                }}
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeletePasswordModal(null);
+                  setDeletePassword('');
+                }}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deleting || !deletePassword}
+                onClick={confirmDeleteWithPassword}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
