@@ -1140,11 +1140,13 @@ function Dashboard({
         ))}
       </section>
 
-      {/* Gráficos */}
+            {/* Gráficos */}
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
           <h3 className="mb-1 font-semibold text-slate-800">Frota / Manutenção</h3>
-          <p className="mb-4 text-xs text-slate-500">Visão geral da frota e serviços</p>
+          <p className="mb-4 text-xs text-slate-500">
+            Visão geral da frota · meta: até 5 manutenções no período
+          </p>
           <div className="h-64">
             {fleetData.length === 0 ? (
               <div className="flex h-full items-center justify-center text-sm text-slate-400">
@@ -1160,46 +1162,89 @@ function Dashboard({
                     cx="50%"
                     cy="50%"
                     outerRadius={90}
-                    innerRadius={45}
+                    innerRadius={50}
                     paddingAngle={3}
-                    label={({ name, value }) => `${name}: ${value}`}
+                    label={false}
+                    isAnimationActive
+                    // impede seleção / “caixa preta” ao clicar
+                    activeIndex={undefined}
+                    onClick={undefined}
+                    style={{ outline: 'none', cursor: 'default' }}
                   >
                     {fleetData.map((e, i) => (
-                      <Cell key={i} fill={e.color} />
+                      <Cell
+                        key={i}
+                        fill={e.color}
+                        stroke="none"
+                        style={{ outline: 'none', cursor: 'default' }}
+                      />
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) => [value, 'Qtd']}
+                    formatter={(value: number, name: string) => [
+                      value,
+                      name,
+                    ]}
                     contentStyle={{
                       borderRadius: 8,
                       border: '1px solid #e2e8f0',
                       fontSize: 12,
                     }}
                   />
-                  <Legend />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    formatter={(value) => (
+                      <span className="text-xs text-slate-600">{value}</span>
+                    )}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             )}
           </div>
+          {Number(metrics?.maintenance ?? 0) > 5 && (
+            <p className="mt-2 text-center text-xs font-medium text-amber-600">
+              Atenção: mais de 5 veículos em manutenção
+            </p>
+          )}
+          {Number(metrics?.maintenance_completed ?? 0) > 5 && (
+            <p className="mt-1 text-center text-xs text-slate-500">
+              Manutenções concluídas no período: {metrics.maintenance_completed} (acima da meta de 5)
+            </p>
+          )}
         </div>
 
         <div className="rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
           <h3 className="mb-1 font-semibold text-slate-800">Estoque</h3>
-          <p className="mb-4 text-xs text-slate-500">Produtos cadastrados e alertas de mínimo</p>
+          <p className="mb-4 text-xs text-slate-500">
+            Produtos cadastrados e alertas de mínimo
+          </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stockData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <BarChart
+                data={stockData}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
                 <Tooltip
+                  formatter={(value: number) => [value, 'Quantidade']}
+                  labelFormatter={(label) => String(label)}
                   contentStyle={{
                     borderRadius: 8,
                     border: '1px solid #e2e8f0',
                     fontSize: 12,
                   }}
                 />
-                <Bar dataKey="value" fill="#0ea5e9" radius={[8, 8, 0, 0]} maxBarSize={64} />
+                <Bar
+                  dataKey="value"
+                  name="Quantidade"
+                  fill="#0ea5e9"
+                  radius={[8, 8, 0, 0]}
+                  maxBarSize={64}
+                  style={{ cursor: 'default' }}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
