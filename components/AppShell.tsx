@@ -23,6 +23,19 @@ import {
   X,
   CalendarDays,
 } from 'lucide-react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
 
 const items = [
   ['dashboard', 'Dashboard', LayoutDashboard],
@@ -966,30 +979,35 @@ function Dashboard({
       value: metrics?.available,
       icon: '🚛',
       page: 'vehicles',
+      color: 'from-emerald-500 to-emerald-600',
     },
     {
       label: 'Em manutenção',
       value: metrics?.maintenance,
       icon: '🔧',
       page: 'maintenance',
+      color: 'from-amber-500 to-amber-600',
     },
     {
       label: 'Manutenções concluídas',
       value: metrics?.maintenance_completed,
       icon: '✅',
       page: 'maintenance',
+      color: 'from-blue-500 to-blue-600',
     },
     {
       label: 'Produtos em estoque',
       value: metrics?.products,
       icon: '📦',
       page: 'stock',
+      color: 'from-cyan-500 to-cyan-600',
     },
     {
       label: 'Estoque baixo',
       value: metrics?.low_stock,
       icon: '⚠️',
       page: 'stock',
+      color: 'from-red-500 to-red-600',
     },
     {
       label: 'Custo combustível',
@@ -999,7 +1017,23 @@ function Dashboard({
       }),
       icon: '⛽',
       page: 'fuel',
+      color: 'from-slate-600 to-slate-800',
     },
+  ];
+
+  const fleetData = [
+    { name: 'Disponíveis', value: Number(metrics?.available ?? 0), color: '#22c55e' },
+    { name: 'Em manutenção', value: Number(metrics?.maintenance ?? 0), color: '#f59e0b' },
+    {
+      name: 'Concluídas',
+      value: Number(metrics?.maintenance_completed ?? 0),
+      color: '#3b82f6',
+    },
+  ].filter((d) => d.value > 0);
+
+  const stockData = [
+    { name: 'Em estoque', value: Number(metrics?.products ?? 0) },
+    { name: 'Estoque baixo', value: Number(metrics?.low_stock ?? 0) },
   ];
 
   const hasAlerts =
@@ -1009,7 +1043,7 @@ function Dashboard({
       metrics?.maintenance_alerts?.length > 0);
 
   return (
-    <>
+    <div className="space-y-6">
       {hasAlerts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
@@ -1027,9 +1061,7 @@ function Dashboard({
             <div className="space-y-3">
               {metrics?.maintenance_today > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                  <div className="font-semibold text-amber-800">
-                    📅 Manutenções de hoje
-                  </div>
+                  <div className="font-semibold text-amber-800">📅 Manutenções de hoje</div>
                   <div className="mt-1 text-sm text-amber-700">
                     Existem <strong>{metrics.maintenance_today}</strong> manutenção(ões)
                     agendada(s) para hoje.
@@ -1038,9 +1070,7 @@ function Dashboard({
               )}
               {metrics?.maintenance_overdue > 0 && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-                  <div className="font-semibold text-red-800">
-                    🚨 Manutenções atrasadas
-                  </div>
+                  <div className="font-semibold text-red-800">🚨 Manutenções atrasadas</div>
                   <div className="mt-1 text-sm text-red-700">
                     Existem <strong>{metrics.maintenance_overdue}</strong> manutenção(ões)
                     atrasada(s).
@@ -1049,9 +1079,7 @@ function Dashboard({
               )}
               {metrics?.maintenance_alerts?.length > 0 && (
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                  <div className="font-semibold text-blue-800">
-                    🔧 Manutenções em andamento
-                  </div>
+                  <div className="font-semibold text-blue-800">🔧 Manutenções em andamento</div>
                   <div className="mt-1 text-sm text-blue-700">
                     Existem <strong>{metrics.maintenance_alerts.length}</strong>{' '}
                     manutenção(ões) atualmente em andamento.
@@ -1080,8 +1108,9 @@ function Dashboard({
         </div>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
+      {/* Cards */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card, idx) => (
           <article
             key={card.label}
             onClick={() => onNavigate(card.page)}
@@ -1093,15 +1122,90 @@ function Dashboard({
                 onNavigate(card.page);
               }
             }}
-            className="cursor-pointer rounded-xl bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]"
+            style={{ animationDelay: `${idx * 60}ms` }}
+            className="group cursor-pointer rounded-2xl bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl active:scale-[0.98]"
           >
-            <div className="text-xl">{card.icon}</div>
-            <div className="mt-3 text-2xl font-bold">{card.value ?? '—'}</div>
-            <div className="text-sm text-slate-500">{card.label}</div>
+            <div className="flex items-start justify-between">
+              <div
+                className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${card.color} text-xl text-white shadow-md transition-transform duration-300 group-hover:scale-110`}
+              >
+                {card.icon}
+              </div>
+            </div>
+            <div className="mt-4 text-2xl font-bold text-slate-900 tabular-nums">
+              {card.value ?? '—'}
+            </div>
+            <div className="mt-1 text-sm text-slate-500">{card.label}</div>
           </article>
         ))}
       </section>
-    </>
+
+      {/* Gráficos */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+          <h3 className="mb-1 font-semibold text-slate-800">Frota / Manutenção</h3>
+          <p className="mb-4 text-xs text-slate-500">Visão geral da frota e serviços</p>
+          <div className="h-64">
+            {fleetData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                Sem dados para exibir
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={fleetData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    innerRadius={45}
+                    paddingAngle={3}
+                    label={({ name, value }) => `${name}: ${value}`}
+                  >
+                    {fleetData.map((e, i) => (
+                      <Cell key={i} fill={e.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => [value, 'Qtd']}
+                    contentStyle={{
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0',
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+          <h3 className="mb-1 font-semibold text-slate-800">Estoque</h3>
+          <p className="mb-4 text-xs text-slate-500">Produtos cadastrados e alertas de mínimo</p>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stockData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    fontSize: 12,
+                  }}
+                />
+                <Bar dataKey="value" fill="#0ea5e9" radius={[8, 8, 0, 0]} maxBarSize={64} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
