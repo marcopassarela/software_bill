@@ -886,24 +886,6 @@ def create_schedule_week(
     return serialize_week(w, db)
 
 
-@app.post("/schedule/weeks/{week_id}/archive")
-def archive_schedule_week(
-    week_id: int,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("schedule", write=True)(user)
-    w = db.get(ScheduleWeek, week_id)
-    if not w:
-        raise HTTPException(404, "Semana não encontrada")
-    w.status = WeekStatus.ARQUIVADA
-    w.archived_at = func.now()
-    audit(db, user, "ARQUIVAMENTO_SEMANA", "schedule", week_id, request)
-    db.commit()
-    return {"ok": True}
-
-
 @app.delete("/schedule/weeks/{week_id}")
 def delete_schedule_week(
     week_id: int,
@@ -1128,6 +1110,41 @@ def delete_schedule_entry(
     for e in later:
         e.position -= 1
     audit(db, user, "EXCLUSÃO", "schedule", entry_id, request)
+    db.commit()
+    return {"ok": True}
+
+@app.post("/schedule/entries/{entry_id}/move")
+def move_schedule_entry(
+    entry_id: int,
+    body: MoveEntryBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule", write=True)(user)
+    entry = db.get(ScheduleEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Cliente não encontrado")
+
+    direction = body.direction.lower()
+    if direction not in ("up", "down"):
+        raise HTTPException(400, "direction deve ser 'up' ou 'down'")
+
+    new_pos = entry.position - 1 if direction == "up" else entry.position + 1
+    if new_pos < 1:
+        raise HTTPException(400, "Já está na primeira posição")
+
+    other = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id == entry.route_slot_id,
+            ScheduleEntry.position == new_pos,
+        )
+    )
+    if not other:
+        raise HTTPException(400, "Não há cliente nessa posição")
+
+    entry.position, other.position = other.position, entry.position
+    audit(db, user, "REORDENAÇÃO", "schedule", entry_id, request)
     db.commit()
     return {"ok": True}
 

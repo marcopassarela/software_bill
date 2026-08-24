@@ -3060,64 +3060,100 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       {editingEntry && (
         <EntryFormModal routeSlotId={editingEntry.route_slot_id} initial={editingEntry} onClose={() => setEditingEntry(null)} onSubmit={(data: any) => updateEntry(editingEntry.id, data)} title="Editar cliente" />
       )}
-      {addingExtraTo && (
-        <NewExtraModal entryId={addingExtraTo} onClose={() => setAddingExtraTo(null)} onSubmit={createExtra} />
-      )}
-
-      {showDeleteWeek && (
+            {transferEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-red-700">Excluir semana permanentemente</h3>
+            <h3 className="text-lg font-semibold">Transferir cliente</h3>
             <p className="mt-1 text-sm text-slate-500">
-              Esta ação apaga a semana e todas as rotas/clientes. Não tem volta.
+              {transferEntry.client_name} — escolha a rota/data de destino
             </p>
-
             <label className="mt-4 block text-sm">
-              <span className="mb-1 block text-slate-600">Selecione a semana *</span>
+              <span className="mb-1 block text-slate-600">Rota de destino *</span>
               <select
-                value={deleteWeekId ?? ''}
-                onChange={(e) => setDeleteWeekId(Number(e.target.value))}
+                value={transferTargetSlotId}
+                onChange={(e) => setTransferTargetSlotId(e.target.value)}
                 className="w-full rounded-lg border p-2"
               >
                 <option value="">Selecione</option>
-                {weeks.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.label || `Semana ${w.start_date}`} ({w.status})
-                  </option>
-                ))}
+                {allSlotsInWeek
+                  .filter((s: any) => s.id !== transferEntry.route_slot_id)
+                  .map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
               </select>
             </label>
-
-            <label className="mt-3 block text-sm">
-              <span className="mb-1 block text-slate-600">Senha do Administrador Principal *</span>
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                className="w-full rounded-lg border p-2"
-                placeholder="Digite sua senha"
-              />
-            </label>
-
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowDeleteWeek(false);
-                  setDeletePassword('');
-                }}
+                onClick={() => setTransferEntry(null)}
                 className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={deletingWeek || !deleteWeekId || !deletePassword}
-                onClick={confirmDeleteWeek}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                disabled={transferring || !transferTargetSlotId}
+                onClick={confirmTransferEntry}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
-                {deletingWeek ? 'Excluindo…' : 'Excluir definitivamente'}
+                {transferring ? 'Transferindo…' : 'Transferir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transferSlot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Transferir rota completa</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              ({transferSlot.region_code}){' '}
+              {transferSlot.vehicle?.plate || transferSlot.route_label || ''} — todos os
+              clientes vão junto
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Nova data *</span>
+              <input
+                type="date"
+                value={transferNewDate}
+                onChange={(e) => setTransferNewDate(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              />
+            </label>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Semana</span>
+              <select
+                value={transferWeekId}
+                onChange={(e) => setTransferWeekId(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                {weeks
+                  .filter((w) => w.status === 'Ativa')
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.label || w.start_date}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTransferSlot(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={transferring || !transferNewDate}
+                onClick={confirmTransferSlot}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {transferring ? 'Transferindo…' : 'Transferir rota'}
               </button>
             </div>
           </div>
