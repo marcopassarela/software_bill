@@ -1183,7 +1183,6 @@ def transfer_schedule_entry(
         raise HTTPException(404, "Rota de destino não encontrada")
     if target.closed:
         raise HTTPException(409, "A rota de destino está fechada")
-
     if entry.route_slot_id == target.id:
         raise HTTPException(400, "O cliente já está nesta rota")
 
@@ -1200,7 +1199,6 @@ def transfer_schedule_entry(
     old_slot_id = entry.route_slot_id
     old_pos = entry.position
 
-    # remove da origem e compacta posições
     entry.route_slot_id = target.id
     entry.position = len(dest_entries) + 1
     db.flush()
@@ -1217,6 +1215,7 @@ def transfer_schedule_entry(
     audit(db, user, "TRANSFERÊNCIA_CLIENTE", "schedule", entry_id, request)
     db.commit()
     return serialize_entry(entry, db)
+
 
 @app.post("/schedule/route-slots/{slot_id}/transfer")
 def transfer_route_slot(
@@ -1240,7 +1239,6 @@ def transfer_route_slot(
 
     rs.date = body.new_date
     rs.week_id = target_week_id
-
     audit(db, user, "TRANSFERÊNCIA_ROTA", "schedule", slot_id, request)
     db.commit()
     return serialize_route_slot(rs, db)

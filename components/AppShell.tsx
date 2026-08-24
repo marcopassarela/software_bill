@@ -2553,6 +2553,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [addingEntryTo, setAddingEntryTo] = useState<number | null>(null);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [addingExtraTo, setAddingExtraTo] = useState<number | null>(null);
+  const [transferEntry, setTransferEntry] = useState<any>(null);
+  const [transferSlot, setTransferSlot] = useState<any>(null);
+  const [transferTargetSlotId, setTransferTargetSlotId] = useState('');
+  const [transferNewDate, setTransferNewDate] = useState('');
+  const [transferWeekId, setTransferWeekId] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   const perms = (user.permissions || '').split(',').filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
@@ -2799,6 +2805,57 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     }
   }
 
+    async function confirmTransferEntry() {
+    if (!transferEntry || !transferTargetSlotId) return;
+    setTransferring(true);
+    setError('');
+    try {
+      await request(`/schedule/entries/${transferEntry.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          target_route_slot_id: Number(transferTargetSlotId),
+        }),
+      });
+      setTransferEntry(null);
+      setTransferTargetSlotId('');
+      load({ silent: true });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  async function confirmTransferSlot() {
+    if (!transferSlot || !transferNewDate) return;
+    setTransferring(true);
+    setError('');
+    try {
+      const payload: any = { new_date: transferNewDate };
+      if (transferWeekId) payload.week_id = Number(transferWeekId);
+      await request(`/schedule/route-slots/${transferSlot.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setTransferSlot(null);
+      setTransferNewDate('');
+      setTransferWeekId('');
+      load({ silent: true });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  // lista de rotas da semana atual (para escolher destino do cliente)
+  const allSlotsInWeek = selectedWeek
+    ? (selectedWeek.route_slots || []).map((s: any) => ({
+        id: s.id,
+        label: `${s.date} · (${s.region_code}) ${s.vehicle?.plate || s.route_label || ''} · ${s.total_slots} vagas`,
+      }))
+    : [];
+
   async function createExtra(data: any) {
     try {
       await request('/schedule/extras', { method: 'POST', body: JSON.stringify(data) });
@@ -2946,7 +3003,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 </div>
                 <div className="divide-y">
                   {slotsByDate[date].map((slot: any) => (
-                    <RouteSlotCard
+                                        <RouteSlotCard
                       key={slot.id}
                       slot={slot}
                       canWrite={canWrite}
@@ -2961,9 +3018,22 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                       onDeleteEntry={deleteEntry}
                       onDeleteExtra={deleteExtra}
                       onMoveEntry={moveEntry}
-                      onReorderEntries={(orderedIds: number[]) =>reorderEntries(slot.id, orderedIds)}
+                      onReorderEntries={(orderedIds: number[]) =>
+                        reorderEntries(slot.id, orderedIds)
+                      }
+                      onTransferEntry={(entry: any) => {
+                        setTransferEntry(entry);
+                        setTransferTargetSlotId('');
+                      }}
+                      onTransferSlot={() => {
+                        setTransferSlot(slot);
+                        setTransferNewDate(slot.date || '');
+                        setTransferWeekId(String(selectedWeek?.id || ''));
+                      }}
                       onExport={() => exportSlot(slot.id, slot)}
-                      onToggleClosed={() => updateSlot(slot.id, { closed: !slot.closed })}
+                      onToggleClosed={() =>
+                        updateSlot(slot.id, { closed: !slot.closed })
+                      }
                     />
                   ))}
                 </div>
@@ -3058,11 +3128,39 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 }
 
 function RouteSlotCard({
-  slot, canWrite, canEdit, canDelete, canExport, onEdit, onDelete, onAddEntry, onEditEntry,
-  onAddExtra, onDeleteEntry, onDeleteExtra, onMoveEntry, onReorderEntries, onExport, onToggleClosed,
+  slot,
+  canWrite,
+  canEdit,
+  canDelete,
+  canExport,
+  onEdit,
+  onDelete,
+  onAddEntry,
+  onEditEntry,
+  onAddExtra,
+  onDeleteEntry,
+  onDeleteExtra,
+  onMoveEntry,
+  onReorderEntries,
+  onTransferEntry,
+  onTransferSlot,
+  onExport,
+  onToggleClosed,
 }: any) {
   const [dragId, setDragId] = useState<number | null>(null);
   const entries = slot.entries || [];
+  const used = entries.reduce(
+    (sum: number, e: any) =>
+      sum + (e.slots_consumed || calcularVagas(e.service_description || '')),
+    0
+  );
+  const total = slot.total_slots || 0;
+  const available = Math.max(total - used, 0);
+  const isFull = total > 0 && used >= total;
+  const isClosed = slot.closed;
+  const driverName = slot.driver?.name || '—';
+  const secondName = slot.second_driver?.name;
+  const vehiclePlate = slot.vehicle?.plate || slot.route_label || '';
 
   function handleDragStart(e: React.DragEvent, entryId: number) {
     if (!canWrite || !canEdit) return;
@@ -3090,17 +3188,6 @@ function RouteSlotCard({
     next.splice(to, 0, fromId);
     onReorderEntries(next);
   }
-  const used = entries.reduce(
-    (sum: number, e: any) => sum + (e.slots_consumed || calcularVagas(e.service_description || '')),
-    0
-  );
-  const total = slot.total_slots || 0;
-  const available = Math.max(total - used, 0);
-  const isFull = total > 0 && used >= total;
-  const isClosed = slot.closed;
-  const driverName = slot.driver?.name || '—';
-  const secondName = slot.second_driver?.name;
-  const vehiclePlate = slot.vehicle?.plate || slot.route_label || '';
 
   return (
     <div className={`p-4 ${isClosed ? 'bg-slate-50' : ''}`}>
@@ -3111,19 +3198,45 @@ function RouteSlotCard({
               {String(total).padStart(2, '0')} - ({slot.region_code})
               {vehiclePlate ? ` - ${vehiclePlate}` : ''}
             </span>
-            {isClosed && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Fechada</span>}
-            {isFull && !isClosed && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Lotada</span>}
+            {isClosed && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                Fechada
+              </span>
+            )}
+            {isFull && !isClosed && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                Lotada
+              </span>
+            )}
           </div>
           <div className="mt-1 text-sm text-slate-600">
-            {driverName}{secondName ? ` | ${secondName}` : ''}
+            {driverName}
+            {secondName ? ` | ${secondName}` : ''}
           </div>
-
           <div className="mt-2 inline-flex items-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 shadow-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Vagas</span>
-            <span className={`text-xl font-bold ${available === 0 ? 'text-red-600' : available <= 2 ? 'text-amber-600' : 'text-green-600'}`}>
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Vagas
+            </span>
+            <span
+              className={`text-xl font-bold ${
+                available === 0
+                  ? 'text-red-600'
+                  : available <= 2
+                  ? 'text-amber-600'
+                  : 'text-green-600'
+              }`}
+            >
               {used}/{total || '∞'}
             </span>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${available === 0 ? 'bg-red-100 text-red-700' : available <= 2 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                available === 0
+                  ? 'bg-red-100 text-red-700'
+                  : available <= 2
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-green-100 text-green-700'
+              }`}
+            >
               {available} livres
             </span>
           </div>
@@ -3131,6 +3244,7 @@ function RouteSlotCard({
 
         <div className="flex flex-wrap gap-2">
           <button
+            type="button"
             onClick={onExport}
             disabled={!canExport}
             className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
@@ -3140,6 +3254,7 @@ function RouteSlotCard({
           {canWrite && (
             <>
               <button
+                type="button"
                 onClick={onToggleClosed}
                 disabled={!canEdit}
                 className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
@@ -3147,6 +3262,7 @@ function RouteSlotCard({
                 {isClosed ? 'Reabrir' : 'Fechar rota'}
               </button>
               <button
+                type="button"
                 onClick={onEdit}
                 disabled={!canEdit}
                 className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
@@ -3154,6 +3270,15 @@ function RouteSlotCard({
                 Editar
               </button>
               <button
+                type="button"
+                onClick={onTransferSlot}
+                disabled={!canEdit}
+                className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Transferir rota
+              </button>
+              <button
+                type="button"
                 onClick={onDelete}
                 disabled={!canDelete}
                 className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
@@ -3162,6 +3287,7 @@ function RouteSlotCard({
               </button>
               {!isClosed && !isFull && (
                 <button
+                  type="button"
                   onClick={onAddEntry}
                   disabled={!canEdit}
                   className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
@@ -3184,14 +3310,16 @@ function RouteSlotCard({
               <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
               <th className="min-w-[180px] px-3 py-2">Observação</th>
-              {canWrite && <th className="w-44 px-3 py-2">Ações</th>}
+              {canWrite && <th className="w-52 px-3 py-2">Ações</th>}
             </tr>
           </thead>
           <tbody>
             {entries.map((entry: any, idx: number) => {
               const isReagendamento = entry.status === 'Reagendamento';
               const hasComanda = !!entry.comanda;
-              const slots = entry.slots_consumed || calcularVagas(entry.service_description || '');
+              const slots =
+                entry.slots_consumed ||
+                calcularVagas(entry.service_description || '');
 
               return (
                 <React.Fragment key={entry.id}>
@@ -3213,46 +3341,114 @@ function RouteSlotCard({
                   >
                     <td className="px-3 py-2">
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-[10px] text-slate-400" title="Arraste para reordenar">
+                        <span
+                          className="text-[10px] text-slate-400"
+                          title="Arraste para reordenar"
+                        >
                           ⋮⋮
                         </span>
-                        <span className="font-bold text-slate-800">{String(entry.position).padStart(2, '0')}°</span>
-                        {slots > 1 && <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">{slots} vagas</span>}
+                        <span className="font-bold text-slate-800">
+                          {String(entry.position).padStart(2, '0')}°
+                        </span>
+                        {slots > 1 && (
+                          <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
+                            {slots} vagas
+                          </span>
+                        )}
                         {canWrite && (
                           <div className="flex gap-0.5">
-                            <button onClick={() => onMoveEntry(entry.id, 'up')} disabled={idx === 0} className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30" title="Subir">↑</button>
-                            <button onClick={() => onMoveEntry(entry.id, 'down')} disabled={idx === entries.length - 1} className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30" title="Descer">↓</button>
+                            <button
+                              type="button"
+                              onClick={() => onMoveEntry(entry.id, 'up')}
+                              disabled={idx === 0}
+                              className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30"
+                              title="Subir"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onMoveEntry(entry.id, 'down')}
+                              disabled={idx === entries.length - 1}
+                              className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30"
+                              title="Descer"
+                            >
+                              ↓
+                            </button>
                           </div>
                         )}
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <div className="font-medium text-slate-900">{entry.client_name}</div>
-                      <div className="text-xs text-slate-500">{entry.service_description}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      {entry.phone ? (
-                        <a href={`https://wa.me/55${entry.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="font-medium text-green-600 hover:underline">
-                          {entry.phone}
-                        </a>
-                      ) : '—'}
-                    </td>
-                    <td className="px-3 py-2">
-                      {entry.location_link ? (
-                        <a href={entry.location_link} target="_blank" rel="noopener noreferrer" className="text-xs text-brand hover:underline">Maps</a>
-                      ) : '—'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {entry.no_comanda && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">SEM COMANDA</span>}
-                        {hasComanda && (<span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">{entry.comanda}</span>)}
-                        {entry.cooperativa_nome && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">{entry.cooperativa_nome}</span>}
-                        {entry.pago && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">PAGO</span>}
-                        {isReagendamento && <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">REAGENDAMENTO</span>}
+                      <div className="font-medium text-slate-900">
+                        {entry.client_name}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {entry.service_description}
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <div className="max-w-[240px] whitespace-pre-wrap break-words text-xs text-slate-600" title={entry.observation || ''}>
+                      {entry.phone ? (
+                        <a
+                          href={`https://wa.me/55${entry.phone.replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-green-600 hover:underline"
+                        >
+                          {entry.phone}
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {entry.location_link ? (
+                        <a
+                          href={entry.location_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-brand hover:underline"
+                        >
+                          Maps
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {entry.no_comanda && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                            SEM COMANDA
+                          </span>
+                        )}
+                        {hasComanda && (
+                          <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
+                            {entry.comanda}
+                          </span>
+                        )}
+                        {entry.cooperativa_nome && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                            {entry.cooperativa_nome}
+                          </span>
+                        )}
+                        {entry.pago && (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            PAGO
+                          </span>
+                        )}
+                        {isReagendamento && (
+                          <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                            REAGENDAMENTO
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div
+                        className="max-w-[240px] whitespace-pre-wrap break-words text-xs text-slate-600"
+                        title={entry.observation || ''}
+                      >
                         {entry.observation || '—'}
                       </div>
                     </td>
@@ -3260,23 +3456,34 @@ function RouteSlotCard({
                       <td className="px-3 py-2">
                         <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
                           <button
+                            type="button"
                             onClick={() => onEditEntry(entry)}
                             disabled={!canEdit}
-                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-40"
                           >
                             Editar
                           </button>
                           <button
+                            type="button"
+                            onClick={() => onTransferEntry(entry)}
+                            disabled={!canEdit}
+                            className="rounded bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                          >
+                            Transferir
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => onAddExtra(entry.id)}
                             disabled={!canEdit}
-                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-40"
                           >
                             + Extra
                           </button>
                           <button
+                            type="button"
                             onClick={() => onDeleteEntry(entry.id)}
                             disabled={!canDelete}
-                            className="rounded bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 disabled:opacity-40"
                           >
                             Remover
                           </button>
@@ -3288,12 +3495,23 @@ function RouteSlotCard({
                     <tr key={extra.id} className="bg-slate-50/80 text-xs">
                       <td className="px-3 py-1.5"></td>
                       <td className="px-3 py-1.5 text-slate-600" colSpan={4}>
-                        <span className="text-slate-400">↳</span> <span className="font-medium">+ {extra.description}</span>
-                        {extra.observation && <span className="ml-2 text-slate-400">({extra.observation})</span>}
+                        <span className="text-slate-400">↳</span>{' '}
+                        <span className="font-medium">+ {extra.description}</span>
+                        {extra.observation && (
+                          <span className="ml-2 text-slate-400">
+                            ({extra.observation})
+                          </span>
+                        )}
                       </td>
                       {canWrite && (
                         <td className="px-3 py-1.5">
-                          <button onClick={() => onDeleteExtra(extra.id)} className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100">Remover</button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteExtra(extra.id)}
+                            className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100"
+                          >
+                            Remover
+                          </button>
                         </td>
                       )}
                     </tr>
@@ -3303,7 +3521,12 @@ function RouteSlotCard({
             })}
             {entries.length === 0 && (
               <tr>
-                <td colSpan={canWrite ? 7 : 6} className="px-3 py-6 text-center text-slate-400">Nenhum cliente agendado nesta rota</td>
+                <td
+                  colSpan={canWrite ? 7 : 6}
+                  className="px-3 py-6 text-center text-slate-400"
+                >
+                  Nenhum cliente agendado nesta rota
+                </td>
               </tr>
             )}
           </tbody>
