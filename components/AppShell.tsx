@@ -2539,6 +2539,7 @@ function calcularVagas(service: string): number {
 function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [weeks, setWeeks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [showDeleteWeek, setShowDeleteWeek] = useState(false);
   const [deleteWeekId, setDeleteWeekId] = useState<number | null>(null);
@@ -2574,8 +2575,13 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   // Quem pode criar semana / rota (mesma regra de edição)
   const canWrite = canEdit;
 
-  async function load() {
-    setLoading(true);
+    async function load(opts?: { silent?: boolean }) {
+    const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
+    const silent = opts?.silent || weeks.length > 0;
+
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+
     setError('');
     try {
       const data = await request(`/schedule/weeks?include_archived=${includeArchived}`);
@@ -2588,6 +2594,10 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       setError(e.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
     }
   }
 
