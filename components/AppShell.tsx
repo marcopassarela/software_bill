@@ -1108,7 +1108,6 @@ function Dashboard({
         </div>
       )}
 
-      {/* Cards */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card, idx) => (
           <article
@@ -1122,8 +1121,11 @@ function Dashboard({
                 onNavigate(card.page);
               }
             }}
-            style={{ animationDelay: `${idx * 60}ms` }}
-            className="group cursor-pointer rounded-2xl bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl active:scale-[0.98]"
+            style={{
+              animationDelay: `${idx * 80}ms`,
+              animationFillMode: 'both',
+            }}
+            className="group cursor-pointer rounded-2xl bg-white p-5 shadow-sm opacity-0 animate-[dashIn_0.5s_ease-out_forwards] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl active:scale-[0.98]"
           >
             <div className="flex items-start justify-between">
               <div
@@ -1140,9 +1142,8 @@ function Dashboard({
         ))}
       </section>
 
-            {/* Gráficos */}
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+        <div className="dash-chart-enter rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
           <h3 className="mb-1 font-semibold text-slate-800">Frota / Manutenção</h3>
           <p className="mb-4 text-xs text-slate-500">
             Visão geral da frota · meta: até 5 manutenções no período
@@ -1166,7 +1167,6 @@ function Dashboard({
                     paddingAngle={3}
                     label={false}
                     isAnimationActive
-                    // impede seleção / “caixa preta” ao clicar
                     activeIndex={undefined}
                     onClick={undefined}
                     style={{ outline: 'none', cursor: 'default' }}
@@ -1181,10 +1181,7 @@ function Dashboard({
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number, name: string) => [
-                      value,
-                      name,
-                    ]}
+                    formatter={(value: number, name: string) => [value, name]}
                     contentStyle={{
                       borderRadius: 8,
                       border: '1px solid #e2e8f0',
@@ -1209,22 +1206,20 @@ function Dashboard({
           )}
           {Number(metrics?.maintenance_completed ?? 0) > 5 && (
             <p className="mt-1 text-center text-xs text-slate-500">
-              Manutenções concluídas no período: {metrics.maintenance_completed} (acima da meta de 5)
+              Manutenções concluídas no período: {metrics.maintenance_completed} (acima da
+              meta de 5)
             </p>
           )}
         </div>
 
-        <div className="rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+        <div className="dash-chart-enter rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
           <h3 className="mb-1 font-semibold text-slate-800">Estoque</h3>
           <p className="mb-4 text-xs text-slate-500">
             Produtos cadastrados e alertas de mínimo
           </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={stockData}
-                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              >
+              <BarChart data={stockData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
@@ -1243,6 +1238,7 @@ function Dashboard({
                   fill="#0ea5e9"
                   radius={[8, 8, 0, 0]}
                   maxBarSize={64}
+                  isAnimationActive
                   style={{ cursor: 'default' }}
                 />
               </BarChart>
