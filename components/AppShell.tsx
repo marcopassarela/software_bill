@@ -2575,13 +2575,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   // Quem pode criar semana / rota (mesma regra de edição)
   const canWrite = canEdit;
 
-    async function load(opts?: { silent?: boolean }) {
+      async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
-    const silent = opts?.silent || weeks.length > 0;
-
+    const silent = !!(opts?.silent || weeks.length > 0);
     if (silent) setRefreshing(true);
     else setLoading(true);
-
     setError('');
     try {
       const data = await request(`/schedule/weeks?include_archived=${includeArchived}`);
@@ -2595,9 +2593,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     } finally {
       setLoading(false);
       setRefreshing(false);
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollY);
-      });
+      requestAnimationFrame(() => window.scrollTo(0, scrollY));
     }
   }
 
@@ -2788,6 +2784,21 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     } catch (e: any) { setError(e.message); }
   }
 
+  async function reorderEntries(routeSlotId: number, orderedIds: number[]) {
+    try {
+      await request('/schedule/entries/reorder', {
+        method: 'POST',
+        body: JSON.stringify({
+          route_slot_id: routeSlotId,
+          ordered_ids: orderedIds,
+        }),
+      });
+      load({ silent: true });
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
   async function createExtra(data: any) {
     try {
       await request('/schedule/extras', { method: 'POST', body: JSON.stringify(data) });
@@ -2950,6 +2961,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                       onDeleteEntry={deleteEntry}
                       onDeleteExtra={deleteExtra}
                       onMoveEntry={moveEntry}
+                      onReorderEntries={(orderedIds: number[]) =>reorderEntries(slot.id, orderedIds)}
                       onExport={() => exportSlot(slot.id, slot)}
                       onToggleClosed={() => updateSlot(slot.id, { closed: !slot.closed })}
                     />
@@ -3047,9 +3059,37 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
 function RouteSlotCard({
   slot, canWrite, canEdit, canDelete, canExport, onEdit, onDelete, onAddEntry, onEditEntry,
-  onAddExtra, onDeleteEntry, onDeleteExtra, onMoveEntry, onExport, onToggleClosed,
+  onAddExtra, onDeleteEntry, onDeleteExtra, onMoveEntry, onReorderEntries, onExport, onToggleClosed,
 }: any) {
+  const [dragId, setDragId] = useState<number | null>(null);
   const entries = slot.entries || [];
+
+  function handleDragStart(e: React.DragEvent, entryId: number) {
+    if (!canWrite || !canEdit) return;
+    setDragId(entryId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(entryId));
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleDrop(e: React.DragEvent, targetId: number) {
+    e.preventDefault();
+    const fromId = Number(e.dataTransfer.getData('text/plain') || dragId);
+    setDragId(null);
+    if (!fromId || fromId === targetId || !onReorderEntries) return;
+    const ids = entries.map((x: any) => x.id);
+    const from = ids.indexOf(fromId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, fromId);
+    onReorderEntries(next);
+  }
   const used = entries.reduce(
     (sum: number, e: any) => sum + (e.slots_consumed || calcularVagas(e.service_description || '')),
     0
@@ -3155,9 +3195,27 @@ function RouteSlotCard({
 
               return (
                 <React.Fragment key={entry.id}>
-                  <tr className={`border-t ${isReagendamento ? 'bg-amber-50' : entry.pago ? 'bg-green-50/50' : 'hover:bg-slate-50/50'}`}>
+                  <tr
+                    draggable={!!canWrite && !!canEdit}
+                    onDragStart={(e) => handleDragStart(e, entry.id)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, entry.id)}
+                    onDragEnd={() => setDragId(null)}
+                    className={`border-t ${
+                      dragId === entry.id ? 'opacity-50' : ''
+                    } ${
+                      isReagendamento
+                        ? 'bg-amber-50'
+                        : entry.pago
+                        ? 'bg-green-50/50'
+                        : 'hover:bg-slate-50/50'
+                    } ${canWrite && canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  >
                     <td className="px-3 py-2">
                       <div className="flex flex-col items-center gap-1">
+                        <span className="text-[10px] text-slate-400" title="Arraste para reordenar">
+                          ⋮⋮
+                        </span>
                         <span className="font-bold text-slate-800">{String(entry.position).padStart(2, '0')}°</span>
                         {slots > 1 && <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">{slots} vagas</span>}
                         {canWrite && (
