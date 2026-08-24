@@ -2849,12 +2849,33 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   }
 
   // lista de rotas da semana atual (para escolher destino do cliente)
-  const allSlotsInWeek = selectedWeek
-    ? (selectedWeek.route_slots || []).map((s: any) => ({
-        id: s.id,
-        label: `${s.date} · (${s.region_code}) ${s.vehicle?.plate || s.route_label || ''} · ${s.total_slots} vagas`,
-      }))
-    : [];
+  function formatSlotDateLabel(d: string) {
+    const [y, m, day] = d.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(day));
+    const texto = date.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  }
+
+  const slotsByDayForTransfer = selectedWeek
+    ? (selectedWeek.route_slots || []).reduce((acc: Record<string, any[]>, s: any) => {
+        const key = s.date;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push({
+          id: s.id,
+          plate: s.vehicle?.plate || s.route_label || '',
+          region: s.region_code,
+          vagas: s.total_slots,
+        });
+        return acc;
+      }, {})
+    : {};
+
+  const transferDayKeys = Object.keys(slotsByDayForTransfer).sort();
 
   async function createExtra(data: any) {
     try {
@@ -3075,13 +3096,17 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 className="w-full rounded-lg border p-2"
               >
                 <option value="">Selecione</option>
-                {allSlotsInWeek
-                  .filter((s: any) => s.id !== transferEntry.route_slot_id)
-                  .map((s: any) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
+                  {transferDayKeys.map((day) => (
+                  <optgroup key={day} label={formatSlotDateLabel(day)}>
+                    {slotsByDayForTransfer[day]
+                      .filter((s: any) => s.id !== transferEntry.route_slot_id)
+                      .map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          ({s.region}) {s.plate} · {s.vagas} vagas
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <div className="mt-5 flex justify-end gap-2">
