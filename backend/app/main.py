@@ -950,7 +950,37 @@ def archive_schedule_week(
     db.commit()
 
     return {"ok": True}
+@app.post("/schedule/route-slots")
+def create_route_slot(
+    body: RouteSlotCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule", write=True)(user)
+    week = db.get(ScheduleWeek, body.week_id)
+    if not week:
+        raise HTTPException(404, "Semana não encontrada")
+    if week.status != WeekStatus.ATIVA:
+        raise HTTPException(409, "Não é possível adicionar rota em semana arquivada")
 
+    rs = RouteSlot(
+        week_id=body.week_id,
+        date=body.date,
+        region_code=body.region_code.upper().strip(),
+        route_label=body.route_label,
+        total_slots=body.total_slots,
+        driver_id=body.driver_id,
+        second_driver_id=body.second_driver_id,
+        vehicle_id=body.vehicle_id,
+        notes=body.notes,
+        closed=False,
+    )
+    db.add(rs)
+    db.flush()
+    audit(db, user, "CRIAÇÃO_ROTA", "schedule", rs.id, request)
+    db.commit()
+    return serialize_route_slot(rs, db)
 
 @app.patch("/schedule/route-slots/{slot_id}")
 def update_route_slot(
