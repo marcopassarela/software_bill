@@ -2830,7 +2830,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     return date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
   }
 
-  if (loading) {
+  if (loading && weeks.length === 0) {
     return <div className="rounded-xl bg-white p-8 shadow-sm">Carregando agenda…</div>;
   }
 

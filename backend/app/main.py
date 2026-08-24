@@ -784,6 +784,10 @@ class ScheduleWeekCreate(BaseModel):
 class MoveEntryBody(BaseModel):
     direction: str  # "up" ou "down"
 
+class ReorderEntriesBody(BaseModel):
+    route_slot_id: int
+    ordered_ids: list[int]
+
 
 class DeleteWeekBody(BaseModel):
     password: str
@@ -1090,39 +1094,36 @@ def delete_schedule_entry(
     return {"ok": True}
 
 
-@app.post("/schedule/entries/{entry_id}/move")
-def move_schedule_entry(
-    entry_id: int,
-    body: MoveEntryBody,
+@app.post("/schedule/entries/reorder")
+def reorder_schedule_entries(
+    body: ReorderEntriesBody,
     request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     require("schedule", write=True)(user)
-    entry = db.get(ScheduleEntry, entry_id)
-    if not entry:
-        raise HTTPException(404, "Cliente não encontrado")
+    if not body.ordered_ids:
+        raise HTTPException(400, "Lista de ordenação vazia")
 
-    direction = body.direction.lower()
-    if direction not in ("up", "down"):
-        raise HTTPException(400, "direction deve ser 'up' ou 'down'")
+    rs = db.get(RouteSlot, body.route_slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
 
-    new_pos = entry.position - 1 if direction == "up" else entry.position + 1
-    if new_pos < 1:
-        raise HTTPException(400, "Já está na primeira posição")
+    entries = db.scalars(
+        select(ScheduleEntry).where(ScheduleEntry.route_slot_id == body.route_slot_id)
+    ).all()
+    by_id = {e.id: e for e in entries}
 
-    other = db.scalar(
-        select(ScheduleEntry).where(
-            ScheduleEntry.route_slot_id == entry.route_slot_id,
-            ScheduleEntry.position == new_pos,
+    if set(body.ordered_ids) != set(by_id.keys()):
+        raise HTTPException(
+            400,
+            "A lista de IDs não confere com os clientes desta rota",
         )
-    )
-    if not other:
-        raise HTTPException(400, "Não há cliente nessa posição")
 
-    # Troca as posições
-    entry.position, other.position = other.position, entry.position
-    audit(db, user, "REORDENAÇÃO", "schedule", entry_id, request)
+    for index, entry_id in enumerate(body.ordered_ids, start=1):
+        by_id[entry_id].position = index
+
+    audit(db, user, "REORDENAÇÃO", "schedule", body.route_slot_id, request)
     db.commit()
     return {"ok": True}
 
