@@ -788,6 +788,14 @@ class ReorderEntriesBody(BaseModel):
     route_slot_id: int
     ordered_ids: list[int]
 
+class TransferEntryBody(BaseModel):
+    target_route_slot_id: int
+
+
+class TransferSlotBody(BaseModel):
+    new_date: date
+    week_id: int | None = None  # se mudar de semana
+
 
 class DeleteWeekBody(BaseModel):
     password: str
@@ -1156,6 +1164,86 @@ def reorder_schedule_entries(
     audit(db, user, "REORDENAÇÃO", "schedule", body.route_slot_id, request)
     db.commit()
     return {"ok": True}
+
+@app.post("/schedule/entries/{entry_id}/transfer")
+def transfer_schedule_entry(
+    entry_id: int,
+    body: TransferEntryBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule", write=True)(user)
+    entry = db.get(ScheduleEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Cliente não encontrado")
+
+    target = db.get(RouteSlot, body.target_route_slot_id)
+    if not target:
+        raise HTTPException(404, "Rota de destino não encontrada")
+    if target.closed:
+        raise HTTPException(409, "A rota de destino está fechada")
+
+    if entry.route_slot_id == target.id:
+        raise HTTPException(400, "O cliente já está nesta rota")
+
+    slots_needed = entry.slots_consumed or calcular_vagas(entry.service_description)
+    dest_entries = db.scalars(
+        select(ScheduleEntry).where(ScheduleEntry.route_slot_id == target.id)
+    ).all()
+    used = sum(
+        (e.slots_consumed or calcular_vagas(e.service_description)) for e in dest_entries
+    )
+    if target.total_slots and (used + slots_needed) > target.total_slots:
+        raise HTTPException(409, "Não há vagas suficientes na rota de destino")
+
+    old_slot_id = entry.route_slot_id
+    old_pos = entry.position
+
+    # remove da origem e compacta posições
+    entry.route_slot_id = target.id
+    entry.position = len(dest_entries) + 1
+    db.flush()
+
+    later = db.scalars(
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id == old_slot_id,
+            ScheduleEntry.position > old_pos,
+        )
+    ).all()
+    for e in later:
+        e.position -= 1
+
+    audit(db, user, "TRANSFERÊNCIA_CLIENTE", "schedule", entry_id, request)
+    db.commit()
+    return serialize_entry(entry, db)
+
+@app.post("/schedule/route-slots/{slot_id}/transfer")
+def transfer_route_slot(
+    slot_id: int,
+    body: TransferSlotBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("schedule", write=True)(user)
+    rs = db.get(RouteSlot, slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+
+    target_week_id = body.week_id if body.week_id is not None else rs.week_id
+    week = db.get(ScheduleWeek, target_week_id)
+    if not week:
+        raise HTTPException(404, "Semana de destino não encontrada")
+    if week.status != WeekStatus.ATIVA:
+        raise HTTPException(409, "Não é possível transferir para semana arquivada")
+
+    rs.date = body.new_date
+    rs.week_id = target_week_id
+
+    audit(db, user, "TRANSFERÊNCIA_ROTA", "schedule", slot_id, request)
+    db.commit()
+    return serialize_route_slot(rs, db)
 
 
 @app.post("/schedule/extras")
