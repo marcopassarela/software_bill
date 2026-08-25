@@ -2559,6 +2559,22 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [transferNewDate, setTransferNewDate] = useState('');
   const [transferWeekId, setTransferWeekId] = useState('');
   const [transferring, setTransferring] = useState(false);
+  const [showPrintDay, setShowPrintDay] = useState(false);
+  const [printDate, setPrintDate] = useState('');
+  const [printSlotId, setPrintSlotId] = useState('all'); // 'all' ou id da rota
+  const [printFields, setPrintFields] = useState({
+    position: true,
+    client: true,
+    service: true,
+    phone: true,
+    location: false,
+    comanda: true,
+    cooperativa: true,
+    pago: true,
+    status: false,
+    observation: true,
+    extras: true,
+  });
 
   const perms = (user.permissions || '').split(',').filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
@@ -2731,6 +2747,148 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     doc.save(`Agenda_${week.label || week.start_date}.pdf`);
   }
+
+    function togglePrintField(key: keyof typeof printFields) {
+    setPrintFields((s) => ({ ...s, [key]: !s[key] }));
+  }
+
+  function openPrintDay() {
+    const first = dates[0] || '';
+    setPrintDate(first);
+    setPrintSlotId('all');
+    setShowPrintDay(true);
+  }
+
+  function printDayRoutes() {
+    if (!selectedWeek || !printDate) return;
+
+    const slots = (selectedWeek.route_slots || []).filter((s: any) => {
+      if (s.date !== printDate) return false;
+      if (printSlotId !== 'all' && String(s.id) !== String(printSlotId)) return false;
+      return true;
+    });
+
+    if (!slots.length) {
+      setError('Nenhuma rota encontrada para essa data / caminhão.');
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const margin = 10;
+    let y = 12;
+    const pageW = doc.internal.pageSize.getWidth();
+
+    const [yy, mm, dd] = printDate.split('-');
+    const dateObj = new Date(Number(yy), Number(mm) - 1, Number(dd));
+    const dateLabel = dateObj.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGÍSTICAS BILL — Rota do dia', margin, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(
+      `Data: ${dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}  |  Semana: ${
+        selectedWeek.label || selectedWeek.start_date
+      }`,
+      margin,
+      y
+    );
+    y += 8;
+
+    const head: string[] = [];
+    if (printFields.position) head.push('Pos');
+    if (printFields.client) head.push('Cliente');
+    if (printFields.service) head.push('Serviço');
+    if (printFields.phone) head.push('Telefone');
+    if (printFields.location) head.push('Localização');
+    if (printFields.comanda) head.push('Comanda');
+    if (printFields.cooperativa) head.push('Cooperativa');
+    if (printFields.pago) head.push('Pago');
+    if (printFields.status) head.push('Status');
+    if (printFields.observation) head.push('Obs');
+    if (printFields.extras) head.push('Extras');
+
+    slots.forEach((slot: any, slotIdx: number) => {
+      if (y > 250) {
+        doc.addPage();
+        y = 12;
+      }
+
+      const plate = slot.vehicle?.plate || slot.route_label || '';
+      const driver = slot.driver?.name || '—';
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(
+        `${String(slot.total_slots).padStart(2, '0')} - (${slot.region_code}) ${plate}`,
+        margin,
+        y
+      );
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Motorista: ${driver}${slot.second_driver?.name ? ' | ' + slot.second_driver.name : ''}`, margin, y);
+      y += 6;
+
+      const body = (slot.entries || []).map((e: any) => {
+        const row: string[] = [];
+        if (printFields.position) row.push(`${String(e.position).padStart(2, '0')}°`);
+        if (printFields.client) row.push(e.client_name || '');
+        if (printFields.service) row.push(e.service_description || '');
+        if (printFields.phone) row.push(e.phone || '');
+        if (printFields.location) row.push(e.location_link || '');
+        if (printFields.comanda) row.push(e.no_comanda ? 'SEM COMANDA' : e.comanda || '');
+        if (printFields.cooperativa) row.push(e.cooperativa_nome || '');
+        if (printFields.pago) row.push(e.pago ? 'Sim' : 'Não');
+        if (printFields.status) row.push(e.status || '');
+        if (printFields.observation) row.push(e.observation || '');
+        if (printFields.extras) {
+          const extras = (e.extras || []).map((x: any) => x.description).join('; ');
+          row.push(extras);
+        }
+        return row;
+      });
+
+      if (body.length && head.length) {
+        autoTable(doc, {
+          startY: y,
+          head: [head],
+          body,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 7, cellPadding: 1.2, overflow: 'linebreak' },
+          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+          columnStyles: printFields.observation
+            ? { [head.indexOf('Obs')]: { cellWidth: 35 } }
+            : {},
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      } else {
+        doc.setFontSize(8);
+        doc.text('Sem clientes nesta rota', margin, y);
+        y += 8;
+      }
+
+      if (slotIdx < slots.length - 1) {
+        doc.setDrawColor(200);
+        doc.line(margin, y - 4, pageW - margin, y - 4);
+      }
+    });
+
+    const safeDate = printDate.replace(/-/g, '');
+    doc.save(`Rota_${safeDate}.pdf`);
+    setShowPrintDay(false);
+  }
+
+  const printSlotsForDate = selectedWeek
+    ? (selectedWeek.route_slots || []).filter((s: any) => s.date === printDate)
+    : [];
 
   async function createSlot(data: any) {
     try {
@@ -2949,6 +3107,15 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 )}
               </>
             )}
+            {selectedWeek && dates.length > 0 && canExport && (
+              <button
+                type="button"
+                onClick={openPrintDay}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Imprimir rota do dia
+              </button>
+            )}
           </div>
         </div>
 
@@ -2999,6 +3166,109 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 Excluir semana permanentemente
               </button>
             )}
+                  {showPrintDay && selectedWeek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Imprimir rota do dia</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Escolha o dia, o caminhão (ou todos) e os campos do PDF.
+            </p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Dia *</span>
+              <select
+                value={printDate}
+                onChange={(e) => {
+                  setPrintDate(e.target.value);
+                  setPrintSlotId('all');
+                }}
+                className="w-full rounded-lg border p-2"
+              >
+                {dates.map((d) => {
+                  const [y, m, day] = d.split('-');
+                  const dt = new Date(Number(y), Number(m) - 1, Number(day));
+                  const label = dt.toLocaleDateString('pt-BR', {
+                    weekday: 'long',
+                    day: '2-digit',
+                    month: '2-digit',
+                  });
+                  return (
+                    <option key={d} value={d}>
+                      {label.charAt(0).toUpperCase() + label.slice(1)}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Caminhão / rota</span>
+              <select
+                value={printSlotId}
+                onChange={(e) => setPrintSlotId(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="all">Todos os caminhões do dia</option>
+                {printSlotsForDate.map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    ({s.region_code}) {s.vehicle?.plate || s.route_label || ''} ·{' '}
+                    {s.total_slots} vagas
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-4">
+              <span className="mb-2 block text-sm text-slate-600">Campos no PDF</span>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {(
+                  [
+                    ['position', 'Posição'],
+                    ['client', 'Cliente'],
+                    ['service', 'Serviço'],
+                    ['phone', 'Telefone'],
+                    ['location', 'Localização'],
+                    ['comanda', 'Comanda'],
+                    ['cooperativa', 'Cooperativa'],
+                    ['pago', 'Pago'],
+                    ['status', 'Status'],
+                    ['observation', 'Observação'],
+                    ['extras', 'Extras'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={printFields[key]}
+                      onChange={() => togglePrintField(key)}
+                      className="h-4 w-4"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPrintDay(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={printDayRoutes}
+                disabled={!printDate}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                Gerar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
           </div>
         )}
         </section>
