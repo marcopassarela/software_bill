@@ -61,20 +61,6 @@ def seed():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         update_maintenance_status(db)
-        if not db.scalar(select(User.id).limit(1)):
-            db.add(
-                User(
-                    name="Administrador Principal",
-                    username="user",
-                    password_hash=hash_password("user123"),
-                    role=Role.ADMIN,
-                    must_change_password=True,
-                )
-            )
-            db.commit()
-
-        # Atualiza status de manutenções no startup
-        update_maintenance_status(db)
 
 
 class Login(BaseModel):
@@ -161,6 +147,18 @@ def model_data(model, data):
         for k, v in data.items()
         if k == c.name and k not in {"id", "quantity", "created_at", "occurred_at"}
     }
+
+def normalize_cpf(value: Any) -> str:
+    digits = "".join(c for c in str(value or "") if c.isdigit())
+    if len(digits) != 11:
+        raise HTTPException(422, "CPF deve ter 11 dígitos")
+    return digits
+
+def normalize_cpf(value: Any) -> str:
+    digits = "".join(c for c in str(value or "") if c.isdigit())
+    if len(digits) != 11:
+        raise HTTPException(422, "CPF deve ter 11 dígitos")
+    return digits
 
 
 @app.get("/health")
@@ -651,7 +649,12 @@ def add_resource(
         raise HTTPException(404)
     model, module = RESOURCES[resource]
     require(module)(user)
-    x = model(**model_data(model, body.data))
+
+    data = dict(body.data)
+    if resource == "drivers" and "cpf" in data:
+        data["cpf"] = normalize_cpf(data["cpf"])
+
+    x = model(**model_data(model, data))
     db.add(x)
     db.flush()
     audit(db, user, "CADASTRO", module, x.id if hasattr(x, "id") else None, request)
@@ -675,8 +678,14 @@ def edit_resource(
     x = db.get(model, record_id)
     if not x:
         raise HTTPException(404)
-    for k, v in model_data(model, body.data).items():
+
+    data = dict(body.data)
+    if resource == "drivers" and "cpf" in data:
+        data["cpf"] = normalize_cpf(data["cpf"])
+
+    for k, v in model_data(model, data).items():
         setattr(x, k, v)
+
     audit(db, user, "ALTERAÇÃO", module, record_id, request)
     db.commit()
     return serialize(x)

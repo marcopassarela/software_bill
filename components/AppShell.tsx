@@ -424,8 +424,22 @@ function readable(x: any): string {
   return String(x);
 }
 
+function onlyDigits(v: string) {
+  return String(v || '').replace(/\D/g, '');
+}
+
+/** Mostra CPF mascarado na listagem: ***.***.***-XX */
+function maskCpf(v: any): string {
+  const d = onlyDigits(String(v || ''));
+  if (d.length < 2) return '—';
+  const end = d.slice(-2);
+  if (d.length >= 11) return `***.***.***-${end}`;
+  return `***-${end}`;
+}
+
 function resolveCell(key: string, value: any, lookups: any): string {
   if (value === null || value === undefined) return '—';
+  if (key === 'cpf') return maskCpf(value);
   if (key === 'vehicle_id') {
     const v = (lookups.vehicles || []).find((x: any) => x.id === value);
     return v ? `${v.plate} — ${v.brand} ${v.model}` : readable(value);
