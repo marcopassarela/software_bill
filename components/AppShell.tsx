@@ -3362,6 +3362,13 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       {editingEntry && (
         <EntryFormModal routeSlotId={editingEntry.route_slot_id} initial={editingEntry} onClose={() => setEditingEntry(null)} onSubmit={(data: any) => updateEntry(editingEntry.id, data)} title="Editar cliente" />
       )}
+      {addingExtraTo && (
+        <NewExtraModal
+          entryId={addingExtraTo}
+          onClose={() => setAddingExtraTo(null)}
+          onSubmit={createExtra}
+        />
+      )}
             {transferEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
