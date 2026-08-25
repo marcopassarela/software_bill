@@ -460,7 +460,22 @@ export default function AppShell({
   onLogout: () => void;
   onUserUpdate: (u: any) => void;
 }) {
-  const [page, setPage] = useState('dashboard');
+  const isMainAdmin = !!user.is_main_admin;
+
+  const allowed = (key: string) =>
+    isMainAdmin ||
+    (user.permissions
+      ? user.permissions.split(',').includes(key)
+      : (moduleAccess[user.role] || []).includes('*') ||
+        (moduleAccess[user.role] || []).includes(key));
+
+  // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
+  // já entra direto na primeira aba que ele efetivamente pode ver.
+  const [page, setPage] = useState<string>(() => {
+    if (allowed('dashboard')) return 'dashboard';
+    const first = items.find(([k]) => allowed(k));
+    return first ? first[0] : 'dashboard';
+  });
   const [rows, setRows] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<any>();
   const [error, setError] = useState('');
@@ -483,15 +498,6 @@ export default function AppShell({
   } | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
-
-  const isMainAdmin = !!user.is_main_admin;
-
-  const allowed = (key: string) =>
-    isMainAdmin ||
-    (user.permissions
-      ? user.permissions.split(',').includes(key)
-      : (moduleAccess[user.role] || []).includes('*') ||
-        (moduleAccess[user.role] || []).includes(key));
 
   async function load(p = page) {
     setError('');
@@ -1413,7 +1419,6 @@ function exportPdfMulti(
     if (fontSizeOption === 'medium') fontSize = 6;
     if (fontSizeOption === 'large') fontSize = 7.5;
 
-    // Muitas colunas (ex: Agendamento) → fonte ainda menor
     if (headers.length >= 12) fontSize = Math.min(fontSize, 5);
     if (headers.length >= 16) fontSize = Math.min(fontSize, 4.5);
 
@@ -1429,7 +1434,7 @@ function exportPdfMulti(
         font: 'helvetica',
         fontSize,
         cellPadding: 0.8,
-        overflow: 'linebreak', // ← não corta mais o texto
+        overflow: 'linebreak',
         valign: 'middle',
         lineWidth: 0.1,
         lineColor: [80, 80, 80],
@@ -1695,7 +1700,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
         {exporting ? 'Carregando…' : 'Gerar relatório'}
       </button>
 
-      {/* ========== PREVIEW ========== */}
       {preview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3">
           <div className="flex h-[96vh] w-[98vw] max-w-none flex-col rounded-2xl bg-white shadow-2xl">
@@ -2578,23 +2582,17 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
   const perms = (user.permissions || '').split(',').filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
-  const isAdminOrManager =
-    isMainAdmin || user.role === 'ADMINISTRADOR' || user.role === 'GERENTE';
-  // Ver a agenda: role ou permissão "schedule"
-  const canView =
-    isAdminOrManager || perms.includes('schedule');
-  // Editar / adicionar / fechar rota
-  const canEdit =
-    isAdminOrManager || perms.includes('schedule_edit');
-  // Excluir cliente / rota
-  const canArchive =
-    isMainAdmin || perms.includes('schedule_archive');
-  const canDelete =
-    isMainAdmin || user.role === 'ADMINISTRADOR' || perms.includes('schedule_delete');
-  // Exportar TXT / PDF
-  const canExport =
-    isAdminOrManager || perms.includes('schedule_export');
-  // Quem pode criar semana / rota (mesma regra de edição)
+
+  // Apenas o Administrador Principal (id 1) tem acesso total automático ao
+  // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
+  // depende exclusivamente das permissões específicas marcadas no cadastro
+  // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
+  // schedule_archive).
+  const canView = isMainAdmin || perms.includes('schedule');
+  const canEdit = isMainAdmin || perms.includes('schedule_edit');
+  const canArchive = isMainAdmin || perms.includes('schedule_archive');
+  const canDelete = isMainAdmin || perms.includes('schedule_delete');
+  const canExport = isMainAdmin || perms.includes('schedule_export');
   const canWrite = canEdit;
 
       async function load(opts?: { silent?: boolean }) {
@@ -3006,7 +3004,6 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     }
   }
 
-  // lista de rotas da semana atual (para escolher destino do cliente)
   function formatSlotDateLabel(d: string) {
     const [y, m, day] = d.split('-');
     const date = new Date(Number(y), Number(m) - 1, Number(day));
