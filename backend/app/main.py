@@ -84,7 +84,7 @@ class Login(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=200)
-    new_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=3, max_length=200)
 
 
 class ProfileUpdate(BaseModel):
@@ -289,8 +289,8 @@ def update_user(
             setattr(u, k, body.data[k])
     if body.data.get("password"):
         pwd = body.data["password"]
-        if len(pwd) < 1:
-            raise HTTPException(422, "A nova senha deve ter pelo menos 12 caracteres")
+        if len(pwd) < 3:
+            raise HTTPException(422, "A nova senha deve ter pelo menos 3 caracteres")
         u.password_hash = hash_password(pwd)
         u.must_change_password = True
     try:
