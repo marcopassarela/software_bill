@@ -943,7 +943,7 @@ function AccountPanel({
           value={next}
           onChange={(e) => setNext(e.target.value)}
           required
-          minLength={1}
+          minLength={3}
           className="w-full rounded-lg border p-2 text-sm"
         />
         <button
