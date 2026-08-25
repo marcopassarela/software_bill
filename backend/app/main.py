@@ -60,7 +60,7 @@ def update_maintenance_status(db: Session):
 def seed():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        # Só cria o admin inicial se o banco estiver TOTALMENTE vazio (instalação nova).
+        update_maintenance_status(db)
         if not db.scalar(select(User.id).limit(1)):
             db.add(
                 User(
