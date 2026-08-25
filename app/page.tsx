@@ -21,12 +21,12 @@ export default function Home(){
  if(user?.must_change_password) return <main className="grid min-h-screen place-items-center p-4 bg-slate-100">
   <form onSubmit={change} className="w-full max-w-md rounded-xl bg-white p-7 shadow" autoComplete="off">
    <h1 className="text-xl font-bold">Atualize sua senha</h1>
-   <p className="my-3 text-sm text-slate-600">Sua senha inicial é temporária. Defina uma nova senha de pelo menos 12 caracteres para continuar.</p>
+   <p className="my-3 text-sm text-slate-600">Sua senha inicial é temporária. Defina uma nova senha de pelo menos 3 caracteres para continuar.</p>
    {error&&<p className="mb-2 text-sm text-red-600">{error}</p>}
    <input type="text" tabIndex={-1} aria-hidden="true" style={{position:'absolute',left:-9999,width:1,height:1,opacity:0}}/>
    <input type="password" tabIndex={-1} aria-hidden="true" style={{position:'absolute',left:-9999,width:1,height:1,opacity:0}}/>
    <input placeholder="Senha temporária" type="password" value={password} onChange={e=>setPassword(e.target.value)} required autoComplete="off"/>
-   <input className="mt-3" placeholder="Nova senha" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} required minLength={12} autoComplete="new-password"/>
+   <input className="mt-3" placeholder="Nova senha" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} required minLength={3} autoComplete="new-password"/>
    <button className="mt-4 w-full rounded-lg bg-brand p-2 text-white">Salvar e continuar</button>
   </form>
  </main>;
