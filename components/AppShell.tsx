@@ -3771,7 +3771,7 @@ function RouteSlotCard({
             <tr>
               <th className="w-14 px-3 py-2">Pos</th>
               <th className="min-w-[200px] px-3 py-2">Cliente / Serviço</th>
-              <th className="min-w-[150px] px-3 py-2">Telefone</th>
+              <th className="min-w-[110px] whitespace-nowrap px-3 py-2">Telefone</th>
               <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
               <th className="min-w-[180px] px-3 py-2">Observação</th>
@@ -3852,13 +3852,11 @@ function RouteSlotCard({
                         {entry.service_description}
                       </div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="whitespace-nowrap px-3 py-2 align-top">
                       {entry.phone ? (
                         <a
-                          href={`https://wa.me/55${entry.phone.replace(/\D/g, '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-green-600 hover:underline"
+                          href={`tel:${String(entry.phone).replace(/\D/g, '')}`}
+                          className="text-slate-700 hover:text-brand"
                         >
                           {entry.phone}
                         </a>
