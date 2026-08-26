@@ -2709,7 +2709,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       setDeleteWeekId(null);
       setDeletePassword('');
       setSelectedWeekId(null);
-      load();
+      load({ silent: true });
     } catch (e: any) {
       setError(e.message);
     } finally {
