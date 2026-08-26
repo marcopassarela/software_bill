@@ -3771,7 +3771,7 @@ function RouteSlotCard({
             <tr>
               <th className="w-14 px-3 py-2">Pos</th>
               <th className="min-w-[200px] px-3 py-2">Cliente / Serviço</th>
-              <th className="px-3 py-2">Telefone</th>
+              <th className="min-w-[150px] px-3 py-2">Telefone</th>
               <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
               <th className="min-w-[180px] px-3 py-2">Observação</th>
