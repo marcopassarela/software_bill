@@ -3852,7 +3852,7 @@ function RouteSlotCard({
                         {entry.service_description}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 align-top">
+                    <td className="whitespace-nowrap px-3 py-2 align-middle text-center">
                       {entry.phone ? (
                         <a
                           href={`tel:${String(entry.phone).replace(/\D/g, '')}`}
@@ -3878,8 +3878,8 @@ function RouteSlotCard({
                         '—'
                       )}
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="px-3 py-2 align-middle text-center">
+                      <div className="flex flex-wrap justify-center gap-1">
                         {entry.no_comanda && (
                           <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
                             SEM COMANDA
