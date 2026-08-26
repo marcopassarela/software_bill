@@ -2633,12 +2633,18 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           String(a.start_date).localeCompare(String(b.start_date))
         )
       );
+      if (data.length && !selectedWeekId) {
+        const active = data.find((w: any) => w.status === 'Ativa') || data[0];
+        setSelectedWeekId(active.id);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
-      requestAnimationFrame(() => window.scrollTo(0, scrollY));
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
     }
   }
 
