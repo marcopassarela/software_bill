@@ -2617,11 +2617,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     setError('');
     try {
       const data = await request(`/schedule/weeks?include_archived=${includeArchived}`);
-      setWeeks(data);
-      if (data.length && !selectedWeekId) {
-        const active = data.find((w: any) => w.status === 'Ativa') || data[0];
-        setSelectedWeekId(active.id);
-      }
+      setWeeks(
+        [...data].sort((a: any, b: any) =>
+          String(a.start_date).localeCompare(String(b.start_date))
+        )
+      );
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -3131,7 +3131,9 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {weeks.map((w) => (
+          {[...weeks]
+            .sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))
+            .map((w) => (
             <button
               key={w.id}
               onClick={() => setSelectedWeekId(w.id)}
