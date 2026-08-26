@@ -3864,7 +3864,7 @@ function RouteSlotCard({
                         '—'
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 align-middle text-center">
                       {entry.location_link ? (
                         <a
                           href={entry.location_link}
