@@ -3095,7 +3095,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     if (!confirm('Remover este item extra?')) return;
     try {
       await request(`/schedule/extras/${extraId}`, { method: 'DELETE' });
-      load();
+      load({ silent: true })
     } catch (e: any) { setError(e.message); }
   }
 
