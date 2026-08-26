@@ -3856,7 +3856,7 @@ function RouteSlotCard({
                       {entry.phone ? (
                         <a
                           href={`tel:${String(entry.phone).replace(/\D/g, '')}`}
-                          className="text-slate-700 hover:text-brand"
+                          className="font-medium text-emerald-600 hover:text-emerald-700"
                         >
                           {entry.phone}
                         </a>
