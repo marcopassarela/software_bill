@@ -2650,6 +2650,23 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
   useEffect(() => { load(); }, [includeArchived]);
 
+  // Sincroniza agenda entre aparelhos a cada 10s e ao voltar para a aba
+  useEffect(() => {
+    const tick = () => load({ silent: true });
+    const id = window.setInterval(tick, 10000);
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeArchived]);
+
   const selectedWeek = weeks.find((w) => w.id === selectedWeekId);
 
   const slotsByDate = selectedWeek
@@ -2667,7 +2684,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/weeks', { method: 'POST', body: JSON.stringify(data) });
       setShowNewWeek(false);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2676,7 +2693,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/weeks/${weekId}/archive`, { method: 'POST' });
       setSelectedWeekId(null);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2923,7 +2940,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/route-slots', { method: 'POST', body: JSON.stringify(data) });
       setShowNewSlot(false);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2931,7 +2948,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/route-slots/${slotId}`, { method: 'PATCH', body: JSON.stringify(data) });
       setEditingSlot(null);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2939,7 +2956,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     if (!confirm('Excluir esta rota e todos os clientes dela?')) return;
     try {
       await request(`/schedule/route-slots/${slotId}`, { method: 'DELETE' });
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2947,7 +2964,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/entries', { method: 'POST', body: JSON.stringify(data) });
       setAddingEntryTo(null);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2955,7 +2972,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(data) });
       setEditingEntry(null);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2963,7 +2980,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     if (!confirm('Remover este cliente da rota? A vaga será liberada.')) return;
     try {
       await request(`/schedule/entries/${entryId}`, { method: 'DELETE' });
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -2973,7 +2990,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         method: 'POST',
         body: JSON.stringify({ direction }),
       });
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -3007,7 +3024,10 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       setTransferTargetSlotId('');
       load({ silent: true });
     } catch (e: any) {
-      setError(e.message);
+      setError(
+        e.message ||
+          'Não foi possível transferir. Rota destino fechada ou sem vagas.'
+      );
     } finally {
       setTransferring(false);
     }
@@ -3067,7 +3087,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/extras', { method: 'POST', body: JSON.stringify(data) });
       setAddingExtraTo(null);
-      load();
+      load({ silent: true });
     } catch (e: any) { setError(e.message); }
   }
 
@@ -3111,7 +3131,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
   return (
     <div className="space-y-6">
-      {error && <div className="rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
+      {error && <div className="rounded-lg bg-red-50 p-3 text-red-700">
+        {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}</div>}
 
       <section className="rounded-xl bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
