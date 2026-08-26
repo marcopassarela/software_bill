@@ -1893,21 +1893,25 @@ function Module({
         ) : loading ? (
           <div className="p-5">Carregando…</div>
         ) : (
-          <div className="overflow-auto">
-            <table>
+                    <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr>
                   {cols.map((k) => (
-                    <th key={k}>{labelFor(k)}</th>
+                    <th key={k} className="whitespace-nowrap px-3 py-2">
+                      {labelFor(k)}
+                    </th>
                   ))}
-                  {showActions && <th>Ações</th>}
+                  {showActions && (
+                    <th className="whitespace-nowrap px-3 py-2">Ações</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={resourceIdOf(page, r) || i}>
                     {cols.map((k) => (
-                      <td key={k}>
+                      <td key={k} className="max-w-[200px] px-3 py-2 align-top">
                         {k === 'status' ? (
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
@@ -1917,19 +1921,21 @@ function Module({
                             {r[k] || '—'}
                           </span>
                         ) : (
-                          resolveCell(k, r[k], lookups)
+                          <span className="break-words">
+                            {resolveCell(k, r[k], lookups)}
+                          </span>
                         )}
                       </td>
                     ))}
                     {showActions && (
-                      <td className="whitespace-nowrap">
+                      <td className="whitespace-nowrap px-3 py-2">
                         {page === 'stock' && (
-                        <button
-                          type="button"
-                          onClick={() => printProductLabels([r])}
-                          className="mr-2 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                          <button
+                            type="button"
+                            onClick={() => printProductLabels([r])}
+                            className="mr-2 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                           >
-                          Etiqueta QR
+                            Etiqueta QR
                           </button>
                         )}
                         <button
@@ -1964,7 +1970,12 @@ function Module({
                 ))}
                 {!rows.length && (
                   <tr>
-                    <td className="p-5 text-slate-500">Nenhum registro encontrado.</td>
+                    <td
+                      colSpan={cols.length + (showActions ? 1 : 0)}
+                      className="p-5 text-slate-500"
+                    >
+                      Nenhum registro encontrado.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -3754,12 +3765,12 @@ function RouteSlotCard({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border -mx-1">
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="w-14 px-3 py-2">Pos</th>
-              <th className="px-3 py-2">Cliente / Serviço</th>
+              <th className="min-w-[200px] px-3 py-2">Cliente / Serviço</th>
               <th className="px-3 py-2">Telefone</th>
               <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
