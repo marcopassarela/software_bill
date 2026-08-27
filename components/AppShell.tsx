@@ -2562,7 +2562,7 @@ const COOPERATIVAS = [
 
 function calcularVagas(service: string): number {
   const match = (service || '').trim().match(/^(\d+)/);
-  return match ? Math.max(1, parseInt(match[1], 10)) : 1;
+  return match ? Math.max(0, parseInt(match[1], 10)) : 0;
 }
 
 function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {

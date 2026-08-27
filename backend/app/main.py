@@ -812,7 +812,7 @@ class DeleteWeekBody(BaseModel):
 
 def calcular_vagas(service_description: str) -> int:
     match = re.match(r'^(\d+)', (service_description or '').strip())
-    return int(match.group(1)) if match else 1
+    return int(match.group(1)) if match else 0
 
 
 def serialize_extra(x: ScheduleExtra):
