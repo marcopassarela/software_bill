@@ -2620,7 +2620,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const canExport = isMainAdmin || perms.includes('schedule_export');
   const canWrite = canEdit;
 
-      async function load(opts?: { silent?: boolean }) {
+    async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
     const silent = !!(opts?.silent || weeks.length > 0);
     if (silent) setRefreshing(true);
@@ -2628,18 +2628,21 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     setError('');
     try {
       const data = await request(`/schedule/weeks?include_archived=${includeArchived}`);
-      setWeeks(
-        [...data].sort((a: any, b: any) =>
-          String(a.start_date).localeCompare(String(b.start_date))
-        )
-      );
-      if (data.length && !selectedWeekId) {
-        const active = data.find((w: any) => w.status === 'Ativa') || data[0];
-        setSelectedWeekId(active.id);
+      setWeeks(data);
+      if (data.length) {
+        setSelectedWeekId((prev: number | null) => {
+          if (prev !== null && data.some((w: any) => w.id === prev)) {
+            return prev;
+          }
+          const active = data.find((w: any) => w.status === 'Ativa') || data[0];
+          return active.id;
+        });
       }
-    } catch (e: any) {
+    } 
+    catch (e: any) {
       setError(e.message);
-    } finally {
+    } 
+    finally {
       setLoading(false);
       setRefreshing(false);
       requestAnimationFrame(() => {
