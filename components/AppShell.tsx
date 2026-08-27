@@ -790,7 +790,7 @@ export default function AppShell({
           onClick={() => setSidebarCollapsed((s) => !s)}
           title={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
           aria-label={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
-          className={`mx-4 mb-4 mt-2 hidden items-center gap-2 text-sm text-slate-400 hover:text-white md:flex ${
+          className={`mx-4 mb-4 mt-8 hidden items-center gap-2 text-sm text-slate-400 hover:text-white md:flex ${
             sidebarCollapsed ? 'md:justify-center' : ''
           }`}
         >
@@ -800,7 +800,7 @@ export default function AppShell({
             <X size={17} className="shrink-0" />
           )}
           <span
-            className={`whitespace-nowrap transition-opacity duration-200 text-xs${
+            className={`whitespace-nowrap transition-opacity duration-200 ${
               sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
             }`}
           >
