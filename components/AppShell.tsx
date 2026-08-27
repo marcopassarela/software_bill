@@ -714,11 +714,11 @@ export default function AppShell({
         />
       )}
 
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] transform bg-navy text-slate-200 transition-all duration-200 md:static md:z-auto md:min-h-screen md:translate-x-0 ${
+        <aside
+        className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] transform bg-navy text-slate-200 transition-[width,transform] duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:self-start md:overflow-y-auto md:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         } ${sidebarCollapsed ? 'md:w-20' : 'w-72 md:w-64'}`}
-      >
+        >
         <div className="flex items-center justify-between gap-2 p-5 text-lg font-bold text-white">
           <span className="flex min-w-0 items-center gap-2">
             <img
@@ -726,7 +726,9 @@ export default function AppShell({
               alt="Logísticas Bill"
               className="h-9 w-auto shrink-0 object-contain"/>
             {!sidebarCollapsed && (
-              <span className="truncate text-white">LOGÍSTICAS BILL</span>
+              <span className="truncate text-white transition-opacity duration-200">
+                LOGÍSTICAS BILL
+              </span>
             )}
           </span>
           <button
@@ -759,7 +761,13 @@ export default function AppShell({
                 } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
               >
                 <Icon size={18} className="shrink-0" />
-                <span className={sidebarCollapsed ? 'md:hidden' : ''}>{label}</span>
+                  <span
+                  className={`whitespace-nowrap transition-opacity duration-200 ${
+                    sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+                  }`}
+                >
+                  {label}
+                </span>
               </button>
             ))}
         </nav>
@@ -771,7 +779,13 @@ export default function AppShell({
           }`}
         >
           <LogOut size={17} className="shrink-0" />
-          <span className={sidebarCollapsed ? 'md:hidden' : ''}>Sair</span>
+          <span
+            className={`whitespace-nowrap transition-opacity duration-200 ${
+              sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+            }`}
+          >
+            Sair
+          </span>
         </button>
       </aside>
 
