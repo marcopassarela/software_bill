@@ -4,7 +4,7 @@ Sistema interno multiusuário para rotas, frota, manutenção, combustível, est
 
 ## Segurança
 
-Não há cadastro público. O administrador inicial é `user` com senha temporária `user123`, cuja troca é obrigatória no primeiro acesso. Senhas usam Argon2id; sessões usam JWT em cookie HttpOnly/SameSite e `Secure` em produção. Há limite de login por IP, validação Pydantic, RBAC no backend, desativação lógica e auditoria. Apenas o administrador principal gerencia usuários e consulta os logs.
+Não há cadastro público. Senhas usam Argon2id; sessões usam JWT em cookie HttpOnly/SameSite e `Secure` em produção. Há limite de login por IP, validação Pydantic, RBAC no backend, desativação lógica e auditoria. Apenas o administrador principal gerencia usuários e consulta os logs.
 
 Saídas de estoque usam `SELECT FOR UPDATE` dentro da transação PostgreSQL, impedindo saldo negativo em retiradas concorrentes.
 
