@@ -743,27 +743,17 @@ export default function AppShell({
         </div>
 
         <nav className="px-2 pb-3">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((s) => !s)}
-            title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
-            className={`mb-1 hidden w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white md:flex ${
-              sidebarCollapsed ? 'md:justify-center md:px-2' : ''
-            }`}
-          >
-            {sidebarCollapsed ? (
-              <Menu size={18} className="shrink-0" />
-            ) : (
-              <X size={18} className="shrink-0" />
-            )}
-            <span
-              className={`whitespace-nowrap transition-opacity duration-200 ${
-                sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
-              }`}
+          <div className="mb-2 hidden justify-end px-2 pt-1 md:flex">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((s) => !s)}
+              title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
+              aria-label={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
+              className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"
             >
-              {sidebarCollapsed ? 'Abrir' : 'Recolher'}
-            </span>
-          </button>
+              {sidebarCollapsed ? <Menu size={18} /> : <X size={18} />}
+            </button>
+          </div>
 
           {items
             .filter(([k]) => allowed(k))
