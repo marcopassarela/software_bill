@@ -828,15 +828,7 @@ export default function AppShell({
   />
 )}
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              title="Sair"
-              aria-label="Sair"
-              className="rounded-full bg-white p-2 text-slate-600 shadow-sm hover:text-red-600"
-            >
-              <LogOut size={18} />
-            </button>
+            
           </div>
         </header>
 
