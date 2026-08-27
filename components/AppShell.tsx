@@ -820,12 +820,13 @@ export default function AppShell({
                 {user.name}
               </button>
               {showAccount && (
-                <AccountPanel
-                  user={user}
-                  onClose={() => setShowAccount(false)}
-                  onUserUpdate={onUserUpdate}
-                />
-              )}
+  <AccountPanel
+    user={user}
+    onClose={() => setShowAccount(false)}
+    onUserUpdate={onUserUpdate}
+    onLogout={logout}
+  />
+)}
             </div>
             <button
               type="button"
@@ -925,10 +926,12 @@ function AccountPanel({
   user,
   onClose,
   onUserUpdate,
+  onLogout,
 }: {
   user: any;
   onClose: () => void;
   onUserUpdate: (u: any) => void;
+  onLogout: () => void;
 }) {
   const [name, setName] = useState(user.name || '');
   const [nameMsg, setNameMsg] = useState('');
@@ -1037,7 +1040,15 @@ function AccountPanel({
         >
           {saving ? 'Salvando…' : 'Salvar nova senha'}
         </button>
-      </form>
+            </form>
+      <button
+        type="button"
+        onClick={onLogout}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border-t border-slate-200 pt-4 text-sm font-medium text-red-600 hover:text-red-700"
+      >
+        <LogOut size={16} />
+        Sair
+      </button>
     </div>
   );
 }
