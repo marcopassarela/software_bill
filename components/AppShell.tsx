@@ -3342,48 +3342,73 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               )}
             </div>
           ) : (
-            dates.map((date) => (
-              <section key={date} className="overflow-hidden rounded-xl bg-white shadow-sm">
-                <div className="border-b bg-slate-50 px-5 py-3">
-                  <h3 className="font-semibold capitalize text-slate-800">{formatDate(date)}</h3>
-                </div>
-                <div className="divide-y">
-                  {slotsByDate[date].map((slot: any) => (
-                                        <RouteSlotCard
-                      key={slot.id}
-                      slot={slot}
-                      canWrite={canWrite}
-                      canEdit={canEdit}
-                      canDelete={canDelete}
-                      canExport={canExport}
-                      onEdit={() => setEditingSlot(slot)}
-                      onDelete={() => deleteSlot(slot.id)}
-                      onAddEntry={() => setAddingEntryTo(slot.id)}
-                      onEditEntry={(entry: any) => setEditingEntry(entry)}
-                      onAddExtra={(entryId: number) => setAddingExtraTo(entryId)}
-                      onDeleteEntry={deleteEntry}
-                      onDeleteExtra={deleteExtra}
-                      onMoveEntry={moveEntry}
-                      onReorderEntries={(orderedIds: number[]) =>
-                        reorderEntries(slot.id, orderedIds)
-                      }
-                      onTransferEntry={(entry: any) => {
-                        setTransferEntry(entry);
-                        setTransferTargetSlotId('');
-                      }}
-                      onTransferSlot={() => {
-                        setTransferSlot(slot);
-                        setTransferNewDate(slot.date || '');
-                        setTransferWeekId(String(selectedWeek?.id || ''));
-                      }}
-                      onExport={() => exportSlot(slot.id, slot)}
-                      onToggleClosed={() =>
-                        updateSlot(slot.id, { closed: !slot.closed })
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
+              dates.map((date, dayIndex) => (
+              <div key={date}>
+                {dayIndex > 0 && (
+                  <div className="my-6 flex items-center gap-3">
+                    <div className="h-0.5 flex-1 bg-slate-300" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Próximo dia
+                    </span>
+                    <div className="h-0.5 flex-1 bg-slate-300" />
+                  </div>
+                )}
+                <section
+                  className={`overflow-hidden rounded-xl border-2 border-slate-200 bg-white shadow-sm ${
+                    dayIndex > 0 ? 'border-t-4 border-t-brand' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3 border-b-2 border-slate-200 bg-slate-100 px-5 py-3.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
+                      {dayIndex + 1}
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Dia da semana
+                      </p>
+                      <h3 className="text-base font-bold capitalize text-slate-900">
+                        {formatDate(date)}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    {slotsByDate[date].map((slot: any) => (
+                      <RouteSlotCard
+                        key={slot.id}
+                        slot={slot}
+                        canWrite={canWrite}
+                        canEdit={canEdit}
+                        canDelete={canDelete}
+                        canExport={canExport}
+                        onEdit={() => setEditingSlot(slot)}
+                        onDelete={() => deleteSlot(slot.id)}
+                        onAddEntry={() => setAddingEntryTo(slot.id)}
+                        onEditEntry={(entry: any) => setEditingEntry(entry)}
+                        onAddExtra={(entryId: number) => setAddingExtraTo(entryId)}
+                        onDeleteEntry={deleteEntry}
+                        onDeleteExtra={deleteExtra}
+                        onMoveEntry={moveEntry}
+                        onReorderEntries={(orderedIds: number[]) =>
+                          reorderEntries(slot.id, orderedIds)
+                        }
+                        onTransferEntry={(entry: any) => {
+                          setTransferEntry(entry);
+                          setTransferTargetSlotId('');
+                        }}
+                        onTransferSlot={() => {
+                          setTransferSlot(slot);
+                          setTransferNewDate(slot.date || '');
+                          setTransferWeekId(String(selectedWeek?.id || ''));
+                        }}
+                        onExport={() => exportSlot(slot.id, slot)}
+                        onToggleClosed={() =>
+                          updateSlot(slot.id, { closed: !slot.closed })
+                        }
+                      />
+                    ))}
+                  </div>
+                </section>
+              </div>
             ))
           )}
         </div>
