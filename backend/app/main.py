@@ -148,17 +148,20 @@ def model_data(model, data):
         if k == c.name and k not in {"id", "quantity", "created_at", "occurred_at"}
     }
 
-def normalize_cpf(value: Any) -> str:
-    digits = "".join(c for c in str(value or "") if c.isdigit())
+
+def normalize_cpf(value: Any) -> str | None:
+    """CPF opcional: vazio -> None; se preenchido, exige 11 dígitos."""
+    if value is None:
+        return None
+    digits = "".join(c for c in str(value) if c.isdigit())
+    if not digits:
+        return None
     if len(digits) != 11:
         raise HTTPException(422, "CPF deve ter 11 dígitos")
     return digits
 
-def normalize_cpf(value: Any) -> str:
-    digits = "".join(c for c in str(value or "") if c.isdigit())
-    if len(digits) != 11:
-        raise HTTPException(422, "CPF deve ter 11 dígitos")
-    return digits
+
+
 
 
 @app.get("/health")
@@ -651,8 +654,12 @@ def add_resource(
     require(module)(user)
 
     data = dict(body.data)
-    if resource == "drivers" and "cpf" in data:
-        data["cpf"] = normalize_cpf(data["cpf"])
+    if resource == "drivers":
+        if "cpf" in data:
+            data["cpf"] = normalize_cpf(data.get("cpf"))
+        if "cnh" in data:
+            cnh = (data.get("cnh") or "").strip()
+            data["cnh"] = cnh or None
 
     x = model(**model_data(model, data))
     db.add(x)
@@ -680,8 +687,12 @@ def edit_resource(
         raise HTTPException(404)
 
     data = dict(body.data)
-    if resource == "drivers" and "cpf" in data:
-        data["cpf"] = normalize_cpf(data["cpf"])
+    if resource == "drivers":
+        if "cpf" in data:
+            data["cpf"] = normalize_cpf(data.get("cpf"))
+        if "cnh" in data:
+            cnh = (data.get("cnh") or "").strip()
+            data["cnh"] = cnh or None
 
     for k, v in model_data(model, data).items():
         setattr(x, k, v)
@@ -829,7 +840,7 @@ def serialize_entry(x: ScheduleEntry, db: Session):
     d["comanda"] = x.comanda
     d["pago"] = bool(x.pago)
     d["cooperativa_nome"] = x.cooperativa_nome
-    d["slots_consumed"] = x.slots_consumed or calcular_vagas(x.service_description)
+    d["slots_consumed"] = x.slots_consumed if x.slots_consumed is not None else calcular_vagas(x.service_description)
     return d
 
 

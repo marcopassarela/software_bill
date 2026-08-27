@@ -167,9 +167,9 @@ const FIELDS: Record<string, FieldDef[]> = {
   ],
   drivers: [
     { key: 'name', label: 'Nome', type: 'text', required: true },
-    { key: 'cpf', label: 'CPF', type: 'text', required: true },
+    { key: 'cpf', label: 'CPF', type: 'text' },
     { key: 'phone', label: 'Telefone', type: 'text' },
-    { key: 'cnh', label: 'CNH', type: 'text', required: true },
+    { key: 'cnh', label: 'CNH', type: 'text'},
     {
       key: 'category',
       label: 'Categoria CNH',
@@ -504,6 +504,7 @@ export default function AppShell({
   const [editingMovement, setEditingMovement] = useState<any>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [deletePasswordModal, setDeletePasswordModal] = useState<{
   open: boolean;
   title: string;
@@ -553,6 +554,18 @@ export default function AppShell({
       setLookups({ vehicles, drivers, products })
     );
   }, []);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('sidebarCollapsed') === '1') setSidebarCollapsed(true);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+    } catch {}
+  }, [sidebarCollapsed]);
 
   async function create(data: any) {
     setError('');
@@ -702,17 +715,19 @@ export default function AppShell({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] transform bg-navy text-slate-200 transition-transform duration-200 md:static md:z-auto md:w-64 md:min-h-screen md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] transform bg-navy text-slate-200 transition-all duration-200 md:static md:z-auto md:min-h-screen md:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        } ${sidebarCollapsed ? 'md:w-20' : 'w-72 md:w-64'}`}
       >
-        <div className="flex items-center justify-between p-5 text-lg font-bold text-white">
-          <span className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2 p-5 text-lg font-bold text-white">
+          <span className="flex min-w-0 items-center gap-2">
             <img
               src="/icon2.png"
               alt="Logísticas Bill"
-              className="h-9 w-auto object-contain"/>
-            <span className="text-white">LOGÍSTICAS BILL</span>
+              className="h-9 w-auto shrink-0 object-contain"/>
+            {!sidebarCollapsed && (
+              <span className="truncate text-white">LOGÍSTICAS BILL</span>
+            )}
           </span>
           <button
             className="md:hidden"
@@ -720,6 +735,15 @@ export default function AppShell({
             aria-label="Fechar menu"
           >
             <X size={22} />
+          </button>
+          <button
+            type="button"
+            className="hidden rounded-lg p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white md:inline-flex"
+            onClick={() => setSidebarCollapsed((s) => !s)}
+            aria-label={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
+            title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
+          >
+            {sidebarCollapsed ? <Menu size={20} /> : <X size={20} />}
           </button>
         </div>
         <nav className="px-2 pb-3">
@@ -729,28 +753,45 @@ export default function AppShell({
               <button
                 key={k}
                 onClick={() => goTo(k)}
+                title={label}
                 className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm ${
                   page === k ? 'bg-cyan-700 text-white' : 'hover:bg-slate-700'
-                }`}
+                } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
               >
-                <Icon size={18} />
-                {label}
+                <Icon size={18} className="shrink-0" />
+                <span className={sidebarCollapsed ? 'md:hidden' : ''}>{label}</span>
               </button>
             ))}
         </nav>
         <button
           onClick={logout}
-          className="m-4 flex items-center gap-2 text-sm text-slate-300"
+          title="Sair"
+          className={`m-4 flex items-center gap-2 text-sm text-slate-300 ${
+            sidebarCollapsed ? 'md:justify-center' : ''
+          }`}
         >
-          <LogOut size={17} /> Sair
+          <LogOut size={17} className="shrink-0" />
+          <span className={sidebarCollapsed ? 'md:hidden' : ''}>Sair</span>
         </button>
       </aside>
 
       <main className="min-w-0 flex-1 p-4 md:p-8">
-        <header className="mb-7 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">
-            {page === 'dashboard' ? 'Visão geral' : titleFor(page)}
-          </h1>
+        <header className="mb-7 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {sidebarCollapsed && (
+              <button
+                type="button"
+                className="hidden rounded-lg border bg-white p-2 shadow-sm md:inline-flex"
+                onClick={() => setSidebarCollapsed(false)}
+                aria-label="Abrir menu"
+              >
+                <Menu size={20} />
+              </button>
+            )}
+            <h1 className="text-2xl font-bold">
+              {page === 'dashboard' ? 'Visão geral' : titleFor(page)}
+            </h1>
+          </div>
           <div className="relative">
             <button
               onClick={() => setShowAccount((s) => !s)}
@@ -2591,6 +2632,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [showPrintDay, setShowPrintDay] = useState(false);
   const [printDate, setPrintDate] = useState('');
   const [printSlotId, setPrintSlotId] = useState('all'); // 'all' ou id da rota
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [printFields, setPrintFields] = useState({
     position: true,
     client: true,
@@ -2650,6 +2692,19 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       });
     }
   }
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('sidebarCollapsed');
+      if (v === '1') setSidebarCollapsed(true);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+    } catch {}
+  }, [sidebarCollapsed]);
 
   useEffect(() => { load(); }, [includeArchived]);
 
@@ -4070,7 +4125,7 @@ function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any)
     pago: initial?.pago || false,
     status: initial?.status || 'Normal',
     observation: initial?.observation || '',
-    slots_consumed: initial?.slots_consumed || 1,
+    slots_consumed: initial?.slots_consumed ?? calcularVagas(initial?.service_description || ''),
   });
   const [saving, setSaving] = useState(false);
 
@@ -4098,7 +4153,7 @@ function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any)
         pago: form.pago,
         status: form.status,
         observation: form.observation || null,
-        slots_consumed: form.slots_consumed || calcularVagas(form.service_description),
+        slots_consumed: form.slots_consumed ?? calcularVagas(form.service_description),
       });
     } finally {
       setSaving(false);
@@ -4118,7 +4173,7 @@ function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any)
             <span className="mb-1 block text-slate-600">Descrição do serviço *</span>
             <input type="text" required value={form.service_description} onChange={(e) => set('service_description', e.target.value)} className="w-full rounded-lg border p-2" placeholder="2 MONO 1CX 8M AE - (GAROPABA)" />
             <span className="mt-1 block text-xs text-slate-500">
-              Vagas que este cliente consome: <strong className="text-brand">{form.slots_consumed || calcularVagas(form.service_description)}</strong>
+              Vagas que este cliente consome: <strong className="text-brand">{form.slots_consumed ?? calcularVagas(form.service_description)}</strong>
             </span>
           </label>
           <label className="text-sm">

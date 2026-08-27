@@ -97,9 +97,9 @@ class Driver(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(140))
-    cpf: Mapped[str] = mapped_column(String(14), unique=True)
+    cpf: Mapped[str | None] = mapped_column(String(14), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30))
-    cnh: Mapped[str] = mapped_column(String(30))
+    cnh: Mapped[str | None] = mapped_column(String(30), nullable=True)
     category: Mapped[str | None] = mapped_column(String(10))
     cnh_expiry: Mapped[datetime | None] = mapped_column(DateTime)
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
