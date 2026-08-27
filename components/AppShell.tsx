@@ -692,14 +692,15 @@ export default function AppShell({
     setMobileMenuOpen(false);
   }
 
-  return (
+    return (
     <div className="min-h-screen md:flex">
       <div className="flex items-center justify-between bg-navy p-4 text-white md:hidden">
         <span className="flex items-center gap-2 font-bold">
           <img
             src="/icon2.png"
             alt="Logísticas Bill"
-            className="h-8 w-auto object-contain"/>
+            className="h-8 w-auto object-contain"
+          />
           <span>LOGÍSTICAS BILL</span>
         </span>
         <button onClick={() => setMobileMenuOpen(true)} aria-label="Abrir menu">
@@ -714,12 +715,12 @@ export default function AppShell({
         />
       )}
 
-        <aside
+      <aside
         className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] overflow-hidden bg-navy text-slate-200 transition-[width,transform] duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:self-start md:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         } ${sidebarCollapsed ? 'w-72 md:w-20' : 'w-72 md:w-64'}`}
       >
-          <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden border-b border-white/10 px-3">
+        <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden px-3">
           <img
             src="/icon2.png"
             alt="Logísticas Bill"
@@ -734,7 +735,7 @@ export default function AppShell({
           </span>
           <button
             type="button"
-            className="md:hidden shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-slate-700"
+            className="shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-slate-700 md:hidden"
             onClick={() => setMobileMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -742,7 +743,7 @@ export default function AppShell({
           </button>
         </div>
 
-                <nav className="px-2 pb-3">
+        <nav className="px-2 pb-3">
           {items
             .filter(([k]) => allowed(k))
             .map(([k, label, Icon]) => (
@@ -767,9 +768,10 @@ export default function AppShell({
         </nav>
 
         <button
+          type="button"
           onClick={logout}
           title="Sair"
-          className={`m-4 flex items-center gap-2 text-sm text-slate-300 ${
+          className={`mx-4 mt-4 flex items-center gap-2 text-sm text-slate-300 ${
             sidebarCollapsed ? 'md:justify-center' : ''
           }`}
         >
@@ -783,29 +785,32 @@ export default function AppShell({
           </span>
         </button>
 
-        <div className="mx-4 mb-4 hidden md:block">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((s) => !s)}
-            title={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
-            aria-label={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
-            className={`flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-slate-400 hover:bg-white/10 hover:text-white ${
-              sidebarCollapsed ? 'justify-center px-2' : ''
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed((s) => !s)}
+          title={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
+          aria-label={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
+          className={`mx-4 mb-4 mt-2 hidden items-center gap-2 text-sm text-slate-400 hover:text-white md:flex ${
+            sidebarCollapsed ? 'md:justify-center' : ''
+          }`}
+        >
+          {sidebarCollapsed ? (
+            <Menu size={17} className="shrink-0" />
+          ) : (
+            <X size={17} className="shrink-0" />
+          )}
+          <span
+            className={`whitespace-nowrap transition-opacity duration-200 ${
+              sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
             }`}
           >
-            {sidebarCollapsed ? (
-              <Menu size={18} className="shrink-0" />
-            ) : (
-              <X size={18} className="shrink-0" />
-            )}
-            <span className="whitespace-nowrap text-xs">
-              {sidebarCollapsed ? 'Abrir' : 'Fechar'}
-            </span>
-          </button>
-        </div>
+            {sidebarCollapsed ? 'Abrir' : 'Fechar'}
+          </span>
+        </button>
       </aside>
 
       <main className="min-w-0 flex-1 p-4 md:p-8">
+
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {sidebarCollapsed && (
