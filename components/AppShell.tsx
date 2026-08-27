@@ -3347,9 +3347,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 {dayIndex > 0 && (
                   <div className="my-6 flex items-center gap-3">
                     <div className="h-0.5 flex-1 bg-slate-300" />
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      Próximo dia
-                    </span>
+                    
                     <div className="h-0.5 flex-1 bg-slate-300" />
                   </div>
                 )}
