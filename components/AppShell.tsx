@@ -2650,10 +2650,10 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
   useEffect(() => { load(); }, [includeArchived]);
 
-  // Sincroniza agenda entre aparelhos a cada 10s e ao voltar para a aba
+  // Sincroniza agenda entre aparelhos a cada 15s e ao voltar para a aba
   useEffect(() => {
     const tick = () => load({ silent: true });
-    const id = window.setInterval(tick, 10000);
+    const id = window.setInterval(tick, 15000);
 
     const onVis = () => {
       if (document.visibilityState === 'visible') tick();
