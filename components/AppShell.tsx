@@ -715,40 +715,56 @@ export default function AppShell({
       )}
 
         <aside
-        className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] transform bg-navy text-slate-200 transition-[width,transform] duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:self-start md:overflow-y-auto md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] overflow-hidden bg-navy text-slate-200 transition-[width,transform] duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:self-start md:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } ${sidebarCollapsed ? 'md:w-20' : 'w-72 md:w-64'}`}
-        >
-        <div className="flex items-center justify-between gap-2 p-5 text-lg font-bold text-white">
-          <span className="flex min-w-0 items-center gap-2">
-            <img
-              src="/icon2.png"
-              alt="Logísticas Bill"
-              className="h-9 w-auto shrink-0 object-contain"/>
-            {!sidebarCollapsed && (
-              <span className="truncate text-white transition-opacity duration-200">
-                LOGÍSTICAS BILL
-              </span>
-            )}
+        } ${sidebarCollapsed ? 'w-72 md:w-20' : 'w-72 md:w-64'}`}
+      >
+          <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden border-b border-white/10 px-3">
+          <img
+            src="/icon2.png"
+            alt="Logísticas Bill"
+            className="h-9 w-9 shrink-0 object-contain"
+          />
+          <span
+            className={`min-w-0 flex-1 truncate text-sm font-bold text-white transition-opacity duration-300 ${
+              sidebarCollapsed ? 'md:pointer-events-none md:opacity-0' : 'opacity-100'
+            }`}
+          >
+            LOGÍSTICAS BILL
           </span>
           <button
-            className="md:hidden"
+            type="button"
+            className="md:hidden shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-slate-700"
             onClick={() => setMobileMenuOpen(false)}
             aria-label="Fechar menu"
           >
-            <X size={22} />
-          </button>
-          <button
-            type="button"
-            className="hidden rounded-lg p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white md:inline-flex"
-            onClick={() => setSidebarCollapsed((s) => !s)}
-            aria-label={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
-            title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
-          >
-            {sidebarCollapsed ? <Menu size={20} /> : <X size={20} />}
+            <X size={20} />
           </button>
         </div>
+
         <nav className="px-2 pb-3">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((s) => !s)}
+            title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
+            className={`mb-1 hidden w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white md:flex ${
+              sidebarCollapsed ? 'md:justify-center md:px-2' : ''
+            }`}
+          >
+            {sidebarCollapsed ? (
+              <Menu size={18} className="shrink-0" />
+            ) : (
+              <X size={18} className="shrink-0" />
+            )}
+            <span
+              className={`whitespace-nowrap transition-opacity duration-200 ${
+                sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+              }`}
+            >
+              {sidebarCollapsed ? 'Abrir' : 'Recolher'}
+            </span>
+          </button>
+
           {items
             .filter(([k]) => allowed(k))
             .map(([k, label, Icon]) => (
@@ -761,7 +777,7 @@ export default function AppShell({
                 } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
               >
                 <Icon size={18} className="shrink-0" />
-                  <span
+                <span
                   className={`whitespace-nowrap transition-opacity duration-200 ${
                     sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
                   }`}
