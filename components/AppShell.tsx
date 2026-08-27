@@ -743,13 +743,13 @@ export default function AppShell({
         </div>
 
         <nav className="px-2 pb-3">
-          <div className="mb-2 hidden justify-end px-2 pt-1 md:flex">
+          <div className="mb-1 hidden px-2 pt-1 md:block">
             <button
               type="button"
               onClick={() => setSidebarCollapsed((s) => !s)}
               title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
               aria-label={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
-              className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+              className="flex w-full items-center rounded-lg px-4 py-3 text-slate-400 hover:bg-white/10 hover:text-white"
             >
               {sidebarCollapsed ? <Menu size={18} /> : <X size={18} />}
             </button>
