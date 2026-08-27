@@ -719,31 +719,26 @@ export default function AppShell({
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         } ${sidebarCollapsed ? 'w-72 md:w-20' : 'w-72 md:w-64'}`}
       >
-          <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden border-b border-white/10 px-3">
-          <img
-            src="/icon2.png"
-            alt="Logísticas Bill"
-            className="h-9 w-9 shrink-0 object-contain"
-          />
-          <span
-            className={`min-w-0 flex-1 truncate text-sm font-bold text-white transition-opacity duration-300 ${
-              sidebarCollapsed ? 'md:pointer-events-none md:opacity-0' : 'opacity-100'
-            }`}
-          >
-            LOGÍSTICAS BILL
+        <div className="flex items-center justify-between gap-2 p-5 text-lg font-bold text-white">
+          <span className="flex min-w-0 items-center gap-2">
+            <img
+              src="/icon2.png"
+              alt="Logísticas Bill"
+              className="h-9 w-auto shrink-0 object-contain"/>
+            {!sidebarCollapsed && (
+              <span className="truncate text-white transition-opacity duration-200">
+                LOGÍSTICAS BILL
+              </span>
+            )}
           </span>
           <button
-            type="button"
-            className="md:hidden shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-slate-700"
+            className="md:hidden"
             onClick={() => setMobileMenuOpen(false)}
             aria-label="Fechar menu"
           >
-            <X size={20} />
+            <X size={22} />
           </button>
-        </div>
-
-        <nav className="px-2 pb-3">
-          <button
+            <button
             type="button"
             onClick={() => setSidebarCollapsed((s) => !s)}
             title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
@@ -751,11 +746,7 @@ export default function AppShell({
               sidebarCollapsed ? 'md:justify-center md:px-2' : ''
             }`}
           >
-            {sidebarCollapsed ? (
-              <Menu size={18} className="shrink-0" />
-            ) : (
-              <X size={18} className="shrink-0" />
-            )}
+            {sidebarCollapsed ? <Menu size={18} className="shrink-0" /> : <X size={18} className="shrink-0" />}
             <span
               className={`whitespace-nowrap transition-opacity duration-200 ${
                 sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
@@ -764,7 +755,8 @@ export default function AppShell({
               {sidebarCollapsed ? 'Abrir' : 'Recolher'}
             </span>
           </button>
-
+        </div>
+        <nav className="px-2 pb-3">
           {items
             .filter(([k]) => allowed(k))
             .map(([k, label, Icon]) => (
@@ -777,7 +769,7 @@ export default function AppShell({
                 } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
               >
                 <Icon size={18} className="shrink-0" />
-                <span
+                  <span
                   className={`whitespace-nowrap transition-opacity duration-200 ${
                     sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
                   }`}
