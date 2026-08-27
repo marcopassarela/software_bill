@@ -767,37 +767,21 @@ export default function AppShell({
             ))}
         </nav>
 
-        <button
-          type="button"
-          onClick={logout}
-          title="Sair"
-          className={`mx-4 mt-4 flex items-center gap-2 text-sm text-slate-300 ${
-            sidebarCollapsed ? 'md:justify-center' : ''
-          }`}
-        >
-          <LogOut size={17} className="shrink-0" />
-          <span
-            className={`whitespace-nowrap transition-opacity duration-200 ${
-              sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
-            }`}
-          >
-            Sair
-          </span>
-        </button>
+        
 
         <button
           type="button"
           onClick={() => setSidebarCollapsed((s) => !s)}
           title={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
           aria-label={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
-          className={`mx-4 mb-4 mt-8 hidden items-center gap-2 text-sm text-slate-400 hover:text-white md:flex ${
-            sidebarCollapsed ? 'md:justify-center' : ''
+          className={`mt-2 hidden w-full items-center gap-3 border-t border-slate-700 px-4 py-3 pt-4 text-sm text-slate-400 hover:bg-slate-700 hover:text-white md:flex ${
+            sidebarCollapsed ? 'md:justify-center md:px-2' : ''
           }`}
         >
           {sidebarCollapsed ? (
-            <Menu size={17} className="shrink-0" />
+            <Menu size={18} className="shrink-0" />
           ) : (
-            <X size={17} className="shrink-0" />
+            <X size={18} className="shrink-0" />
           )}
           <span
             className={`whitespace-nowrap transition-opacity duration-200 ${
@@ -827,20 +811,31 @@ export default function AppShell({
               {page === 'dashboard' ? 'Visão geral' : titleFor(page)}
             </h1>
           </div>
-          <div className="relative">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowAccount((s) => !s)}
+                className="rounded-full bg-white px-3 py-2 text-sm shadow-sm"
+              >
+                {user.name}
+              </button>
+              {showAccount && (
+                <AccountPanel
+                  user={user}
+                  onClose={() => setShowAccount(false)}
+                  onUserUpdate={onUserUpdate}
+                />
+              )}
+            </div>
             <button
-              onClick={() => setShowAccount((s) => !s)}
-              className="rounded-full bg-white px-3 py-2 text-sm shadow-sm"
+              type="button"
+              onClick={logout}
+              title="Sair"
+              aria-label="Sair"
+              className="rounded-full bg-white p-2 text-slate-600 shadow-sm hover:text-red-600"
             >
-              {user.name}
+              <LogOut size={18} />
             </button>
-            {showAccount && (
-              <AccountPanel
-                user={user}
-                onClose={() => setShowAccount(false)}
-                onUserUpdate={onUserUpdate}
-              />
-            )}
           </div>
         </header>
 
