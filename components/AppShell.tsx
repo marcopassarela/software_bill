@@ -3158,21 +3158,34 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     return texto.charAt(0).toUpperCase() + texto.slice(1);
   }
 
-  const slotsByDayForTransfer = selectedWeek
-    ? (selectedWeek.route_slots || []).reduce((acc: Record<string, any[]>, s: any) => {
-        const key = s.date;
+    const slotsByDayForTransfer = (() => {
+    const acc: Record<string, any[]> = {};
+    for (const w of weeks) {
+      // só semanas ativas (não arquivadas)
+      if (w.status === 'Arquivada') continue;
+      for (const s of w.route_slots || []) {
+        const key = `${w.id}_${s.date}`; // semana + data
         if (!acc[key]) acc[key] = [];
         acc[key].push({
           id: s.id,
           plate: s.vehicle?.plate || s.route_label || '',
           region: s.region_code,
           vagas: s.total_slots,
+          livres: s.slots_available ?? Math.max((s.total_slots || 0) - (s.slots_used || 0), 0),
+          closed: !!s.closed,
+          weekLabel: w.label || `Semana ${w.start_date}`,
+          date: s.date,
         });
-        return acc;
-      }, {})
-    : {};
+      }
+    }
+    return acc;
+  })();
 
-  const transferDayKeys = Object.keys(slotsByDayForTransfer).sort();
+  const transferDayKeys = Object.keys(slotsByDayForTransfer).sort((a, b) => {
+    const dateA = a.split('_')[1] || a;
+    const dateB = b.split('_')[1] || b;
+    return dateA.localeCompare(dateB);
+  });
 
   async function createExtra(data: any) {
     try {
@@ -3544,17 +3557,29 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 className="w-full rounded-lg border p-2"
               >
                 <option value="">Selecione</option>
-                  {transferDayKeys.map((day) => (
-                  <optgroup key={day} label={formatSlotDateLabel(day)}>
-                    {slotsByDayForTransfer[day]
-                      .filter((s: any) => s.id !== transferEntry.route_slot_id)
-                      .map((s: any) => (
-                        <option key={s.id} value={s.id}>
-                          ({s.region}) {s.plate} · {s.vagas} vagas
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
+                {transferDayKeys.map((key) => {
+                  const list = slotsByDayForTransfer[key] || [];
+                  const first = list[0];
+                  const dayLabel = first
+                    ? `${first.weekLabel} — ${formatSlotDateLabel(first.date)}`
+                    : key;
+                  return (
+                    <optgroup key={key} label={dayLabel}>
+                      {list
+                        .filter((s: any) => s.id !== transferEntry.route_slot_id)
+                        .map((s: any) => (
+                          <option
+                            key={s.id}
+                            value={s.id}
+                            disabled={s.closed || (s.livres != null && s.livres <= 0)}
+                          >
+                            ({s.region}) {s.plate} · {s.livres ?? s.vagas} livres
+                            {s.closed ? ' · FECHADA' : ''}
+                          </option>
+                        ))}
+                    </optgroup>
+                  );
+                })}
               </select>
             </label>
             <div className="mt-5 flex justify-end gap-2">
