@@ -389,12 +389,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
-            select(Maintenance)
-            .where(Maintenance.status == "Em andamento")
-            .order_by(Maintenance.date)
-            .limit(20)
-        ).all()
-    ]
+        select(Maintenance)
+        .where(Maintenance.status.in_(["Agendado", "Em andamento", "Atrasado"]))
+        .order_by(Maintenance.date)
+        .limit(30)
+    ).all()
+]
 
     # ============================================================
     # DASHBOARD
@@ -410,6 +410,10 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     "maintenance": vehicles_in_maintenance,
 
     "maintenance_completed": maintenance_completed,
+
+    "maintenance_today": maintenance_today,
+    
+    "maintenance_overdue": maintenance_overdue,
 
     "routes_today": count(
         select(func.count())
@@ -869,7 +873,9 @@ def serialize_route_slot(x: RouteSlot, db: Session):
 
 def serialize_week(x: ScheduleWeek, db: Session):
     slots = db.scalars(
-        select(RouteSlot).where(RouteSlot.week_id == x.id).order_by(RouteSlot.date)
+        select(RouteSlot)
+        .where(RouteSlot.week_id == x.id)
+        .order_by(RouteSlot.date, RouteSlot.id)  # id = ordem de criação
     ).all()
     d = serialize(x)
     d["route_slots"] = [serialize_route_slot(s, db) for s in slots]
