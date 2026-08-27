@@ -742,19 +742,7 @@ export default function AppShell({
           </button>
         </div>
 
-        <nav className="px-2 pb-3">
-          <div className="mb-1 hidden px-2 pt-1 md:block">
-            <button
-              type="button"
-              onClick={() => setSidebarCollapsed((s) => !s)}
-              title={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
-              aria-label={sidebarCollapsed ? 'Abrir menu' : 'Recolher menu'}
-              className="flex w-full items-center rounded-lg px-4 py-3 text-slate-400 hover:bg-white/10 hover:text-white"
-            >
-              {sidebarCollapsed ? <Menu size={18} /> : <X size={18} />}
-            </button>
-          </div>
-
+                <nav className="px-2 pb-3">
           {items
             .filter(([k]) => allowed(k))
             .map(([k, label, Icon]) => (
@@ -777,6 +765,7 @@ export default function AppShell({
               </button>
             ))}
         </nav>
+
         <button
           onClick={logout}
           title="Sair"
@@ -793,6 +782,27 @@ export default function AppShell({
             Sair
           </span>
         </button>
+
+        <div className="mx-4 mb-4 hidden md:block">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((s) => !s)}
+            title={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
+            aria-label={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
+            className={`flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-slate-400 hover:bg-white/10 hover:text-white ${
+              sidebarCollapsed ? 'justify-center px-2' : ''
+            }`}
+          >
+            {sidebarCollapsed ? (
+              <Menu size={18} className="shrink-0" />
+            ) : (
+              <X size={18} className="shrink-0" />
+            )}
+            <span className="whitespace-nowrap text-xs">
+              {sidebarCollapsed ? 'Abrir' : 'Fechar'}
+            </span>
+          </button>
+        </div>
       </aside>
 
       <main className="min-w-0 flex-1 p-4 md:p-8">
