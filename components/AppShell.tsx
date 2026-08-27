@@ -800,7 +800,7 @@ export default function AppShell({
             <X size={17} className="shrink-0" />
           )}
           <span
-            className={`whitespace-nowrap transition-opacity duration-200 ${
+            className={`whitespace-nowrap transition-opacity duration-200 text-xs${
               sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
             }`}
           >
