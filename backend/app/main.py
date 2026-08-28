@@ -389,12 +389,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
-        select(Maintenance)
-        .where(Maintenance.status.in_(["Agendado", "Em andamento", "Atrasado"]))
-        .order_by(Maintenance.date)
-        .limit(30)
-    ).all()
-]
+            select(Maintenance)
+            .where(Maintenance.status == "Em andamento")
+            .order_by(Maintenance.date)
+            .limit(20)
+        ).all()
+    ]
 
     # ============================================================
     # DASHBOARD
@@ -410,7 +410,6 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     "maintenance": vehicles_in_maintenance,
 
     "maintenance_completed": maintenance_completed,
-
 
     "routes_today": count(
         select(func.count())
