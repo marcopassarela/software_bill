@@ -53,7 +53,6 @@ def update_maintenance_status(db: Session):
         )
         .values(status="Em andamento")
     )
-    db.commit()
 
 
 @app.on_event("startup")

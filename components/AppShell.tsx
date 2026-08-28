@@ -167,9 +167,9 @@ const FIELDS: Record<string, FieldDef[]> = {
   ],
   drivers: [
     { key: 'name', label: 'Nome', type: 'text', required: true },
-    { key: 'cpf', label: 'CPF', type: 'text' },
+    { key: 'cpf', label: 'CPF', type: 'text', required: true },
     { key: 'phone', label: 'Telefone', type: 'text' },
-    { key: 'cnh', label: 'CNH', type: 'text'},
+    { key: 'cnh', label: 'CNH', type: 'text', required: true },
     {
       key: 'category',
       label: 'Categoria CNH',
