@@ -1351,34 +1351,86 @@ def export_route_slot(
 # ============================================================
 
 def _norm_txt(s: str) -> str:
+    """Normaliza texto de produto/serviço para comparação (abreviações)."""
     import unicodedata
+
     s = (s or "").strip().lower()
     s = "".join(
         c for c in unicodedata.normalize("NFD", s)
         if unicodedata.category(c) != "Mn"
     )
-    s = re.sub(r"\s+", " ", s)
+
+    # tira quantidade no início: "1 MONO..." → "MONO..."
+    s = re.sub(r"^\d+\s+", "", s)
+
+    # formas longas → abreviações usadas no agendamento
+    repl = [
+        (r"\bmonofasico\b", "mono"),
+        (r"\bbifasico\b", "bi"),
+        (r"\btrifasico\b", "tri"),
+        (r"\bcaixas?\b", "cx"),
+        (r"\bmetros?\b", "m"),
+        (r"\baereo\b", "ae"),
+        (r"\bsubterraneo\b", "sub"),
+        (r"\bsubterranea\b", "sub"),
+    ]
+    for pat, rep in repl:
+        s = re.sub(pat, rep, s)
+
+    # "1 cx" → "1cx" | "7 m" → "7m"
+    s = re.sub(r"(\d+)\s*(cx|m|ae|sub|mono|bi|tri)\b", r"\1\2", s)
+
+    # só letras/números; resto vira espaço
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
+def _tokens(s: str) -> set[str]:
+    return {t for t in _norm_txt(s).split() if t}
+
+
 def match_product(service: str, products: list) -> Any | None:
+    """
+    Compara serviço do agendamento com nome do produto.
+    Aceita nome por extenso no cadastro e abreviação no agendamento.
+    """
     ns = _norm_txt(service)
     if not ns:
         return None
-    for p in products:
-        if _norm_txt(p.name) == ns:
-            return p
-    best = None
-    best_len = 0
+    st = _tokens(service)
+
+    # 1) texto normalizado igual
     for p in products:
         pn = _norm_txt(p.name)
-        if not pn:
+        if pn and pn == ns:
+            return p
+
+    # 2) todos os tokens do produto aparecem no serviço (ou o contrário se produto for mais curto)
+    best = None
+    best_score = 0
+    for p in products:
+        pt = _tokens(p.name)
+        if not pt:
             continue
-        if pn in ns or ns in pn:
-            if len(pn) > best_len:
+        # produto cabe no serviço
+        if pt.issubset(st):
+            score = len(pt)
+            if score > best_score:
                 best = p
-                best_len = len(pn)
-    return best
+                best_score = score
+                continue
+        # serviço cabe no produto (serviço bem curto)
+        if st and st.issubset(pt):
+            score = len(st)
+            if score > best_score:
+                best = p
+                best_score = score
+
+    # exige pelo menos 2 tokens em comum para não pegar produto errado
+    if best and best_score >= 2:
+        return best
+    return None
 
 
 class CommercialProductBody(BaseModel):
