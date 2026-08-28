@@ -1421,38 +1421,19 @@ class CommercialProductBody(BaseModel):
     active: bool = True
 
 
-class OrderItemBody(BaseModel):
-    product_id: int | None = None
-    product_name: str = Field(min_length=1)
-    product_code: str | None = None
-    quantity: float = Field(gt=0)
-    unit_price: float = Field(ge=0)
 
 
-class CommercialOrderBody(BaseModel):
-    status: str = "ORCAMENTO"  # ORCAMENTO | VENDIDO | CANCELADO
-    client_name: str | None = None
-    client_phone: str | None = None
-    order_date: date_cls
-    notes: str | None = None
-    items: list[OrderItemBody] = Field(min_length=1)
+
+
 
 
 def serialize_commercial_product(x: CommercialProduct):
     return serialize(x)
 
 
-def serialize_order_item(x: CommercialOrderItem):
-    return serialize(x)
 
 
-def serialize_order(x: CommercialOrder, db: Session):
-    d = serialize(x)
-    items = db.scalars(
-        select(CommercialOrderItem).where(CommercialOrderItem.order_id == x.id)
-    ).all()
-    d["items"] = [serialize_order_item(i) for i in items]
-    return d
+
 
 
 # ---------- Produtos / Serviços ----------
@@ -1517,112 +1498,6 @@ def delete_commercial_product(
         raise HTTPException(404, "Produto não encontrado")
     db.delete(x)
     audit(db, user, "EXCLUSÃO", "commercial", product_id, request)
-    db.commit()
-    return {"ok": True}
-
-
-# ---------- Orçamentos / Vendas ----------
-
-@app.get("/commercial/orders")
-def list_commercial_orders(
-    status: str | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial")(user)
-    q = select(CommercialOrder).order_by(CommercialOrder.order_date.desc())
-    if status:
-        q = q.where(CommercialOrder.status == status)
-    rows = db.scalars(q.limit(300)).all()
-    return [serialize_order(x, db) for x in rows]
-
-
-@app.post("/commercial/orders")
-def create_commercial_order(
-    body: CommercialOrderBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    status = (body.status or "ORCAMENTO").upper()
-    if status not in ("ORCAMENTO", "VENDIDO", "CANCELADO"):
-        raise HTTPException(400, "Status inválido")
-
-    total = 0.0
-    order = CommercialOrder(
-        status=status,
-        client_name=body.client_name,
-        client_phone=body.client_phone,
-        order_date=body.order_date,
-        notes=body.notes,
-        total=0,
-    )
-    db.add(order)
-    db.flush()
-
-    for it in body.items:
-        line = float(it.quantity) * float(it.unit_price)
-        total += line
-        db.add(
-            CommercialOrderItem(
-                order_id=order.id,
-                product_id=it.product_id,
-                product_name=it.product_name,
-                product_code=it.product_code,
-                quantity=it.quantity,
-                unit_price=it.unit_price,
-                line_total=line,
-            )
-        )
-    order.total = total
-    audit(db, user, "CADASTRO", "commercial", order.id, request)
-    db.commit()
-    return serialize_order(order, db)
-
-
-@app.patch("/commercial/orders/{order_id}")
-def update_commercial_order_status(
-    order_id: int,
-    body: Payload,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Atualiza status (ex: ORCAMENTO → VENDIDO) e campos simples."""
-    require("commercial", write=True)(user)
-    order = db.get(CommercialOrder, order_id)
-    if not order:
-        raise HTTPException(404, "Orçamento não encontrado")
-    data = body.data or {}
-    if "status" in data:
-        st = str(data["status"]).upper()
-        if st not in ("ORCAMENTO", "VENDIDO", "CANCELADO"):
-            raise HTTPException(400, "Status inválido")
-        order.status = st
-    for k in ("client_name", "client_phone", "notes"):
-        if k in data:
-            setattr(order, k, data[k])
-    if "order_date" in data and data["order_date"]:
-        order.order_date = data["order_date"]
-    audit(db, user, "ALTERAÇÃO", "commercial", order_id, request)
-    db.commit()
-    return serialize_order(order, db)
-
-
-@app.delete("/commercial/orders/{order_id}")
-def delete_commercial_order(
-    order_id: int,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    order = db.get(CommercialOrder, order_id)
-    if not order:
-        raise HTTPException(404, "Orçamento não encontrado")
-    db.delete(order)
-    audit(db, user, "EXCLUSÃO", "commercial", order_id, request)
     db.commit()
     return {"ok": True}
 
