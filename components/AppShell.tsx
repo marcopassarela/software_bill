@@ -1622,7 +1622,7 @@ function ClosingReport() {
 
   return (
     <div className="mb-8 rounded-xl border bg-white p-5">
-      <h3 className="font-semibold text-slate-800">Fechamento do mês (Agendamento × Produtos)</h3>
+      <h3 className="font-semibold text-slate-800">Fechamento do mês</h3>
       <p className="mt-1 text-sm text-slate-500">
         Compara a descrição do serviço agendado com os produtos cadastrados em Comercial.
       </p>
