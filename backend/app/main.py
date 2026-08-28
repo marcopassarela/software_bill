@@ -411,9 +411,6 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
 
     "maintenance_completed": maintenance_completed,
 
-    "maintenance_today": maintenance_today,
-    
-    "maintenance_overdue": maintenance_overdue,
 
     "routes_today": count(
         select(func.count())
