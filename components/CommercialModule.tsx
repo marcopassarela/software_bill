@@ -10,6 +10,26 @@ function money(n: number) {
   });
 }
 
+function nextProductCode(products: any[]): string {
+  let max = 0;
+  for (const p of products) {
+    const n = parseInt(String(p.code || '').replace(/\D/g, ''), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  return String(max + 1).padStart(2, '0');
+}
+
+function sortByCode(list: any[]) {
+  return [...list].sort((a, b) => {
+    const na = parseInt(String(a.code || '').replace(/\D/g, ''), 10);
+    const nb = parseInt(String(b.code || '').replace(/\D/g, ''), 10);
+    const aNum = Number.isNaN(na) ? 999999 : na;
+    const bNum = Number.isNaN(nb) ? 999999 : nb;
+    if (aNum !== bNum) return aNum - bNum;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR');
+  });
+}
+
 export default function CommercialModule({ user }: { user: any }) {
   const isMainAdmin = !!user?.is_main_admin;
   const perms = (user?.permissions || '').split(',').filter(Boolean);
@@ -27,7 +47,7 @@ export default function CommercialModule({ user }: { user: any }) {
   const [productForm, setProductForm] = useState({
     name: '',
     price: '',
-    code: '',
+    code: '01',
     unit: 'UN',
     notes: '',
     active: true,
@@ -38,7 +58,21 @@ export default function CommercialModule({ user }: { user: any }) {
     setLoading(true);
     setError('');
     try {
-      setProducts(await request('/commercial/products'));
+      const list = sortByCode(await request('/commercial/products'));
+      setProducts(list);
+      setEditingProduct((current: any | null) => {
+        if (!current) {
+          setProductForm({
+            name: '',
+            price: '',
+            code: nextProductCode(list),
+            unit: 'UN',
+            notes: '',
+            active: true,
+          });
+        }
+        return current;
+      });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -50,12 +84,12 @@ export default function CommercialModule({ user }: { user: any }) {
     loadProducts();
   }, [loadProducts]);
 
-  function openNewProduct() {
+  function openNewProduct(list = products) {
     setEditingProduct(null);
     setProductForm({
       name: '',
       price: '',
-      code: '',
+      code: nextProductCode(list),
       unit: 'UN',
       notes: '',
       active: true,
@@ -89,7 +123,7 @@ export default function CommercialModule({ user }: { user: any }) {
     const body = {
       name: productForm.name.trim(),
       price: Number(productForm.price),
-      code: productForm.code.trim() || null,
+      code: productForm.code.trim() || nextProductCode(products),
       unit: productForm.unit || 'UN',
       notes: productForm.notes.trim() || null,
       active: productForm.active,
@@ -106,7 +140,7 @@ export default function CommercialModule({ user }: { user: any }) {
           body: JSON.stringify(body),
         });
       }
-      openNewProduct();
+      setEditingProduct(null);
       await loadProducts();
     } catch (err: any) {
       setError(err.message);
@@ -119,6 +153,7 @@ export default function CommercialModule({ user }: { user: any }) {
     if (!confirm('Excluir este produto/serviço?')) return;
     try {
       await request(`/commercial/products/${id}`, { method: 'DELETE' });
+      setEditingProduct(null);
       await loadProducts();
     } catch (e: any) {
       setError(e.message);
@@ -130,8 +165,8 @@ export default function CommercialModule({ user }: { user: any }) {
       <div className="rounded-xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Comercial — Produtos / Serviços</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Cadastre os produtos da fábrica com o mesmo texto usado na descrição do serviço no
-          Agendamento. O relatório de fechamento cruza os dois.
+          Cadastre os produtos da fábrica. O código sobe sozinho (01, 02, 03…). Use no nome o
+          padrão que aparece no Agendamento para o relatório cruzar certo.
         </p>
       </div>
 
@@ -147,6 +182,18 @@ export default function CommercialModule({ user }: { user: any }) {
             {editingProduct ? 'Editar produto' : 'Novo produto / serviço'}
           </h3>
           <form onSubmit={saveProduct} className="mt-4 space-y-3">
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Código</span>
+              <input
+                value={productForm.code}
+                onChange={(e) => setProductForm((s) => ({ ...s, code: e.target.value }))}
+                className="w-full rounded-lg border p-2"
+                placeholder="01"
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Automático (01, 02, 03…). Pode alterar se precisar.
+              </span>
+            </label>
             <label className="block text-sm">
               <span className="mb-1 block text-slate-600">Nome *</span>
               <input
@@ -166,14 +213,6 @@ export default function CommercialModule({ user }: { user: any }) {
                 min="0"
                 value={productForm.price}
                 onChange={(e) => setProductForm((s) => ({ ...s, price: e.target.value }))}
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-600">Código</span>
-              <input
-                value={productForm.code}
-                onChange={(e) => setProductForm((s) => ({ ...s, code: e.target.value }))}
                 className="w-full rounded-lg border p-2"
               />
             </label>
@@ -206,7 +245,7 @@ export default function CommercialModule({ user }: { user: any }) {
               {editingProduct && (
                 <button
                   type="button"
-                  onClick={openNewProduct}
+                  onClick={() => openNewProduct()}
                   className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
                 >
                   Cancelar
@@ -224,7 +263,7 @@ export default function CommercialModule({ user }: { user: any }) {
         </section>
 
         <section className="rounded-xl bg-white p-5 shadow-sm lg:col-span-3">
-          <h3 className="font-semibold text-slate-800">Lista</h3>
+          <h3 className="font-semibold text-slate-800">Lista (por código)</h3>
           {loading ? (
             <p className="mt-4 text-sm text-slate-500">Carregando…</p>
           ) : (
@@ -242,7 +281,7 @@ export default function CommercialModule({ user }: { user: any }) {
                 <tbody>
                   {products.map((p) => (
                     <tr key={p.id} className="border-t">
-                      <td className="px-3 py-2 text-slate-600">{p.code || '—'}</td>
+                      <td className="px-3 py-2 font-medium text-slate-700">{p.code || '—'}</td>
                       <td className="px-3 py-2 font-medium">{p.name}</td>
                       <td className="px-3 py-2">{money(p.price)}</td>
                       <td className="px-3 py-2">

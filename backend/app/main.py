@@ -1442,7 +1442,7 @@ def list_commercial_products(
     db: Session = Depends(get_db),
 ):
     require("commercial")(user)
-    rows = db.scalars(select(CommercialProduct).order_by(CommercialProduct.name)).all()
+    rows = db.scalars(select(CommercialProduct).order_by(CommercialProduct.code.nulls_last(), CommercialProduct.name)).all()
     return [serialize(x) for x in rows]
 
 
