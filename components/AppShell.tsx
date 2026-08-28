@@ -1358,6 +1358,7 @@ const REPORT_SOURCES = [
   { value: 'products', label: 'Estoque', path: '/products' },
   { value: 'movements', label: 'Movimentações de estoque', path: '/stock/movements' },
   { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
+  { value: 'commercial', label: 'Comercial (fechamento)', path: '/commercial/closing-report' },
 ];
 
 function cleanRowForReport(r: any, lookups: any) {
@@ -1594,6 +1595,15 @@ const SCHEDULE_REPORT_FIELDS = [
   { key: 'Vagas', label: 'Vagas' },
 ];
 
+const COMMERCIAL_REPORT_FIELDS = [
+  { key: 'Código', label: 'Código' },
+  { key: 'Produto', label: 'Produto' },
+  { key: 'Qtd', label: 'Quantidade' },
+  { key: 'Preço unit.', label: 'Preço unitário' },
+  { key: 'Total', label: 'Total' },
+  { key: 'Agendamentos', label: 'Nº de agendamentos' },
+];
+
 function ClosingReport() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -1712,9 +1722,26 @@ function ReportsExport({ lookups }: { lookups: any }) {
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState<{ cfg: any; rows: any[] }[] | null>(null);
-  const [scheduleFields, setScheduleFields] = useState<string[]>(
-  SCHEDULE_REPORT_FIELDS.map((f) => f.key)
+  const [scheduleFields, setScheduleFields] = useState<string[]>(SCHEDULE_REPORT_FIELDS.map((f) => f.key)
 );
+  const [commercialFields, setCommercialFields] = useState<string[]>(
+    COMMERCIAL_REPORT_FIELDS.map((f) => f.key)
+  );
+  const [commercialFrom, setCommercialFrom] = useState('');
+  const [commercialTo, setCommercialTo] = useState('');
+
+  function toggleCommercialField(key: string) {
+    setCommercialFields((s) =>
+      s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
+    );
+  }
+  function selectAllCommercialFields() {
+    setCommercialFields(COMMERCIAL_REPORT_FIELDS.map((f) => f.key));
+  }
+  function clearCommercialFields() {
+    setCommercialFields([]);
+  }
+
   function toggleScheduleField(key: string) {
     setScheduleFields((s) =>
       s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
@@ -1738,46 +1765,81 @@ function ReportsExport({ lookups }: { lookups: any }) {
     setErr('');
     try {
       const datasets = await Promise.all(
-        selected.map(async (v) => {
+                selected.map(async (v) => {
           const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
 
           if (v === 'schedule') {
-          if (!scheduleFields.length) {
-            throw new Error('Selecione pelo menos um campo do Agendamento.');
-          }
-          const weeks = (await request(cfg.path)) as any[];
-          const flat: any[] = [];
-          weeks.forEach((week) => {
-            (week.route_slots || []).forEach((slot: any) => {
-              (slot.entries || []).forEach((e: any) => {
-                const full: Record<string, any> = {
-                  Semana: week.label || week.start_date,
-                  Status_Semana: week.status,
-                  Data: slot.date,
-                  Região: slot.region_code,
-                  Rota: slot.route_label || slot.vehicle?.plate || '',
-                  Posição: e.position,
-                  Cliente: e.client_name,
-                  Serviço: e.service_description,
-                  Telefone: e.phone || '',
-                  Localização: e.location_link || '',
-                  Comanda: e.comanda || '',
-                  Pago: e.pago ? 'Sim' : 'Não',
-                  Cooperativa: e.cooperativa_nome || '',
-                  'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
-                  Status: e.status || '',
-                  Observação: e.observation || '',
-                  Vagas: e.slots_consumed || 1,
-                };
-                const row: Record<string, any> = {};
-                scheduleFields.forEach((key) => {
-                  if (key in full) row[key] = full[key];
+            if (!scheduleFields.length) {
+              throw new Error('Selecione pelo menos um campo do Agendamento.');
+            }
+            const weeks = (await request(cfg.path)) as any[];
+            const flat: any[] = [];
+            weeks.forEach((week) => {
+              (week.route_slots || []).forEach((slot: any) => {
+                (slot.entries || []).forEach((e: any) => {
+                  const full: Record<string, any> = {
+                    Semana: week.label || week.start_date,
+                    Status_Semana: week.status,
+                    Data: slot.date,
+                    Região: slot.region_code,
+                    Rota: slot.route_label || slot.vehicle?.plate || '',
+                    Posição: e.position,
+                    Cliente: e.client_name,
+                    Serviço: e.service_description,
+                    Telefone: e.phone || '',
+                    Localização: e.location_link || '',
+                    Comanda: e.comanda || '',
+                    Pago: e.pago ? 'Sim' : 'Não',
+                    Cooperativa: e.cooperativa_nome || '',
+                    'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
+                    Status: e.status || '',
+                    Observação: e.observation || '',
+                    Vagas: e.slots_consumed || 1,
+                  };
+                  const row: Record<string, any> = {};
+                  scheduleFields.forEach((key) => {
+                    if (key in full) row[key] = full[key];
+                  });
+                  flat.push(row);
                 });
-                flat.push(row);
               });
             });
-          });
-          return { cfg, rows: flat };
+            return { cfg, rows: flat };
+          }
+
+          if (v === 'commercial') {
+            if (!commercialFields.length) {
+              throw new Error('Selecione pelo menos um campo do Comercial.');
+            }
+            const qs = new URLSearchParams();
+            if (commercialFrom) qs.set('date_from', commercialFrom);
+            if (commercialTo) qs.set('date_to', commercialTo);
+            const data = await request(`/commercial/closing-report?${qs.toString()}`);
+            const flat = (data.lines || []).map((l: any) => {
+              const full: Record<string, any> = {
+                Código: l.code || '',
+                Produto: l.name || '',
+                Qtd: l.quantity,
+                'Preço unit.': l.unit_price,
+                Total: l.line_total,
+                Agendamentos: l.entries,
+              };
+              const row: Record<string, any> = {};
+              commercialFields.forEach((key) => {
+                if (key in full) row[key] = full[key];
+              });
+              return row;
+            });
+            if (data.summary) {
+              const tot: Record<string, any> = {};
+              if (commercialFields.includes('Produto')) tot['Produto'] = 'TOTAL';
+              if (commercialFields.includes('Qtd')) tot['Qtd'] = data.summary.quantity_total;
+              if (commercialFields.includes('Total')) tot['Total'] = data.summary.revenue_total;
+              if (commercialFields.includes('Agendamentos'))
+                tot['Agendamentos'] = data.summary.entries_matched;
+              flat.push(tot);
+            }
+            return { cfg, rows: flat };
           }
 
           const rows = (await request(cfg.path)) as any[];
@@ -1873,6 +1935,69 @@ function ReportsExport({ lookups }: { lookups: any }) {
           ))}
         </div>
       </div>
+      )}
+
+        {selected.includes('commercial') && (
+        <div className="mb-4 rounded-lg border p-3">
+          <p className="mb-2 text-xs font-medium text-slate-700">
+            Comercial — período e campos
+          </p>
+          <div className="mb-3 flex flex-wrap gap-3">
+            <label className="text-xs">
+              <span className="mb-1 block text-slate-600">Data inicial</span>
+              <input
+                type="date"
+                value={commercialFrom}
+                onChange={(e) => setCommercialFrom(e.target.value)}
+                className="rounded-lg border p-2 text-sm"
+              />
+            </label>
+            <label className="text-xs">
+              <span className="mb-1 block text-slate-600">Data final</span>
+              <input
+                type="date"
+                value={commercialTo}
+                onChange={(e) => setCommercialTo(e.target.value)}
+                className="rounded-lg border p-2 text-sm"
+              />
+            </label>
+          </div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-slate-700">Campos do Comercial</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={selectAllCommercialFields}
+                className="text-xs text-brand hover:underline"
+              >
+                Marcar todos
+              </button>
+              <button
+                type="button"
+                onClick={clearCommercialFields}
+                className="text-xs text-slate-500 hover:underline"
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {COMMERCIAL_REPORT_FIELDS.map((f) => (
+              <label
+                key={f.key}
+                className="flex items-center gap-2 text-xs text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={commercialFields.includes(f.key)}
+                  onChange={() => toggleCommercialField(f.key)}
+                  className="h-4 w-4"
+                />
+                {f.label}
+              </label>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="mb-4">
@@ -2080,10 +2205,7 @@ function Module({
           </div>
         </div>
         {page === 'reports' ? (
-          <>
-            <ClosingReport />
-            <ReportsExport lookups={lookups} />
-          </>
+          <ReportsExport lookups={lookups} />
           ) : (
                     <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full min-w-[640px] text-sm">
