@@ -1402,178 +1402,10 @@ def export_route_slot(
     return Response(content=text, media_type="text/plain; charset=utf-8")
 
 # ============================================================
-# MÓDULO COMERCIAL — colar no FINAL de backend/app/main.py
-# (antes de qualquer rota catch-all se houver; no seu arquivo
-#  as rotas /{resource} já existem — coloque ESTE bloco
-#  ANTES de @app.get("/{resource}") se der conflito,
-#  ou no final do arquivo que as rotas /commercial/... são específicas)
-# ============================================================
-
-from datetime import date as date_cls
-
-class CommercialProductBody(BaseModel):
-    code: str | None = None
-    name: str = Field(min_length=1, max_length=160)
-    price: float = Field(ge=0)
-    unit: str | None = "UN"
-    category: str | None = None
-    notes: str | None = None
-    active: bool = True
-
-
-
-
-
-
-
-
-def serialize_commercial_product(x: CommercialProduct):
-    return serialize(x)
-
-
-
-
-
-
-
-# ---------- Produtos / Serviços ----------
-
-@app.get("/commercial/products")
-def list_commercial_products(
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial")(user)
-    rows = db.scalars(
-        select(CommercialProduct).order_by(CommercialProduct.name)
-    ).all()
-    return [serialize_commercial_product(x) for x in rows]
-
-
-@app.post("/commercial/products")
-def create_commercial_product(
-    body: CommercialProductBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    x = CommercialProduct(**body.model_dump())
-    db.add(x)
-    db.flush()
-    audit(db, user, "CADASTRO", "commercial", x.id, request)
-    db.commit()
-    return serialize_commercial_product(x)
-
-
-@app.patch("/commercial/products/{product_id}")
-def update_commercial_product(
-    product_id: int,
-    body: CommercialProductBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    x = db.get(CommercialProduct, product_id)
-    if not x:
-        raise HTTPException(404, "Produto não encontrado")
-    for k, v in body.model_dump().items():
-        setattr(x, k, v)
-    audit(db, user, "ALTERAÇÃO", "commercial", product_id, request)
-    db.commit()
-    return serialize_commercial_product(x)
-
-
-@app.delete("/commercial/products/{product_id}")
-def delete_commercial_product(
-    product_id: int,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    x = db.get(CommercialProduct, product_id)
-    if not x:
-        raise HTTPException(404, "Produto não encontrado")
-    db.delete(x)
-    audit(db, user, "EXCLUSÃO", "commercial", product_id, request)
-    db.commit()
-    return {"ok": True}
-
-
-# ---------- Consultas (relatório de vendas) ----------
-
-@app.get("/commercial/consultas")
-def commercial_consultas(
-    date_from: date_cls | None = None,
-    date_to: date_cls | None = None,
-    product_id: int | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Relatório do que foi VENDIDO no período.
-    Retorna linhas detalhadas + totais.
-    """
-    require("commercial")(user)
-
-    q = (
-        select(CommercialOrderItem, CommercialOrder)
-        .join(CommercialOrder, CommercialOrderItem.order_id == CommercialOrder.id)
-        .where(CommercialOrder.status == "VENDIDO")
-    )
-    if date_from is not None:
-        q = q.where(CommercialOrder.order_date >= date_from)
-    if date_to is not None:
-        q = q.where(CommercialOrder.order_date <= date_to)
-    if product_id is not None:
-        q = q.where(CommercialOrderItem.product_id == product_id)
-
-    q = q.order_by(CommercialOrder.order_date.desc(), CommercialOrder.id.desc())
-    rows = db.execute(q).all()
-
-    lines = []
-    qty_total = 0.0
-    revenue = 0.0
-    for item, order in rows:
-        qty = float(item.quantity or 0)
-        total = float(item.line_total or 0)
-        qty_total += qty
-        revenue += total
-        lines.append(
-            {
-                "order_id": order.id,
-                "order_date": order.order_date.isoformat() if order.order_date else None,
-                "client_name": order.client_name,
-                "product_id": item.product_id,
-                "product_code": item.product_code,
-                "product_name": item.product_name,
-                "quantity": qty,
-                "unit_price": float(item.unit_price or 0),
-                "line_total": total,
-            }
-        )
-
-    return {
-        "lines": lines,
-        "summary": {
-            "lines_count": len(lines),
-            "quantity_total": qty_total,
-            "revenue_total": revenue,
-            "orders_count": len({x["order_id"] for x in lines}),
-            "avg_ticket": (revenue / len({x["order_id"] for x in lines}))
-            if lines
-            else 0,
-        },
-    }
-
-# ============================================================
-# COMERCIAL — produtos + fechamento vs Agendamento
+# COMERCIAL — produtos da fábrica + fechamento vs Agendamento
 # ============================================================
 
 def _norm_txt(s: str) -> str:
-    """Normaliza texto para comparar produto x serviço agendado."""
     import unicodedata
     s = (s or "").strip().lower()
     s = "".join(
@@ -1585,15 +1417,12 @@ def _norm_txt(s: str) -> str:
 
 
 def match_product(service: str, products: list) -> Any | None:
-    """Encontra produto pelo nome (igual ou contido no serviço)."""
     ns = _norm_txt(service)
     if not ns:
         return None
-    # 1) match exato
     for p in products:
         if _norm_txt(p.name) == ns:
             return p
-    # 2) nome do produto dentro do serviço (ou o contrário)
     best = None
     best_len = 0
     for p in products:
@@ -1685,10 +1514,6 @@ def commercial_closing_report(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Fecha o período: cada cliente agendado é batido com produtos da fábrica.
-    Quantidade = slots_consumed (ou número no início do serviço, ou 1).
-    """
     require("commercial")(user)
 
     products = db.scalars(
@@ -1705,8 +1530,6 @@ def commercial_closing_report(
         q = q.where(RouteSlot.date <= date_to)
 
     rows = db.execute(q).all()
-
-    # product_id -> agg
     agg: dict[int, dict] = {}
     unmatched = []
 
