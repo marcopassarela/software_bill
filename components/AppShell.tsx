@@ -1358,7 +1358,7 @@ const REPORT_SOURCES = [
   { value: 'products', label: 'Estoque', path: '/products' },
   { value: 'movements', label: 'Movimentações de estoque', path: '/stock/movements' },
   { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
-  { value: 'commercial', label: 'Comercial (fechamento)', path: '/commercial/closing-report' },
+  { value: 'commercial', label: 'Comercial', path: '/commercial/closing-report' },
 ];
 
 function cleanRowForReport(r: any, lookups: any) {
