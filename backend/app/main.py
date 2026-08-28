@@ -1692,3 +1692,198 @@ def commercial_consultas(
             else 0,
         },
     }
+
+# ============================================================
+# COMERCIAL — produtos + fechamento vs Agendamento
+# ============================================================
+
+def _norm_txt(s: str) -> str:
+    """Normaliza texto para comparar produto x serviço agendado."""
+    import unicodedata
+    s = (s or "").strip().lower()
+    s = "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+def match_product(service: str, products: list) -> Any | None:
+    """Encontra produto pelo nome (igual ou contido no serviço)."""
+    ns = _norm_txt(service)
+    if not ns:
+        return None
+    # 1) match exato
+    for p in products:
+        if _norm_txt(p.name) == ns:
+            return p
+    # 2) nome do produto dentro do serviço (ou o contrário)
+    best = None
+    best_len = 0
+    for p in products:
+        pn = _norm_txt(p.name)
+        if not pn:
+            continue
+        if pn in ns or ns in pn:
+            if len(pn) > best_len:
+                best = p
+                best_len = len(pn)
+    return best
+
+
+class CommercialProductBody(BaseModel):
+    code: str | None = None
+    name: str = Field(min_length=1, max_length=200)
+    price: float = Field(ge=0)
+    unit: str | None = "UN"
+    notes: str | None = None
+    active: bool = True
+
+
+@app.get("/commercial/products")
+def list_commercial_products(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial")(user)
+    rows = db.scalars(select(CommercialProduct).order_by(CommercialProduct.name)).all()
+    return [serialize(x) for x in rows]
+
+
+@app.post("/commercial/products")
+def create_commercial_product(
+    body: CommercialProductBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    x = CommercialProduct(**body.model_dump())
+    db.add(x)
+    db.flush()
+    audit(db, user, "CADASTRO", "commercial", x.id, request)
+    db.commit()
+    return serialize(x)
+
+
+@app.patch("/commercial/products/{product_id}")
+def update_commercial_product(
+    product_id: int,
+    body: CommercialProductBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    x = db.get(CommercialProduct, product_id)
+    if not x:
+        raise HTTPException(404, "Produto não encontrado")
+    for k, v in body.model_dump().items():
+        setattr(x, k, v)
+    audit(db, user, "ALTERAÇÃO", "commercial", product_id, request)
+    db.commit()
+    return serialize(x)
+
+
+@app.delete("/commercial/products/{product_id}")
+def delete_commercial_product(
+    product_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    x = db.get(CommercialProduct, product_id)
+    if not x:
+        raise HTTPException(404, "Produto não encontrado")
+    db.delete(x)
+    audit(db, user, "EXCLUSÃO", "commercial", product_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/commercial/closing-report")
+def commercial_closing_report(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Fecha o período: cada cliente agendado é batido com produtos da fábrica.
+    Quantidade = slots_consumed (ou número no início do serviço, ou 1).
+    """
+    require("commercial")(user)
+
+    products = db.scalars(
+        select(CommercialProduct).where(CommercialProduct.active == True)  # noqa: E712
+    ).all()
+
+    q = (
+        select(ScheduleEntry, RouteSlot)
+        .join(RouteSlot, ScheduleEntry.route_slot_id == RouteSlot.id)
+    )
+    if date_from is not None:
+        q = q.where(RouteSlot.date >= date_from)
+    if date_to is not None:
+        q = q.where(RouteSlot.date <= date_to)
+
+    rows = db.execute(q).all()
+
+    # product_id -> agg
+    agg: dict[int, dict] = {}
+    unmatched = []
+
+    for entry, slot in rows:
+        svc = entry.service_description or ""
+        prod = match_product(svc, products)
+        qty = entry.slots_consumed
+        if qty is None:
+            qty = calcular_vagas(svc) or 1
+        qty = float(qty)
+
+        if not prod:
+            unmatched.append(
+                {
+                    "date": slot.date.isoformat() if slot.date else None,
+                    "client": entry.client_name,
+                    "service": svc,
+                    "quantity": qty,
+                }
+            )
+            continue
+
+        bucket = agg.get(prod.id)
+        if not bucket:
+            bucket = {
+                "product_id": prod.id,
+                "code": prod.code,
+                "name": prod.name,
+                "unit_price": float(prod.price or 0),
+                "quantity": 0.0,
+                "line_total": 0.0,
+                "entries": 0,
+            }
+            agg[prod.id] = bucket
+        bucket["quantity"] += qty
+        bucket["line_total"] += qty * float(prod.price or 0)
+        bucket["entries"] += 1
+
+    lines = sorted(agg.values(), key=lambda x: x["name"] or "")
+    qty_total = sum(x["quantity"] for x in lines)
+    revenue = sum(x["line_total"] for x in lines)
+
+    return {
+        "lines": lines,
+        "unmatched": unmatched,
+        "summary": {
+            "products_matched": len(lines),
+            "quantity_total": qty_total,
+            "revenue_total": revenue,
+            "entries_matched": sum(x["entries"] for x in lines),
+            "entries_unmatched": len(unmatched),
+        },
+        "date_from": date_from.isoformat() if date_from else None,
+        "date_to": date_to.isoformat() if date_to else None,
+    }

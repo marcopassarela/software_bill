@@ -211,6 +211,22 @@ class StockMovement(Base):
     unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
 
 
+class CommercialProduct(Base):
+    """Produtos da fábrica — cruzados com o serviço do Agendamento."""
+    __tablename__ = "commercial_products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(60), index=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)  # texto igual ao do agendamento
+    price: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    unit: Mapped[str | None] = mapped_column(String(20), default="UN")
+    notes: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Setting(Base):
     __tablename__ = "settings"
 

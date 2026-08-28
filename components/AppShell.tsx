@@ -1594,6 +1594,117 @@ const SCHEDULE_REPORT_FIELDS = [
   { key: 'Vagas', label: 'Vagas' },
 ];
 
+function ClosingReport() {
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [data, setData] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setErr('');
+    try {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set('date_from', dateFrom);
+      if (dateTo) qs.set('date_to', dateTo);
+      setData(await request(`/commercial/closing-report?${qs}`));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const money = (n: number) =>
+    (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  return (
+    <div className="mb-8 rounded-xl border bg-white p-5">
+      <h3 className="font-semibold text-slate-800">Fechamento do mês (Agendamento × Produtos)</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        Compara a descrição do serviço agendado com os produtos cadastrados em Comercial.
+      </p>
+      <form onSubmit={run} className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-600">De</span>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border p-2" />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-600">Até</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border p-2" />
+        </label>
+        <button type="submit" disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+          {busy ? 'Gerando…' : 'Gerar fechamento'}
+        </button>
+      </form>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+
+      {data && (
+        <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Qtd. total</p>
+              <p className="text-xl font-bold">{data.summary?.quantity_total ?? 0}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Valor total</p>
+              <p className="text-xl font-bold text-emerald-700">{money(data.summary?.revenue_total)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Sem produto correspondente</p>
+              <p className="text-xl font-bold text-amber-700">{data.summary?.entries_unmatched ?? 0}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Produto</th>
+                  <th className="px-3 py-2">Qtd</th>
+                  <th className="px-3 py-2">Preço unit.</th>
+                  <th className="px-3 py-2">Total</th>
+                  <th className="px-3 py-2">Agendamentos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.lines || []).map((l: any) => (
+                  <tr key={l.product_id} className="border-t">
+                    <td className="px-3 py-2">{l.code || '—'}</td>
+                    <td className="px-3 py-2 font-medium">{l.name}</td>
+                    <td className="px-3 py-2">{l.quantity}</td>
+                    <td className="px-3 py-2">{money(l.unit_price)}</td>
+                    <td className="px-3 py-2 font-medium">{money(l.line_total)}</td>
+                    <td className="px-3 py-2">{l.entries}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {!!data.unmatched?.length && (
+            <details className="mt-4 text-sm">
+              <summary className="cursor-pointer text-amber-800">
+                Serviços sem produto cadastrado ({data.unmatched.length})
+              </summary>
+              <ul className="mt-2 max-h-40 overflow-auto text-xs text-slate-600">
+                {data.unmatched.map((u: any, i: number) => (
+                  <li key={i}>
+                    {u.date} — {u.client}: {u.service}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReportsExport({ lookups }: { lookups: any }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'pdf'>('xlsx');
@@ -1969,10 +2080,11 @@ function Module({
           </div>
         </div>
         {page === 'reports' ? (
-          <ReportsExport lookups={lookups} />
-        ) : loading ? (
-          <div className="p-5">Carregando…</div>
-        ) : (
+          <>
+            <ClosingReport />
+            <ReportsExport lookups={lookups} />
+          </>
+          ) : (
                     <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
