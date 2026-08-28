@@ -1363,7 +1363,7 @@ def _norm_txt(s: str) -> str:
     # tira quantidade no início: "1 MONO..." → "MONO..."
     s = re.sub(r"^\d+\s+", "", s)
 
-    # formas longas → abreviações usadas no agendamento
+    # formas longas → abreviações do agendamento
     repl = [
         (r"\bmonofasico\b", "mono"),
         (r"\bbifasico\b", "bi"),
@@ -1380,7 +1380,6 @@ def _norm_txt(s: str) -> str:
     # "1 cx" → "1cx" | "7 m" → "7m"
     s = re.sub(r"(\d+)\s*(cx|m|ae|sub|mono|bi|tri)\b", r"\1\2", s)
 
-    # só letras/números; resto vira espaço
     s = re.sub(r"[^a-z0-9]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
@@ -1400,34 +1399,29 @@ def match_product(service: str, products: list) -> Any | None:
         return None
     st = _tokens(service)
 
-    # 1) texto normalizado igual
     for p in products:
         pn = _norm_txt(p.name)
         if pn and pn == ns:
             return p
 
-    # 2) todos os tokens do produto aparecem no serviço (ou o contrário se produto for mais curto)
     best = None
     best_score = 0
     for p in products:
         pt = _tokens(p.name)
         if not pt:
             continue
-        # produto cabe no serviço
         if pt.issubset(st):
             score = len(pt)
             if score > best_score:
                 best = p
                 best_score = score
                 continue
-        # serviço cabe no produto (serviço bem curto)
         if st and st.issubset(pt):
             score = len(st)
             if score > best_score:
                 best = p
                 best_score = score
 
-    # exige pelo menos 2 tokens em comum para não pegar produto errado
     if best and best_score >= 2:
         return best
     return None
