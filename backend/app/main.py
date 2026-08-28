@@ -45,14 +45,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 def update_maintenance_status(db: Session):
     """Atualiza automaticamente manutenções cuja data já chegou para 'Em andamento'."""
     today = date.today()
-    db.execute(
-        update(Maintenance)
-        .where(
-            Maintenance.status == "Agendado",
-            func.date(Maintenance.date) <= today,
-        )
-        .values(status="Em andamento")
-    )
+
 
 
 @app.on_event("startup")
