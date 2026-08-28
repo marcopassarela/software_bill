@@ -816,61 +816,6 @@ class TransferSlotBody(BaseModel):
 class DeleteWeekBody(BaseModel):
     password: str
 
-# ============================================================
-# MÓDULO COMERCIAL
-# ============================================================
-
-class CommercialProduct(Base):
-    """Catálogo de produtos/serviços para venda (separado do estoque)."""
-    __tablename__ = "commercial_products"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str | None] = mapped_column(String(60), index=True)
-    name: Mapped[str] = mapped_column(String(160), index=True)
-    price: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    unit: Mapped[str | None] = mapped_column(String(20), default="UN")
-    category: Mapped[str | None] = mapped_column(String(80))
-    notes: Mapped[str | None] = mapped_column(Text)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class CommercialOrder(Base):
-    """Orçamento ou venda comercial."""
-    __tablename__ = "commercial_orders"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    status: Mapped[str] = mapped_column(String(20), default="ORCAMENTO", index=True)
-    client_name: Mapped[str | None] = mapped_column(String(160))
-    client_phone: Mapped[str | None] = mapped_column(String(40))
-    order_date: Mapped[date] = mapped_column(Date, index=True)
-    notes: Mapped[str | None] = mapped_column(Text)
-    total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class CommercialOrderItem(Base):
-    """Item de um orçamento/venda."""
-    __tablename__ = "commercial_order_items"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    order_id: Mapped[int] = mapped_column(
-        ForeignKey("commercial_orders.id", ondelete="CASCADE"), index=True
-    )
-    product_id: Mapped[int | None] = mapped_column(
-        ForeignKey("commercial_products.id", ondelete="SET NULL")
-    )
-    product_name: Mapped[str] = mapped_column(String(160))
-    product_code: Mapped[str | None] = mapped_column(String(60))
-    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=1)
-    unit_price: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    line_total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-
-
 def calcular_vagas(service_description: str) -> int:
     match = re.match(r'^(\d+)', (service_description or '').strip())
     return int(match.group(1)) if match else 0
