@@ -1,5 +1,6 @@
 'use client';
 import { StockMovementForm, printProductLabels } from './QrTools';
+import CommercialModule from '@/components/CommercialModule';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -40,6 +41,7 @@ import {
 const items = [
   ['dashboard', 'Dashboard', LayoutDashboard],
   ['schedule', 'Agendamento', CalendarDays],
+  ['commercial', 'Comercial', BarChart3],
   ['vehicles', 'Veículos', Truck],
   ['drivers', 'Motoristas', UserRound],
   ['maintenance', 'Manutenção', Wrench],
@@ -64,13 +66,13 @@ const resource: any = {
 
 const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
-  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
-  LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
-  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
-  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
+  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
+  LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel', 'commercial'],
+  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'],
+  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'], // se ainda existir
   MOTORISTA: [],
-  VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
-  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
+  VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
+  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
 };
 
 function titleFor(k: string) {
@@ -78,6 +80,7 @@ function titleFor(k: string) {
     ({
       dashboard: 'Dashboard',
       schedule: 'Agendamento',
+      commercial: 'Comercial',
       vehicles: 'Veículos',
       drivers: 'Motoristas',
       maintenance: 'Manutenção',
@@ -102,6 +105,7 @@ const MODULE_OPTIONS = [
   { value: 'schedule_delete', label: 'Agendamento → Excluir' },
   { value: 'schedule_export', label: 'Agendamento → Exportar TXT/PDF' },
   { value: 'schedule_archive', label: 'Agendamento → Arquivar semana (backup)' },
+  { value: 'commercial', label: 'Comercial' },
 ];
 
 function expandPermissions(keys: string[]): string[] {
@@ -840,6 +844,8 @@ export default function AppShell({
           <Dashboard metrics={metrics} onNavigate={goTo} />
         ) : page === 'schedule' ? (
           <ScheduleModule user={user} lookups={lookups} />
+        ) : page === 'commercial' ? (
+          <CommercialModule user={user} />
         ) : (
           <Module
             page={page}

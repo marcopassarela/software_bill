@@ -13,7 +13,7 @@ cookie = APIKeyCookie(name="gl_session", auto_error=False)
 
 MODULES = {
     Role.ADMIN: {"*"},
-    Role.MANAGER: {"dashboard","routes","vehicles","drivers","maintenance","fuel","stock","customers","reports","schedule"},
+    Role.MANAGER: {"dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel", "stock", "customers", "reports", "schedule", "commercial",},
     Role.LOGISTICS: {"dashboard","routes","vehicles","drivers","fuel","customers"},
     Role.STOCK: {"dashboard","stock"},
     Role.DRIVER: {"routes"},

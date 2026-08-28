@@ -816,6 +816,60 @@ class TransferSlotBody(BaseModel):
 class DeleteWeekBody(BaseModel):
     password: str
 
+# ============================================================
+# MÓDULO COMERCIAL
+# ============================================================
+
+class CommercialProduct(Base):
+    """Catálogo de produtos/serviços para venda (separado do estoque)."""
+    __tablename__ = "commercial_products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(60), index=True)
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    price: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    unit: Mapped[str | None] = mapped_column(String(20), default="UN")
+    category: Mapped[str | None] = mapped_column(String(80))
+    notes: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CommercialOrder(Base):
+    """Orçamento ou venda comercial."""
+    __tablename__ = "commercial_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default="ORCAMENTO", index=True)
+    client_name: Mapped[str | None] = mapped_column(String(160))
+    client_phone: Mapped[str | None] = mapped_column(String(40))
+    order_date: Mapped[date] = mapped_column(Date, index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CommercialOrderItem(Base):
+    """Item de um orçamento/venda."""
+    __tablename__ = "commercial_order_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("commercial_orders.id", ondelete="CASCADE"), index=True
+    )
+    product_id: Mapped[int | None] = mapped_column(
+        ForeignKey("commercial_products.id", ondelete="SET NULL")
+    )
+    product_name: Mapped[str] = mapped_column(String(160))
+    product_code: Mapped[str | None] = mapped_column(String(60))
+    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=1)
+    unit_price: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    line_total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+
 
 def calcular_vagas(service_description: str) -> int:
     match = re.match(r'^(\d+)', (service_description or '').strip())
@@ -1346,3 +1400,295 @@ def export_route_slot(
         lines.append("")
     text = "\n".join(lines).strip()
     return Response(content=text, media_type="text/plain; charset=utf-8")
+
+# ============================================================
+# MÓDULO COMERCIAL — colar no FINAL de backend/app/main.py
+# (antes de qualquer rota catch-all se houver; no seu arquivo
+#  as rotas /{resource} já existem — coloque ESTE bloco
+#  ANTES de @app.get("/{resource}") se der conflito,
+#  ou no final do arquivo que as rotas /commercial/... são específicas)
+# ============================================================
+
+from datetime import date as date_cls
+
+class CommercialProductBody(BaseModel):
+    code: str | None = None
+    name: str = Field(min_length=1, max_length=160)
+    price: float = Field(ge=0)
+    unit: str | None = "UN"
+    category: str | None = None
+    notes: str | None = None
+    active: bool = True
+
+
+class OrderItemBody(BaseModel):
+    product_id: int | None = None
+    product_name: str = Field(min_length=1)
+    product_code: str | None = None
+    quantity: float = Field(gt=0)
+    unit_price: float = Field(ge=0)
+
+
+class CommercialOrderBody(BaseModel):
+    status: str = "ORCAMENTO"  # ORCAMENTO | VENDIDO | CANCELADO
+    client_name: str | None = None
+    client_phone: str | None = None
+    order_date: date_cls
+    notes: str | None = None
+    items: list[OrderItemBody] = Field(min_length=1)
+
+
+def serialize_commercial_product(x: CommercialProduct):
+    return serialize(x)
+
+
+def serialize_order_item(x: CommercialOrderItem):
+    return serialize(x)
+
+
+def serialize_order(x: CommercialOrder, db: Session):
+    d = serialize(x)
+    items = db.scalars(
+        select(CommercialOrderItem).where(CommercialOrderItem.order_id == x.id)
+    ).all()
+    d["items"] = [serialize_order_item(i) for i in items]
+    return d
+
+
+# ---------- Produtos / Serviços ----------
+
+@app.get("/commercial/products")
+def list_commercial_products(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial")(user)
+    rows = db.scalars(
+        select(CommercialProduct).order_by(CommercialProduct.name)
+    ).all()
+    return [serialize_commercial_product(x) for x in rows]
+
+
+@app.post("/commercial/products")
+def create_commercial_product(
+    body: CommercialProductBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    x = CommercialProduct(**body.model_dump())
+    db.add(x)
+    db.flush()
+    audit(db, user, "CADASTRO", "commercial", x.id, request)
+    db.commit()
+    return serialize_commercial_product(x)
+
+
+@app.patch("/commercial/products/{product_id}")
+def update_commercial_product(
+    product_id: int,
+    body: CommercialProductBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    x = db.get(CommercialProduct, product_id)
+    if not x:
+        raise HTTPException(404, "Produto não encontrado")
+    for k, v in body.model_dump().items():
+        setattr(x, k, v)
+    audit(db, user, "ALTERAÇÃO", "commercial", product_id, request)
+    db.commit()
+    return serialize_commercial_product(x)
+
+
+@app.delete("/commercial/products/{product_id}")
+def delete_commercial_product(
+    product_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    x = db.get(CommercialProduct, product_id)
+    if not x:
+        raise HTTPException(404, "Produto não encontrado")
+    db.delete(x)
+    audit(db, user, "EXCLUSÃO", "commercial", product_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- Orçamentos / Vendas ----------
+
+@app.get("/commercial/orders")
+def list_commercial_orders(
+    status: str | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial")(user)
+    q = select(CommercialOrder).order_by(CommercialOrder.order_date.desc())
+    if status:
+        q = q.where(CommercialOrder.status == status)
+    rows = db.scalars(q.limit(300)).all()
+    return [serialize_order(x, db) for x in rows]
+
+
+@app.post("/commercial/orders")
+def create_commercial_order(
+    body: CommercialOrderBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    status = (body.status or "ORCAMENTO").upper()
+    if status not in ("ORCAMENTO", "VENDIDO", "CANCELADO"):
+        raise HTTPException(400, "Status inválido")
+
+    total = 0.0
+    order = CommercialOrder(
+        status=status,
+        client_name=body.client_name,
+        client_phone=body.client_phone,
+        order_date=body.order_date,
+        notes=body.notes,
+        total=0,
+    )
+    db.add(order)
+    db.flush()
+
+    for it in body.items:
+        line = float(it.quantity) * float(it.unit_price)
+        total += line
+        db.add(
+            CommercialOrderItem(
+                order_id=order.id,
+                product_id=it.product_id,
+                product_name=it.product_name,
+                product_code=it.product_code,
+                quantity=it.quantity,
+                unit_price=it.unit_price,
+                line_total=line,
+            )
+        )
+    order.total = total
+    audit(db, user, "CADASTRO", "commercial", order.id, request)
+    db.commit()
+    return serialize_order(order, db)
+
+
+@app.patch("/commercial/orders/{order_id}")
+def update_commercial_order_status(
+    order_id: int,
+    body: Payload,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Atualiza status (ex: ORCAMENTO → VENDIDO) e campos simples."""
+    require("commercial", write=True)(user)
+    order = db.get(CommercialOrder, order_id)
+    if not order:
+        raise HTTPException(404, "Orçamento não encontrado")
+    data = body.data or {}
+    if "status" in data:
+        st = str(data["status"]).upper()
+        if st not in ("ORCAMENTO", "VENDIDO", "CANCELADO"):
+            raise HTTPException(400, "Status inválido")
+        order.status = st
+    for k in ("client_name", "client_phone", "notes"):
+        if k in data:
+            setattr(order, k, data[k])
+    if "order_date" in data and data["order_date"]:
+        order.order_date = data["order_date"]
+    audit(db, user, "ALTERAÇÃO", "commercial", order_id, request)
+    db.commit()
+    return serialize_order(order, db)
+
+
+@app.delete("/commercial/orders/{order_id}")
+def delete_commercial_order(
+    order_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    order = db.get(CommercialOrder, order_id)
+    if not order:
+        raise HTTPException(404, "Orçamento não encontrado")
+    db.delete(order)
+    audit(db, user, "EXCLUSÃO", "commercial", order_id, request)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- Consultas (relatório de vendas) ----------
+
+@app.get("/commercial/consultas")
+def commercial_consultas(
+    date_from: date_cls | None = None,
+    date_to: date_cls | None = None,
+    product_id: int | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Relatório do que foi VENDIDO no período.
+    Retorna linhas detalhadas + totais.
+    """
+    require("commercial")(user)
+
+    q = (
+        select(CommercialOrderItem, CommercialOrder)
+        .join(CommercialOrder, CommercialOrderItem.order_id == CommercialOrder.id)
+        .where(CommercialOrder.status == "VENDIDO")
+    )
+    if date_from is not None:
+        q = q.where(CommercialOrder.order_date >= date_from)
+    if date_to is not None:
+        q = q.where(CommercialOrder.order_date <= date_to)
+    if product_id is not None:
+        q = q.where(CommercialOrderItem.product_id == product_id)
+
+    q = q.order_by(CommercialOrder.order_date.desc(), CommercialOrder.id.desc())
+    rows = db.execute(q).all()
+
+    lines = []
+    qty_total = 0.0
+    revenue = 0.0
+    for item, order in rows:
+        qty = float(item.quantity or 0)
+        total = float(item.line_total or 0)
+        qty_total += qty
+        revenue += total
+        lines.append(
+            {
+                "order_id": order.id,
+                "order_date": order.order_date.isoformat() if order.order_date else None,
+                "client_name": order.client_name,
+                "product_id": item.product_id,
+                "product_code": item.product_code,
+                "product_name": item.product_name,
+                "quantity": qty,
+                "unit_price": float(item.unit_price or 0),
+                "line_total": total,
+            }
+        )
+
+    return {
+        "lines": lines,
+        "summary": {
+            "lines_count": len(lines),
+            "quantity_total": qty_total,
+            "revenue_total": revenue,
+            "orders_count": len({x["order_id"] for x in lines}),
+            "avg_ticket": (revenue / len({x["order_id"] for x in lines}))
+            if lines
+            else 0,
+        },
+    }
