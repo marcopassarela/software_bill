@@ -267,9 +267,9 @@ export default function CommercialModule({ user }: { user: any }) {
           {loading ? (
             <p className="mt-4 text-sm text-slate-500">Carregando…</p>
           ) : (
-            <div className="mt-3 overflow-x-auto">
+            <div className="mt-3 max-h-[70vh] overflow-auto rounded-lg border">
               <table className="w-full min-w-[520px] text-sm">
-                <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-500">
                   <tr>
                     <th className="px-3 py-2">Código</th>
                     <th className="px-3 py-2">Nome</th>
