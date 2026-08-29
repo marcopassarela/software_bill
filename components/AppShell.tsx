@@ -2241,7 +2241,7 @@ function Module({
         {page === 'reports' ? (
           <ReportsExport lookups={lookups} />
         ) : (
-          <div className="w-full max-w-full overflow-x-auto">
+          <div className="w-full max-w-full overflow-x-auto overflow-y-hidden">
             <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
