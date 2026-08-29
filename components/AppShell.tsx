@@ -801,16 +801,6 @@ export default function AppShell({
 
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            {sidebarCollapsed && (
-              <button
-                type="button"
-                className="hidden rounded-lg border bg-white p-2 shadow-sm md:inline-flex"
-                onClick={() => setSidebarCollapsed(false)}
-                aria-label="Abrir menu"
-              >
-                <Menu size={20} />
-              </button>
-            )}
             <h1 className="text-2xl font-bold">
               {page === 'dashboard' ? 'Visão geral' : titleFor(page)}
             </h1>
