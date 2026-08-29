@@ -15,12 +15,17 @@ export default function Home() {
   const reason = new URLSearchParams(window.location.search).get('reason');
 
   if (reason === 'session-expired') {
-    window.history.replaceState({}, document.title, '/');
     setUser(undefined);
     setUsername('');
     setPassword('');
     setNewPassword('');
     setError('');
+
+    // Remove o parâmetro sem recarregar a página.
+    window.history.replaceState({}, document.title, '/');
+
+    // Importante: não chamar /auth/me novamente nesta renderização.
+    return;
   }
 
   request('/auth/me')
