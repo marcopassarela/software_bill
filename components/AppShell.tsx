@@ -2247,7 +2247,9 @@ function Module({
                   {cols.map((k) => (
                     <th
                       key={k}
-                      className="whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500"
+                      className={`whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500 ${
+                        k === 'id' || k === 'code' ? 'w-14 max-w-[3.5rem] px-2' : ''
+                      }`}
                     >
                       {labelFor(k)}
                     </th>
@@ -2274,7 +2276,11 @@ function Module({
                         <td
                           key={k}
                           className={`px-3 py-2.5 align-middle text-sm text-slate-800 ${
-                            long ? 'max-w-[220px] truncate' : 'whitespace-nowrap'
+                            k === 'id' || k === 'code'
+                              ? 'w-14 max-w-[3.5rem] whitespace-nowrap px-2 text-center tabular-nums'
+                              : long
+                              ? 'max-w-[220px] truncate'
+                              : 'whitespace-nowrap'
                           }`}
                           title={long ? String(cell || '') : undefined}
                         >
