@@ -2191,7 +2191,7 @@ function Module({
         </section>
       )}
 
-  return (
+    return (
     <>
       {createAllowed && (
         <section className="mb-6 rounded-xl bg-white p-5 shadow-sm">
@@ -2216,30 +2216,31 @@ function Module({
         </section>
       )}
 
-      <section className="rounded-xl bg-white shadow-sm">
+      <section className="overflow-hidden rounded-xl bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b p-5">
           <h2 className="font-semibold">
-          {page === 'reports' ? 'Relatórios' : titleFor(page)}
+            {page === 'reports' ? 'Relatórios' : titleFor(page)}
           </h2>
-        <div className="flex items-center gap-3">
-          {page === 'stock' && rows.length > 0 && (
-        <button
-          type="button"
-          onClick={() => printProductLabels(rows)}
-          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
-        >
-        Imprimir etiquetas QR (todos)
-        </button>
-        )}
-          {page !== 'reports' && (
-        <span className="text-sm text-slate-500">{rows.length} registros</span>
-        )}
+          <div className="flex items-center gap-3">
+            {page === 'stock' && rows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => printProductLabels(rows)}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+              >
+                Imprimir etiquetas QR (todos)
+              </button>
+            )}
+            {page !== 'reports' && (
+              <span className="text-sm text-slate-500">{rows.length} registros</span>
+            )}
           </div>
         </div>
+
         {page === 'reports' ? (
           <ReportsExport lookups={lookups} />
-          ) : (
-                    <div className="-mx-1 overflow-x-auto overscroll-x-contain touch-pan-x pb-2">
+        ) : (
+          <div className="w-full max-w-full overflow-x-auto">
             <table className="w-max min-w-[900px] border-collapse text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
@@ -2261,24 +2262,36 @@ function Module({
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={resourceIdOf(page, r) || i} className="border-t border-slate-100">
-                    {cols.map((k) => (
-                      <td
-                        key={k}
-                        className="whitespace-nowrap px-3 py-2.5 align-middle text-sm text-slate-800"
-                      >
-                        {k === 'status' ? (
-                          <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
-                              r[k]
-                            )}`}
-                          >
-                            {r[k] || '—'}
-                          </span>
-                        ) : (
-                          resolveCell(k, r[k], lookups)
-                        )}
-                      </td>
-                    ))}
+                    {cols.map((k) => {
+                      const long =
+                        k === 'observation' ||
+                        k === 'notes' ||
+                        k === 'name' ||
+                        k === 'recipient' ||
+                        k === 'responsible';
+                      const cell = resolveCell(k, r[k], lookups);
+                      return (
+                        <td
+                          key={k}
+                          className={`px-3 py-2.5 align-middle text-sm text-slate-800 ${
+                            long ? 'max-w-[220px] truncate' : 'whitespace-nowrap'
+                          }`}
+                          title={long ? String(cell || '') : undefined}
+                        >
+                          {k === 'status' ? (
+                            <span
+                              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
+                                r[k]
+                              )}`}
+                            >
+                              {r[k] || '—'}
+                            </span>
+                          ) : (
+                            cell
+                          )}
+                        </td>
+                      );
+                    })}
                     {showActions && (
                       <td className="whitespace-nowrap px-3 py-2.5 align-middle">
                         {page === 'stock' && (
