@@ -12,29 +12,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-  const reason = new URLSearchParams(window.location.search).get('reason');
-
-  if (reason === 'session-expired') {
-    setUser(undefined);
-    setUsername('');
-    setPassword('');
-    setNewPassword('');
-    setError('');
-
-    // Remove o parâmetro sem recarregar a página.
-    window.history.replaceState({}, document.title, '/');
-
-    // Importante: não chamar /auth/me novamente nesta renderização.
-    return;
-  }
-
-  request('/auth/me')
-    .then(setUser)
-    .catch(() => {
-      setUser(undefined);
-    });
-}, []);
-
+    request('/auth/me').then(setUser).catch(() => {});
+  }, []);
 
   function passwordStrength(pwd: string): {
     score: number;
