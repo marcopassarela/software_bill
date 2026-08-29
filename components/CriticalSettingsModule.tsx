@@ -40,7 +40,7 @@ const ACTIONS: {
   {
     id: 'revoke-sessions',
     title: 'Encerrar todas as sessões',
-    description: 'Todos os usuários (incluindo você) precisarão entrar de novo.',
+    description: 'Todos os usuários precisarão entrar de novo.',
     confirmText: 'ENCERRAR SESSOES',
     endpoint: '/admin/critical/revoke-sessions',
     danger: 'amber',
