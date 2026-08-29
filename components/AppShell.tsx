@@ -23,6 +23,7 @@ import {
   Menu,
   X,
   CalendarDays,
+  ShoppingCart,
 } from 'lucide-react';
 import {
   PieChart,
@@ -41,7 +42,7 @@ import {
 const items = [
   ['dashboard', 'Dashboard', LayoutDashboard],
   ['schedule', 'Agendamento', CalendarDays],
-  ['commercial', 'Comercial', BarChart3],
+  ['commercial', 'Comercial', ShoppingCart],
   ['vehicles', 'Veículos', Truck],
   ['drivers', 'Motoristas', UserRound],
   ['maintenance', 'Manutenção', Wrench],
