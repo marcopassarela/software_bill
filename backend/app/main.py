@@ -76,6 +76,9 @@ class PasswordChange(BaseModel):
 class ProfileUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
+class LanguageUpdate(BaseModel):
+    language: str = Field(pattern="^(pt-BR|en)$")
+
 
 class UserCreate(BaseModel):
     name: str
@@ -211,6 +214,17 @@ def logout(
 
 @app.get("/auth/me")
 def me(user: User = Depends(current_user)):
+    return serialize_user(user)
+
+@app.patch("/auth/language")
+def update_language(
+    body: LanguageUpdate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    user.language = body.language
+    db.commit()
+    db.refresh(user)
     return serialize_user(user)
 
 

@@ -256,14 +256,18 @@ export default function SettingsModule({ user }: { user: any }) {
     setError('');
     setOkMsg('');
     try {
-      await Promise.all([
-        savePref('pref_currency', prefs.currency),
-        savePref('pref_date_format', prefs.date_format),
-        savePref('pref_timezone', prefs.timezone),
-        savePref('pref_language', prefs.language),
-        savePref('pref_page_size', prefs.page_size),
-        savePref('pref_auto_refresh_sec', prefs.auto_refresh_sec),
-      ]);
+    await Promise.all([
+    savePref('pref_currency', prefs.currency),
+    savePref('pref_date_format', prefs.date_format),
+    savePref('pref_timezone', prefs.timezone),
+    request('/auth/language', {
+    method: 'PATCH',
+    body: JSON.stringify({ language: prefs.language }),
+    }),
+    savePref('pref_page_size', prefs.page_size),
+    savePref('pref_auto_refresh_sec', prefs.auto_refresh_sec),
+    ]);
+
       setOkMsg('Preferências salvas.');
     } catch (err: any) {
       setError(err.message);
