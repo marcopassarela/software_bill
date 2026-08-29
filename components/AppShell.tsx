@@ -2182,8 +2182,40 @@ function Module({
       .filter((k) => !hidden.includes(k))
       .slice(0, 7);
 
+  {createAllowed && (
+        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
+        <h3 className="font-semibold">Novo registro</h3>
+        {(page === 'entry' || page === 'output')
+        ? <StockMovementForm page={page as 'entry' | 'output'} lookups={lookups} onSubmit={create} />
+        : <ResourceForm page={page} lookups={lookups} onSubmit={create} />}
+        </section>
+      )}
+
   return (
     <>
+      {createAllowed && (
+        <section className="mb-6 rounded-xl bg-white p-5 shadow-sm">
+          <h3 className="mb-3 font-semibold">
+            {page === 'stock'
+              ? 'Novo produto no estoque'
+              : page === 'entry'
+              ? 'Nova entrada'
+              : page === 'output'
+              ? 'Nova saída'
+              : 'Novo registro'}
+          </h3>
+          {page === 'entry' || page === 'output' ? (
+            <StockMovementForm
+              page={page as 'entry' | 'output'}
+              lookups={lookups}
+              onSubmit={create}
+            />
+          ) : (
+            <ResourceForm page={page} lookups={lookups} onSubmit={create} />
+          )}
+        </section>
+      )}
+
       <section className="rounded-xl bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b p-5">
           <h2 className="font-semibold">
@@ -2363,15 +2395,6 @@ function Module({
             lookups={lookups}
             onSubmit={(data) => updateMovement(editingMovement.id, data)}
           />
-        </section>
-      )}
-
-      {createAllowed && (
-        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
-        <h3 className="font-semibold">Novo registro</h3>
-        {(page === 'entry' || page === 'output')
-        ? <StockMovementForm page={page as 'entry' | 'output'} lookups={lookups} onSubmit={create} />
-        : <ResourceForm page={page} lookups={lookups} onSubmit={create} />}
         </section>
       )}
     </>
