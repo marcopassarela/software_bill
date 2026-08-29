@@ -3,18 +3,24 @@
 import { useState } from 'react';
 import { request } from '@/lib/api';
 
-type ActionId = 'reset-settings' | 'purge-users' | 'wipe-operational';
-
-const ACTIONS = [
+const ACTIONS: {
+  id: string;
+  title: string;
+  description: string;
+  confirmText: string;
+  endpoint: string | null;
+  danger: 'red' | 'amber';
+  soon?: boolean;
+}[] = [
   {
-    id: 'revoke-sessions',
-    title: 'Encerrar todas as sessões',
-    description: 'Todos os usuários, incluindo você, precisarão fazer login novamente.',
-    confirmText: 'ENCERRAR SESSÕES',
-    endpoint: '/admin/critical/revoke-sessions',
-    danger: 'amber',
+    id: 'wipe-operational',
+    title: 'Excluir dados operacionais',
+    description:
+      'Apaga agenda, movimentações de estoque, manutenções e combustível. Mantém usuários e cadastros principais.',
+    confirmText: 'EXCLUIR DADOS',
+    endpoint: '/admin/critical/wipe-operational',
+    danger: 'red',
   },
-];[] = [
   {
     id: 'reset-settings',
     title: 'Redefinir configurações',
@@ -32,13 +38,30 @@ const ACTIONS = [
     danger: 'red',
   },
   {
-    id: 'wipe-operational',
-    title: 'Excluir dados operacionais',
-    description:
-      'Apaga agenda, movimentações de estoque, manutenções e combustível. Não remove o Admin.',
-    confirmText: 'EXCLUIR DADOS',
-    endpoint: '/admin/critical/wipe-operational',
+    id: 'revoke-sessions',
+    title: 'Encerrar todas as sessões',
+    description: 'Todos os usuários (incluindo você) precisarão entrar de novo.',
+    confirmText: 'ENCERRAR SESSOES',
+    endpoint: '/admin/critical/revoke-sessions',
+    danger: 'amber',
+  },
+  {
+    id: 'restore-backup',
+    title: 'Restaurar backup',
+    description: 'Restaura dados a partir de um arquivo de backup (em breve).',
+    confirmText: 'RESTAURAR',
+    endpoint: null,
+    danger: 'amber',
+    soon: true,
+  },
+  {
+    id: 'delete-company',
+    title: 'Excluir empresa',
+    description: 'Remove dados da empresa de forma definitiva (em breve).',
+    confirmText: 'EXCLUIR EMPRESA',
+    endpoint: null,
     danger: 'red',
+    soon: true,
   },
 ];
 
@@ -63,10 +86,12 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
   }
 
   async function runAction() {
-    if (!modal) return;
+    if (!modal?.endpoint) {
+      setError('Esta ação ainda não está disponível.');
+      return;
+    }
     setBusy(true);
     setError('');
-    setOkMsg('');
     try {
       await request(modal.endpoint, {
         method: 'POST',
@@ -86,8 +111,10 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+        <h2 className="text-lg font-semibold text-red-800">Configurações críticas</h2>
         <p className="mt-1 text-sm text-red-700">
-          Operações irreversíveis exigem autenticação do Administrador Principal e confirmação explícita. A validação é realizada diretamente no servidor. Após executadas, essas operações não poderão ser desfeitas.
+          Operações irreversíveis. Exigem senha do Administrador Principal e texto de
+          confirmação. A API valida no servidor.
         </p>
       </div>
 
@@ -108,35 +135,30 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
             key={a.id}
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4 shadow-sm"
           >
-            <div>
+            <div className="min-w-0 flex-1">
               <h3 className="font-semibold text-slate-900">{a.title}</h3>
               <p className="mt-0.5 text-sm text-slate-500">{a.description}</p>
             </div>
             <button
               type="button"
+              disabled={!!a.soon}
               onClick={() => {
+                if (a.soon) return;
                 setModal(a);
                 setPassword('');
                 setConfirmText('');
                 setError('');
               }}
-              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                a.danger === 'red' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'
+              className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                a.danger === 'red'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-amber-600 hover:bg-amber-700'
               }`}
             >
-              Executar…
+              {a.soon ? 'Em breve' : 'Executar…'}
             </button>
           </div>
         ))}
-      </div>
-
-      <div className="rounded-xl bg-white p-4 text-sm text-slate-500 shadow-sm">
-        <p className="font-medium text-slate-700">Em breve nesta tela</p>
-        <ul className="mt-2 list-inside list-disc">
-          <li>Restaurar backup</li>
-          <li>Encerrar todas as sessões</li>
-          <li>Excluir empresa</li>
-        </ul>
       </div>
 
       {modal && (
