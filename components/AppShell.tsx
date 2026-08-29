@@ -2246,6 +2246,7 @@ function Module({
                     ))}
                     {showActions && (
                       <td className="whitespace-nowrap px-3 py-2 align-middle">
+                        {/* botões Editar / Excluir / Etiqueta QR — iguais aos que você já tem */}
                         {page === 'stock' && (
                           <button
                             type="button"
