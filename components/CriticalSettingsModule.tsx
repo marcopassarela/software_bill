@@ -86,8 +86,7 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
       <div className="rounded-xl border border-red-200 bg-red-50 p-5">
         <h2 className="text-lg font-semibold text-red-800">Configurações críticas</h2>
         <p className="mt-1 text-sm text-red-700">
-          Operações irreversíveis. Exigem senha do Administrador Principal e texto de
-          confirmação. A API valida no servidor — não basta esconder o botão.
+          Operações irreversíveis exigem autenticação do Administrador Principal e confirmação explícita. A validação é realizada diretamente no servidor. Após executadas, essas operações não poderão ser desfeitas.
         </p>
       </div>
 
