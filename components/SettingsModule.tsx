@@ -238,7 +238,7 @@ export default function SettingsModule({ user }: { user: any }) {
 
   const timer = window.setInterval(() => {
     loadAudit();
-  }, 5000);
+  }, 1000);
 
   return () => window.clearInterval(timer);
   }, [tab, isMainAdmin, loadAudit]);
