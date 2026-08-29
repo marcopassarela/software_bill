@@ -573,7 +573,7 @@ export default function SettingsModule({ user }: { user: any }) {
           <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-slate-500">Plano atual</dt>
-              <dd className="font-medium">Professional</dd>
+              <dd className="font-medium">Profissional</dd>
             </div>
             <div>
               <dt className="text-slate-500">Status</dt>
