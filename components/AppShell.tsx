@@ -2207,20 +2207,20 @@ function Module({
         {page === 'reports' ? (
           <ReportsExport lookups={lookups} />
           ) : (
-          <div className="overflow-x-auto rounded-lg border -mx-1">
-            <table className="w-full min-w-[720px] text-sm">
+                    <div className="-mx-1 overflow-x-auto overscroll-x-contain touch-pan-x pb-2">
+            <table className="w-max min-w-[900px] border-collapse text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   {cols.map((k) => (
                     <th
                       key={k}
-                      className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium uppercase text-slate-500"
+                      className="whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500"
                     >
                       {labelFor(k)}
                     </th>
                   ))}
                   {showActions && (
-                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium uppercase text-slate-500">
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500">
                       Ações
                     </th>
                   )}
@@ -2228,12 +2228,15 @@ function Module({
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={resourceIdOf(page, r) || i} className="border-t">
+                  <tr key={resourceIdOf(page, r) || i} className="border-t border-slate-100">
                     {cols.map((k) => (
-                      <td key={k} className="px-3 py-2 align-middle text-sm">
+                      <td
+                        key={k}
+                        className="whitespace-nowrap px-3 py-2.5 align-middle text-sm text-slate-800"
+                      >
                         {k === 'status' ? (
                           <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
                               r[k]
                             )}`}
                           >
@@ -2245,8 +2248,7 @@ function Module({
                       </td>
                     ))}
                     {showActions && (
-                      <td className="whitespace-nowrap px-3 py-2 align-middle">
-                        {/* botões Editar / Excluir / Etiqueta QR — iguais aos que você já tem */}
+                      <td className="whitespace-nowrap px-3 py-2.5 align-middle">
                         {page === 'stock' && (
                           <button
                             type="button"
@@ -2257,6 +2259,7 @@ function Module({
                           </button>
                         )}
                         <button
+                          type="button"
                           onClick={() =>
                             isUsers
                               ? setEditingUser(r)
@@ -2270,6 +2273,7 @@ function Module({
                         </button>
                         {!(isUsers && r.is_main_admin) && (
                           <button
+                            type="button"
                             onClick={() =>
                               isUsers
                                 ? deleteUser(r.id)

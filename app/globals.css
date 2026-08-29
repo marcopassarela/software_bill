@@ -16,8 +16,11 @@ input, select, textarea {
   padding: .6rem;
   background: #fff;
 }
-button { cursor: pointer }
-table { width: 100%; border-collapse: collapse }
+button { cursor: pointer 
+}
+table {
+  border-collapse: collapse;
+}
 th {
   font-size: .7rem;
   text-transform: uppercase;
