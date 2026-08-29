@@ -1348,3 +1348,124 @@ def export_route_slot(
         lines.append("")
     text = "\n".join(lines).strip()
     return Response(content=text, media_type="text/plain; charset=utf-8")
+
+# ============================================================
+# ADMIN — backup + configurações críticas
+# ============================================================
+
+class CriticalBody(BaseModel):
+    password: str = Field(min_length=1)
+    confirm_text: str | None = None
+
+
+def _assert_critical(
+    user: User,
+    body: CriticalBody,
+    expected_confirm: str | None = None,
+):
+    if user.id != 1 or user.role != Role.ADMIN:
+        raise HTTPException(403, "Apenas o Administrador Principal")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Senha incorreta")
+    if expected_confirm and (body.confirm_text or "").strip() != expected_confirm:
+        raise HTTPException(400, f"Digite exatamente: {expected_confirm}")
+
+
+@app.get("/admin/backup/export")
+def backup_export(
+    user: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    from datetime import timezone
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "vehicles": [serialize(x) for x in db.scalars(select(Vehicle)).all()],
+        "drivers": [serialize(x) for x in db.scalars(select(Driver)).all()],
+        "products": [serialize(x) for x in db.scalars(select(Product)).all()],
+        "commercial_products": [
+            serialize(x) for x in db.scalars(select(CommercialProduct)).all()
+        ],
+        "settings": [serialize(x) for x in db.scalars(select(Setting)).all()],
+    }
+
+
+@app.post("/admin/critical/revoke-sessions")
+def critical_revoke_sessions(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_critical(user, body, "ENCERRAR SESSOES")
+    for u in db.scalars(select(User)).all():
+        u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
+    audit(db, user, "CRITICO_REVOKE_SESSIONS", "admin", None, request)
+    db.commit()
+    return {"ok": True, "detail": "Todas as sessões foram invalidadas"}
+
+
+@app.post("/admin/critical/reset-settings")
+def critical_reset_settings(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_critical(user, body, "REDEFINIR")
+    for s in db.scalars(select(Setting)).all():
+        if str(s.key).startswith("pref_"):
+            db.delete(s)
+    audit(db, user, "CRITICO_RESET_SETTINGS", "admin", None, request)
+    db.commit()
+    return {"ok": True, "detail": "Preferências redefinidas"}
+
+
+@app.post("/admin/critical/purge-users")
+def critical_purge_users(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_critical(user, body, "REMOVER USUARIOS")
+    others = db.scalars(select(User).where(User.id != 1)).all()
+    for u in others:
+        db.execute(
+            update(AuditLog).where(AuditLog.user_id == u.id).values(user_id=None)
+        )
+        try:
+            db.delete(u)
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                409,
+                f"Não foi possível excluir {u.username}: há vínculos.",
+            )
+    audit(db, user, "CRITICO_PURGE_USERS", "admin", None, request)
+    db.commit()
+    return {"ok": True, "removed": len(others)}
+
+
+@app.post("/admin/critical/wipe-operational")
+def critical_wipe_operational(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_critical(user, body, "EXCLUIR DADOS")
+    for model in (
+        ScheduleExtra,
+        ScheduleEntry,
+        RouteSlot,
+        ScheduleWeek,
+        StockMovement,
+        Maintenance,
+        FuelRecord,
+    ):
+        db.execute(model.__table__.delete())
+    audit(db, user, "CRITICO_WIPE_OPERATIONAL", "admin", None, request)
+    db.commit()
+    return {"ok": True, "detail": "Dados operacionais removidos"}
