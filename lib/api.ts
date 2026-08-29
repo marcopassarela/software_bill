@@ -21,14 +21,15 @@ function extractErrorMessage(detail: unknown): string {
 function redirectToLoginAfterSessionExpiry(path: string, status: number) {
   if (status !== 401 || typeof window === 'undefined') return;
 
-  const isLoginRequest = path === '/auth/login';
+  // Erro de senha no próprio formulário de login não deve redirecionar.
+  if (path === '/auth/login') return;
+
   const params = new URLSearchParams(window.location.search);
-  const alreadyShowingLogin =
+  const alreadyOnLoginAfterExpiry =
     window.location.pathname === '/' && params.get('reason') === 'session-expired';
 
-  // Não redireciona falha de credenciais do formulário de login.
-  // Após a revogação, a página inicial é recarregada uma vez e permanece no login.
-  if (!isLoginRequest && !alreadyShowingLogin) {
+  // Evita um loop quando /auth/me também responder 401 após o recarregamento.
+  if (!alreadyOnLoginAfterExpiry) {
     window.location.replace('/?reason=session-expired');
   }
 }
