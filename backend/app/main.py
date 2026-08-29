@@ -1398,11 +1398,28 @@ def critical_revoke_sessions(
     db: Session = Depends(get_db),
 ):
     _assert_critical(user, body, "ENCERRAR SESSOES")
+
+    # Encerra as sessões de todos os usuários,
+    # EXCETO o administrador que executou a ação.
     for u in db.scalars(select(User)).all():
-        u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
-    audit(db, user, "CRITICO_REVOKE_SESSIONS", "admin", None, request)
+        if u.id != user.id:
+            u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
+
+    audit(
+        db,
+        user,
+        "CRITICO_REVOKE_SESSIONS",
+        "admin",
+        None,
+        request,
+    )
+
     db.commit()
-    return {"ok": True, "detail": "Todas as sessões foram invalidadas"}
+
+    return {
+        "ok": True,
+        "detail": "Todas as sessões dos demais usuários foram encerradas",
+    }
 
 
 @app.post("/admin/critical/reset-settings")
