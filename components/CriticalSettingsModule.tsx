@@ -84,7 +84,6 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-red-200 bg-red-50 p-5">
-        <h2 className="text-lg font-semibold text-red-800">Configurações críticas</h2>
         <p className="mt-1 text-sm text-red-700">
           Operações irreversíveis exigem autenticação do Administrador Principal e confirmação explícita. A validação é realizada diretamente no servidor. Após executadas, essas operações não poderão ser desfeitas.
         </p>
