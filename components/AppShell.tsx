@@ -1,6 +1,7 @@
 'use client';
 import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
+import SettingsModule from '@/components/SettingsModule';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -831,12 +832,14 @@ export default function AppShell({
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>
         )}
 
-        {page === 'dashboard' ? (
-          <Dashboard metrics={metrics} onNavigate={goTo} />
-        ) : page === 'schedule' ? (
+        {page === 'schedule' ? (
           <ScheduleModule user={user} lookups={lookups} />
         ) : page === 'commercial' ? (
           <CommercialModule user={user} />
+        ) : page === 'settings' ? (
+          <SettingsModule user={user} />
+        ) : page === 'dashboard' ? (
+          <Dashboard metrics={metrics} onNavigate={setPage} />
         ) : (
           <Module
             page={page}

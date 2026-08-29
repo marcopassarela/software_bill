@@ -324,14 +324,55 @@ def delete_user(
 
 
 @app.get("/audit")
-def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
-    return [
-        serialize(x)
-        for x in db.scalars(
-            select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)
-        ).all()
-    ]
+def logs(
+    user: str | None = None,
+    module: str | None = None,
+    action: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    _: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    q = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(500)
+    rows = list(db.scalars(q).all())
 
+    # filtros em memória (simples e compatível com o model atual)
+    def ok(x: AuditLog) -> bool:
+        if module and module.lower() not in (x.module or "").lower():
+            return False
+        if action and action.lower() not in (x.action or "").lower():
+            return False
+        if date_from or date_to:
+            created = x.created_at
+            if created is not None:
+                d = created.date() if hasattr(created, "date") else created
+                if date_from and d < date_from:
+                    return False
+                if date_to and d > date_to:
+                    return False
+        if user:
+            u = (user or "").lower()
+            uname = ""
+            if x.user_id:
+                uu = db.get(User, x.user_id)
+                uname = (uu.username if uu else "") or ""
+            blob = f"{x.user_id} {uname}".lower()
+            if u not in blob:
+                return False
+        return True
+
+    out = []
+    for x in rows:
+        if not ok(x):
+            continue
+        d = serialize(x)
+        if x.user_id:
+            uu = db.get(User, x.user_id)
+            d["username"] = uu.username if uu else None
+        else:
+            d["username"] = None
+        out.append(d)
+    return out
 
 @app.get("/dashboard")
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
