@@ -2207,25 +2207,30 @@ function Module({
         {page === 'reports' ? (
           <ReportsExport lookups={lookups} />
           ) : (
-                    <div className="overflow-x-auto -mx-1 px-1">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
+          <div className="overflow-x-auto rounded-lg border -mx-1">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="bg-slate-50">
                 <tr>
                   {cols.map((k) => (
-                    <th key={k} className="whitespace-nowrap px-3 py-2">
+                    <th
+                      key={k}
+                      className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium uppercase text-slate-500"
+                    >
                       {labelFor(k)}
                     </th>
                   ))}
                   {showActions && (
-                    <th className="whitespace-nowrap px-3 py-2">Ações</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium uppercase text-slate-500">
+                      Ações
+                    </th>
                   )}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={resourceIdOf(page, r) || i}>
+                  <tr key={resourceIdOf(page, r) || i} className="border-t">
                     {cols.map((k) => (
-                      <td key={k} className="max-w-[200px] px-3 py-2 align-top">
+                      <td key={k} className="px-3 py-2 align-middle text-sm">
                         {k === 'status' ? (
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
@@ -2235,14 +2240,12 @@ function Module({
                             {r[k] || '—'}
                           </span>
                         ) : (
-                          <span className="break-words">
-                            {resolveCell(k, r[k], lookups)}
-                          </span>
+                          resolveCell(k, r[k], lookups)
                         )}
                       </td>
                     ))}
                     {showActions && (
-                      <td className="whitespace-nowrap px-3 py-2">
+                      <td className="whitespace-nowrap px-3 py-2 align-middle">
                         {page === 'stock' && (
                           <button
                             type="button"
