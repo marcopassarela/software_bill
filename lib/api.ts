@@ -18,19 +18,12 @@ function extractErrorMessage(detail: unknown): string {
  * A rota de login fica fora desse tratamento para que credenciais incorretas
  * continuem sendo exibidas normalmente no formulário.
  */
-function redirectToLoginAfterSessionExpiry(path: string, status: number) {
+function notifySessionExpired(path: string, status: number) {
   if (status !== 401 || typeof window === 'undefined') return;
 
-  // Erro de senha no próprio formulário de login não deve redirecionar.
-  if (path === '/auth/login') return;
-
-  const params = new URLSearchParams(window.location.search);
-  const alreadyOnLoginAfterExpiry =
-    window.location.pathname === '/' && params.get('reason') === 'session-expired';
-
-  // Evita um loop quando /auth/me também responder 401 após o recarregamento.
-  if (!alreadyOnLoginAfterExpiry) {
-    window.location.replace('/?reason=session-expired');
+  // O erro de credenciais no próprio login deve continuar sendo exibido no formulário.
+  if (path !== '/auth/login') {
+    window.dispatchEvent(new Event('session-expired'));
   }
 }
 
@@ -43,7 +36,7 @@ export async function request(path: string, options: RequestInit = {}) {
 
   if (!r.ok) {
     const body = await r.json().catch(() => ({ detail: 'Erro de comunicação' }));
-    redirectToLoginAfterSessionExpiry(path, r.status);
+    notifySessionExpired(path, r.status);
     throw new Error(extractErrorMessage(body.detail));
   }
 
