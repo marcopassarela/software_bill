@@ -2256,7 +2256,7 @@ function Module({
                     </th>
                   ))}
                   {showActions && (
-                    <th className="sticky right-0 z-20 whitespace-nowrap bg-slate-50 px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500 shadow-[-4px_0_8px_rgba(0,0,0,0.06)]">
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500">
                       Ações
                     </th>
                   )}
@@ -2300,7 +2300,7 @@ function Module({
                       );
                     })}
                     {showActions && (
-                      <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-3 py-2.5 align-middle shadow-[-4px_0_8px_rgba(0,0,0,0.06)]">
+                      <td className="whitespace-nowrap px-3 py-2.5 align-middle">
                         {page === 'stock' && (
                           <button
                             type="button"
