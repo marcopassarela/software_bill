@@ -2241,7 +2241,7 @@ function Module({
           <ReportsExport lookups={lookups} />
         ) : (
           <div className="w-full max-w-full overflow-x-auto">
-            <table className="w-max min-w-[900px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   {cols.map((k) => (
