@@ -41,11 +41,14 @@ def verify_password(password: str, hashed: str):
 def token_for(user: User):
     s = get_settings()
     return jwt.encode(
-        {"sub": str(user.id), "exp": datetime.now(timezone.utc) + timedelta(minutes=s.access_token_minutes)},
+        {
+            "sub": str(user.id),
+            "ver": int(getattr(user, "token_version", 0) or 0),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=s.access_token_minutes),
+        },
         s.auth_secret,
         algorithm="HS256",
     )
-
 
 def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_db)):
     if not token:
@@ -57,6 +60,10 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
         raise HTTPException(status_code=401, detail="Sessão inválida")
     if not user or not user.active:
         raise HTTPException(status_code=401, detail="Usuário indisponível")
+    token_ver = int(data.get("ver", 0))
+    user_ver = int(getattr(user, "token_version", 0) or 0)
+    if token_ver != user_ver:
+        raise HTTPException(status_code=401, detail="Sessão encerrada. Faça login novamente.")
     return user
 
 

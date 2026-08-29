@@ -1,5 +1,6 @@
 import enum
 from datetime import datetime, date
+from datetime import datetime, date as DateOnly
 from sqlalchemy import (
     Boolean,
     Date,
@@ -39,6 +40,7 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -211,22 +213,6 @@ class StockMovement(Base):
     unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
 
 
-class CommercialProduct(Base):
-    """Produtos da fábrica — cruzados com o serviço do Agendamento."""
-    __tablename__ = "commercial_products"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str | None] = mapped_column(String(60), index=True)
-    name: Mapped[str] = mapped_column(String(200), index=True)  # texto igual ao do agendamento
-    price: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    unit: Mapped[str | None] = mapped_column(String(20), default="UN")
-    notes: Mapped[str | None] = mapped_column(Text)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
 class Setting(Base):
     __tablename__ = "settings"
 
@@ -266,12 +252,13 @@ class ScheduleWeek(Base):
 
 
 class RouteSlot(Base):
-    """Uma rota de um dia específico, ex: '06 - (CR) - SXN-6G16 (GUILHERME | IVAN)'."""
     __tablename__ = "route_slots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    week_id: Mapped[int] = mapped_column(ForeignKey("schedule_weeks.id", ondelete="CASCADE"))
-    date: Mapped[date] = mapped_column(Date, index=True)
+    week_id: Mapped[int] = mapped_column(
+        ForeignKey("schedule_weeks.id", ondelete="CASCADE")
+    )
+    date: Mapped["date"] = mapped_column(Date, index=True)  # aspas resolvem o Pylance
     region_code: Mapped[str] = mapped_column(String(10))
     route_label: Mapped[str | None] = mapped_column(String(60))
     total_slots: Mapped[int] = mapped_column(Integer, default=0)

@@ -45,7 +45,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 def update_maintenance_status(db: Session):
     """Atualiza automaticamente manutenções cuja data já chegou para 'Em andamento'."""
     today = date.today()
-
+    db.execute(
+        update(Maintenance)
+        .where(
+            Maintenance.status == "Agendado",
+            func.date(Maintenance.date) <= today,
+        )
+        .values(status="Em andamento")
+    )
+    db.commit()
 
 
 @app.on_event("startup")
@@ -324,55 +332,14 @@ def delete_user(
 
 
 @app.get("/audit")
-def logs(
-    user: str | None = None,
-    module: str | None = None,
-    action: str | None = None,
-    date_from: date | None = None,
-    date_to: date | None = None,
-    _: User = Depends(main_admin),
-    db: Session = Depends(get_db),
-):
-    q = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(500)
-    rows = list(db.scalars(q).all())
+def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
+    return [
+        serialize(x)
+        for x in db.scalars(
+            select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)
+        ).all()
+    ]
 
-    # filtros em memória (simples e compatível com o model atual)
-    def ok(x: AuditLog) -> bool:
-        if module and module.lower() not in (x.module or "").lower():
-            return False
-        if action and action.lower() not in (x.action or "").lower():
-            return False
-        if date_from or date_to:
-            created = x.created_at
-            if created is not None:
-                d = created.date() if hasattr(created, "date") else created
-                if date_from and d < date_from:
-                    return False
-                if date_to and d > date_to:
-                    return False
-        if user:
-            u = (user or "").lower()
-            uname = ""
-            if x.user_id:
-                uu = db.get(User, x.user_id)
-                uname = (uu.username if uu else "") or ""
-            blob = f"{x.user_id} {uname}".lower()
-            if u not in blob:
-                return False
-        return True
-
-    out = []
-    for x in rows:
-        if not ok(x):
-            continue
-        d = serialize(x)
-        if x.user_id:
-            uu = db.get(User, x.user_id)
-            d["username"] = uu.username if uu else None
-        else:
-            d["username"] = None
-        out.append(d)
-    return out
 
 @app.get("/dashboard")
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -422,12 +389,12 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
-        select(Maintenance)
-        .where(Maintenance.status.in_(["Agendado", "Em andamento", "Atrasado"]))
-        .order_by(Maintenance.date)
-        .limit(30)
-    ).all()
-]
+            select(Maintenance)
+            .where(Maintenance.status == "Em andamento")
+            .order_by(Maintenance.date)
+            .limit(20)
+        ).all()
+    ]
 
     # ============================================================
     # DASHBOARD
@@ -443,10 +410,6 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
     "maintenance": vehicles_in_maintenance,
 
     "maintenance_completed": maintenance_completed,
-
-    "maintenance_today": maintenance_today,
-    
-    "maintenance_overdue": maintenance_overdue,
 
     "routes_today": count(
         select(func.count())
@@ -857,6 +820,7 @@ class TransferSlotBody(BaseModel):
 class DeleteWeekBody(BaseModel):
     password: str
 
+
 def calcular_vagas(service_description: str) -> int:
     match = re.match(r'^(\d+)', (service_description or '').strip())
     return int(match.group(1)) if match else 0
@@ -905,9 +869,7 @@ def serialize_route_slot(x: RouteSlot, db: Session):
 
 def serialize_week(x: ScheduleWeek, db: Session):
     slots = db.scalars(
-        select(RouteSlot)
-        .where(RouteSlot.week_id == x.id)
-        .order_by(RouteSlot.date, RouteSlot.id)  # id = ordem de criação
+        select(RouteSlot).where(RouteSlot.week_id == x.id).order_by(RouteSlot.date)
     ).all()
     d = serialize(x)
     d["route_slots"] = [serialize_route_slot(s, db) for s in slots]
@@ -1386,323 +1348,3 @@ def export_route_slot(
         lines.append("")
     text = "\n".join(lines).strip()
     return Response(content=text, media_type="text/plain; charset=utf-8")
-
-# ============================================================
-# COMERCIAL — produtos da fábrica + fechamento vs Agendamento
-# ============================================================
-
-def _norm_txt(s: str) -> str:
-    """Normaliza texto de produto/serviço para comparação (abreviações)."""
-    import unicodedata
-
-    s = (s or "").strip().lower()
-    s = "".join(
-        c for c in unicodedata.normalize("NFD", s)
-        if unicodedata.category(c) != "Mn"
-    )
-
-    # tira quantidade no início: "1 MONO..." → "MONO..."
-    s = re.sub(r"^\d+\s+", "", s)
-
-    # formas longas → abreviações do agendamento
-    repl = [
-        (r"\bmonofasico\b", "mono"),
-        (r"\bbifasico\b", "bi"),
-        (r"\btrifasico\b", "tri"),
-        (r"\bcaixas?\b", "cx"),
-        (r"\bmetros?\b", "m"),
-        (r"\baereo\b", "ae"),
-        (r"\bsubterraneo\b", "sub"),
-        (r"\bsubterranea\b", "sub"),
-    ]
-    for pat, rep in repl:
-        s = re.sub(pat, rep, s)
-
-    # "1 cx" → "1cx" | "7 m" → "7m"
-    s = re.sub(r"(\d+)\s*(cx|m|ae|sub|mono|bi|tri)\b", r"\1\2", s)
-
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-
-def _tokens(s: str) -> set[str]:
-    return {t for t in _norm_txt(s).split() if t}
-
-
-def match_product(service: str, products: list) -> Any | None:
-    """
-    Compara serviço do agendamento com nome do produto.
-    Aceita nome por extenso no cadastro e abreviação no agendamento.
-    """
-    ns = _norm_txt(service)
-    if not ns:
-        return None
-    st = _tokens(service)
-
-    for p in products:
-        pn = _norm_txt(p.name)
-        if pn and pn == ns:
-            return p
-
-    best = None
-    best_score = 0
-    for p in products:
-        pt = _tokens(p.name)
-        if not pt:
-            continue
-        if pt.issubset(st):
-            score = len(pt)
-            if score > best_score:
-                best = p
-                best_score = score
-                continue
-        if st and st.issubset(pt):
-            score = len(st)
-            if score > best_score:
-                best = p
-                best_score = score
-
-    if best and best_score >= 2:
-        return best
-    return None
-
-
-class CommercialProductBody(BaseModel):
-    code: str | None = None
-    name: str = Field(min_length=1, max_length=200)
-    price: float = Field(ge=0)
-    unit: str | None = "UN"
-    notes: str | None = None
-    active: bool = True
-
-
-@app.get("/commercial/products")
-def list_commercial_products(
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial")(user)
-    rows = db.scalars(select(CommercialProduct).order_by(CommercialProduct.code.nulls_last(), CommercialProduct.name)).all()
-    return [serialize(x) for x in rows]
-
-
-@app.post("/commercial/products")
-def create_commercial_product(
-    body: CommercialProductBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    x = CommercialProduct(**body.model_dump())
-    db.add(x)
-    db.flush()
-    audit(db, user, "CADASTRO", "commercial", x.id, request)
-    db.commit()
-    return serialize(x)
-
-
-@app.patch("/commercial/products/{product_id}")
-def update_commercial_product(
-    product_id: int,
-    body: CommercialProductBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    x = db.get(CommercialProduct, product_id)
-    if not x:
-        raise HTTPException(404, "Produto não encontrado")
-    for k, v in body.model_dump().items():
-        setattr(x, k, v)
-    audit(db, user, "ALTERAÇÃO", "commercial", product_id, request)
-    db.commit()
-    return serialize(x)
-
-
-@app.delete("/commercial/products/{product_id}")
-def delete_commercial_product(
-    product_id: int,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial", write=True)(user)
-    x = db.get(CommercialProduct, product_id)
-    if not x:
-        raise HTTPException(404, "Produto não encontrado")
-    db.delete(x)
-    audit(db, user, "EXCLUSÃO", "commercial", product_id, request)
-    db.commit()
-    return {"ok": True}
-
-
-@app.get("/commercial/closing-report")
-def commercial_closing_report(
-    date_from: date | None = None,
-    date_to: date | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require("commercial")(user)
-
-    products = db.scalars(
-        select(CommercialProduct).where(CommercialProduct.active == True)  # noqa: E712
-    ).all()
-
-    q = (
-        select(ScheduleEntry, RouteSlot)
-        .join(RouteSlot, ScheduleEntry.route_slot_id == RouteSlot.id)
-    )
-    if date_from is not None:
-        q = q.where(RouteSlot.date >= date_from)
-    if date_to is not None:
-        q = q.where(RouteSlot.date <= date_to)
-
-    rows = db.execute(q).all()
-    agg: dict[int, dict] = {}
-    unmatched = []
-
-    for entry, slot in rows:
-        svc = entry.service_description or ""
-        prod = match_product(svc, products)
-        qty = entry.slots_consumed
-        if qty is None:
-            qty = calcular_vagas(svc) or 1
-        qty = float(qty)
-
-        if not prod:
-            unmatched.append(
-                {
-                    "date": slot.date.isoformat() if slot.date else None,
-                    "client": entry.client_name,
-                    "service": svc,
-                    "quantity": qty,
-                }
-            )
-            continue
-
-        bucket = agg.get(prod.id)
-        if not bucket:
-            bucket = {
-                "product_id": prod.id,
-                "code": prod.code,
-                "name": prod.name,
-                "unit_price": float(prod.price or 0),
-                "quantity": 0.0,
-                "line_total": 0.0,
-                "entries": 0,
-            }
-            agg[prod.id] = bucket
-        bucket["quantity"] += qty
-        bucket["line_total"] += qty * float(prod.price or 0)
-        bucket["entries"] += 1
-
-    lines = sorted(agg.values(), key=lambda x: x["name"] or "")
-    qty_total = sum(x["quantity"] for x in lines)
-    revenue = sum(x["line_total"] for x in lines)
-
-    return {
-        "lines": lines,
-        "unmatched": unmatched,
-        "summary": {
-            "products_matched": len(lines),
-            "quantity_total": qty_total,
-            "revenue_total": revenue,
-            "entries_matched": sum(x["entries"] for x in lines),
-            "entries_unmatched": len(unmatched),
-        },
-        "date_from": date_from.isoformat() if date_from else None,
-        "date_to": date_to.isoformat() if date_to else None,
-    }
-
-# ============================================================
-# CONFIGURAÇÕES CRÍTICAS — somente Admin Principal + senha
-# ============================================================
-
-class CriticalBody(BaseModel):
-    password: str = Field(min_length=1)
-    confirm_text: str | None = None
-
-
-def _assert_critical(user: User, body: CriticalBody, expected_confirm: str | None = None):
-    if user.id != 1 or user.role != Role.ADMIN:
-        raise HTTPException(403, "Apenas o Administrador Principal")
-    if not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Senha incorreta")
-    if expected_confirm and (body.confirm_text or "").strip() != expected_confirm:
-        raise HTTPException(400, f'Digite exatamente: {expected_confirm}')
-
-
-@app.post("/admin/critical/reset-settings")
-def critical_reset_settings(
-    body: CriticalBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Remove preferências (keys pref_*) e settings não essenciais."""
-    _assert_critical(user, body, "REDEFINIR")
-    rows = db.scalars(select(Setting)).all()
-    for s in rows:
-        if str(s.key).startswith("pref_"):
-            db.delete(s)
-    audit(db, user, "CRITICO_RESET_SETTINGS", "admin", request=request)
-    db.commit()
-    return {"ok": True, "detail": "Preferências redefinidas"}
-
-
-@app.post("/admin/critical/purge-users")
-def critical_purge_users(
-    body: CriticalBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Remove todos os usuários exceto o Admin Principal (id=1)."""
-    _assert_critical(user, body, "REMOVER USUARIOS")
-    others = db.scalars(select(User).where(User.id != 1)).all()
-    for u in others:
-        db.execute(update(AuditLog).where(AuditLog.user_id == u.id).values(user_id=None))
-        try:
-            db.delete(u)
-            db.flush()
-        except IntegrityError:
-            db.rollback()
-            raise HTTPException(
-                409,
-                f"Não foi possível excluir o usuário {u.username}: há vínculos. Desative-o em Usuários.",
-            )
-    audit(db, user, "CRITICO_PURGE_USERS", "admin", request=request)
-    db.commit()
-    return {"ok": True, "removed": len(others)}
-
-
-@app.post("/admin/critical/wipe-operational")
-def critical_wipe_operational(
-    body: CriticalBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Apaga dados operacionais: agenda, estoque (movimentações), manutenção, combustível.
-    Mantém usuários e catálogo comercial a critério — aqui remove movimentos e agenda.
-    """
-    _assert_critical(user, body, "EXCLUIR DADOS")
-    # Ordem: filhos → pais (ajuste se o model tiver nomes diferentes)
-    for model in (
-        ScheduleExtra,
-        ScheduleEntry,
-        RouteSlot,
-        ScheduleWeek,
-        StockMovement,
-        Maintenance,
-        FuelRecord,
-    ):
-        db.execute(model.__table__.delete())
-    audit(db, user, "CRITICO_WIPE_OPERATIONAL", "admin", request=request)
-    db.commit()
-    return {"ok": True, "detail": "Dados operacionais removidos"}

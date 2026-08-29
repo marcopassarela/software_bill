@@ -5,14 +5,16 @@ import { request } from '@/lib/api';
 
 type ActionId = 'reset-settings' | 'purge-users' | 'wipe-operational';
 
-const ACTIONS: {
-  id: ActionId;
-  title: string;
-  description: string;
-  confirmText: string;
-  endpoint: string;
-  danger: string;
-}[] = [
+const ACTIONS = [
+  {
+    id: 'revoke-sessions',
+    title: 'Encerrar todas as sessões',
+    description: 'Todos os usuários, incluindo você, precisarão fazer login novamente.',
+    confirmText: 'ENCERRAR SESSÕES',
+    endpoint: '/admin/critical/revoke-sessions',
+    danger: 'amber',
+  },
+];[] = [
   {
     id: 'reset-settings',
     title: 'Redefinir configurações',
