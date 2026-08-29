@@ -1383,9 +1383,9 @@ def backup_export(
         "vehicles": [serialize(x) for x in db.scalars(select(Vehicle)).all()],
         "drivers": [serialize(x) for x in db.scalars(select(Driver)).all()],
         "products": [serialize(x) for x in db.scalars(select(Product)).all()],
-        # O modelo CommercialProduct não existe neste backend.
-        # Mantemos o campo para preservar o formato do backup.
-        "commercial_products": [],
+        "commercial_products": [
+            serialize(x) for x in db.scalars(select(CommercialProduct)).all()
+        ],
         "settings": [serialize(x) for x in db.scalars(select(Setting)).all()],
     }
 
