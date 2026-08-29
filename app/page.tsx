@@ -12,28 +12,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-  function handleSessionExpired() {
-    // Faz o Home voltar ao formulário de usuário e senha sem recarregar a página.
-    setUser(undefined);
-    setUsername('');
-    setPassword('');
-    setNewPassword('');
-    setError('');
-  }
-
-  window.addEventListener('session-expired', handleSessionExpired);
-
-  request('/auth/me')
-    .then(setUser)
-    .catch(() => {
-      // Ao abrir a aplicação sem sessão, apenas mostra o login.
-      setUser(undefined);
-    });
-
-  return () => {
-    window.removeEventListener('session-expired', handleSessionExpired);
-  };
-}, []);
+    request('/auth/me').then(setUser).catch(() => {});
+  }, []);
 
   function passwordStrength(pwd: string): {
     score: number;
