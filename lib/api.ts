@@ -22,10 +22,10 @@ function redirectToLoginAfterSessionExpiry(path: string, status: number) {
   if (status !== 401 || typeof window === 'undefined') return;
 
   const isAuthRequest = path === '/auth/login' || path === '/auth/logout';
-  const isLoginPage = window.location.pathname === '/login';
+  const isLoginPage = window.location.pathname === '/';
 
   if (!isAuthRequest && !isLoginPage) {
-    window.location.replace('/login?reason=session-expired');
+    window.location.replace('/?reason=session-expired');
   }
 }
 
