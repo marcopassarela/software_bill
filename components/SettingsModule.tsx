@@ -408,7 +408,7 @@ export default function SettingsModule({ user }: { user: any }) {
                   <input
                     value={auditAction}
                     onChange={(e) => setAuditAction(e.target.value)}
-                    className="w-full rounded-lg border p-2 placeholder:text-[10px]"
+                    className="w-full rounded-lg border p-2 placeholder:text-[-11px]"
                     placeholder="LOGIN, CADASTRO…"
                   />
                 </label>
