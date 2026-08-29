@@ -809,7 +809,7 @@ export default function AppShell({
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">
-              {page === 'dashboard' ? 'critical-settings' : titleFor(page)}
+              {page === 'critical-settings' ? 'Configurações críticas' : titleFor(page)}
             </h1>
           </div>
           <div className="flex items-center gap-2">
