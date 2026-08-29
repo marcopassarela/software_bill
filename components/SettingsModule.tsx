@@ -112,6 +112,50 @@ function CompanyDataPanel({
   );
 }
 
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  LOGIN: 'Login',
+  'LOGIN_INVÁLIDO': 'Tentativa de login inválida',
+  LOGOUT: 'Logout',
+  CADASTRO: 'Cadastro',
+  ALTERAÇÃO: 'Alteração',
+  'ALTERAÇÃO_DE_USUÁRIO': 'Alteração de usuário',
+  'ALTERAÇÃO_DE_PERFIL': 'Alteração de perfil',
+  'ALTERAÇÃO_DE_SENHA': 'Alteração de senha',
+  EXCLUSÃO: 'Exclusão',
+  'EXCLUSÃO_DE_USUÁRIO': 'Exclusão de usuário',
+  CRIAÇÃO_DE_USUÁRIO: 'Criação de usuário',
+  CRITICO_REVOKE_SESSIONS: 'Encerramento de todas as sessões',
+  ENTRADA: 'Entrada de estoque',
+  'SAÍDA': 'Saída de estoque',
+  ARQUIVAMENTO_SEMANA: 'Arquivamento de semana',
+  EXCLUSÃO_SEMANA: 'Exclusão de semana',
+};
+
+const AUDIT_MODULE_LABELS: Record<string, string> = {
+  auth: 'Autenticação',
+  users: 'Usuários',
+  admin: 'Administração',
+  settings: 'Configurações',
+  dashboard: 'Painel',
+  stock: 'Estoque',
+  schedule: 'Agendamento',
+  routes: 'Rotas',
+  vehicles: 'Veículos',
+  drivers: 'Motoristas',
+  maintenance: 'Manutenção',
+  fuel: 'Combustível',
+  customers: 'Clientes',
+  commercial: 'Comercial',
+};
+
+function auditActionLabel(value: string | undefined) {
+  return value ? AUDIT_ACTION_LABELS[value] || value : '—';
+}
+
+function auditModuleLabel(value: string | undefined) {
+  return value ? AUDIT_MODULE_LABELS[value] || value : '—';
+}
+
 export default function SettingsModule({ user }: { user: any }) {
   const isMainAdmin = !!user?.is_main_admin;
   const [tab, setTab] = useState<Tab>('backup');
@@ -189,6 +233,16 @@ export default function SettingsModule({ user }: { user: any }) {
         .catch(() => setHealth({ status: 'erro' }));
     }
   }, [tab, loadAudit, loadPrefs]);
+
+  useEffect(() => {
+  if (tab !== 'audit' || !isMainAdmin) return;
+
+  const timer = window.setInterval(() => {
+    loadAudit();
+  }, 5000);
+
+  return () => window.clearInterval(timer);
+  }, [tab, isMainAdmin, loadAudit]);
 
   async function savePref(key: string, value: string) {
     await request(`/settings/${key}`, {
@@ -411,9 +465,9 @@ export default function SettingsModule({ user }: { user: any }) {
                                 ? new Date(r.created_at).toLocaleString('pt-BR')
                                 : '—'}
                             </td>
-                            <td className="px-3 py-2">{r.username || r.user_id || '—'}</td>
-                            <td className="px-3 py-2">{r.action || '—'}</td>
-                            <td className="px-3 py-2">{r.module || '—'}</td>
+                            <td className="px-3 py-2">{r.user_name || r.username || 'Sistema'}</td>
+                            <td className="px-3 py-2">{auditActionLabel(r.action)}</td>
+                            <td className="px-3 py-2">{auditModuleLabel(r.module)}</td>
                             <td className="px-3 py-2">{r.record_id ?? '—'}</td>
                           </tr>
                         ))
