@@ -438,9 +438,9 @@ export default function SettingsModule({ user }: { user: any }) {
               >
                 Filtrar
               </button>
-              <div className="mt-4 h-[420px] max-h-[60vh] min-w-0 max-w-full overflow-auto overscroll-contain rounded-lg border border-slate-200">
+              <div className="mt-4 w-full max-w-full overflow-x-auto rounded-lg border">
                   <table className="w-full min-w-[640px] text-left text-sm">
-                    <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                       <tr>
                         <th className="px-3 py-2">Data</th>
                         <th className="px-3 py-2">Usuário</th>
