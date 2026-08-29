@@ -385,49 +385,50 @@ export default function SettingsModule({ user }: { user: any }) {
               >
                 Filtrar
               </button>
-              <div className="mt-4 w-full overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Data</th>
-                      <th className="px-3 py-2">Usuário</th>
-                      <th className="px-3 py-2">Ação</th>
-                      <th className="px-3 py-2">Módulo</th>
-                      <th className="px-3 py-2">Registro</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {auditLoading ? (
+              <div className="mt-4 max-h-96 w-full overflow-x-auto overflow-y-auto rounded-lg border border-slate-200">
+                  <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-slate-400">
-                          Carregando…
-                        </td>
+                        <th className="px-3 py-2">Data</th>
+                        <th className="px-3 py-2">Usuário</th>
+                        <th className="px-3 py-2">Ação</th>
+                        <th className="px-3 py-2">Módulo</th>
+                        <th className="px-3 py-2">Registro</th>
                       </tr>
-                    ) : (
-                      auditRows.map((r) => (
-                        <tr key={r.id} className="border-t">
-                          <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                            {r.created_at
-                              ? new Date(r.created_at).toLocaleString('pt-BR')
-                              : '—'}
+                    </thead>
+                    <tbody>
+                      {auditLoading ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-6 text-slate-400">
+                            Carregando…
                           </td>
-                          <td className="px-3 py-2">{r.username || r.user_id || '—'}</td>
-                          <td className="px-3 py-2">{r.action || '—'}</td>
-                          <td className="px-3 py-2">{r.module || '—'}</td>
-                          <td className="px-3 py-2">{r.record_id ?? '—'}</td>
                         </tr>
-                      ))
-                    )}
-                    {!auditLoading && !auditRows.length && (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-6 text-slate-400">
-                          Nenhum registro encontrado.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      ) : (
+                        auditRows.map((r) => (
+                          <tr key={r.id} className="border-t">
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                              {r.created_at
+                                ? new Date(r.created_at).toLocaleString('pt-BR')
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-2">{r.username || r.user_id || '—'}</td>
+                            <td className="px-3 py-2">{r.action || '—'}</td>
+                            <td className="px-3 py-2">{r.module || '—'}</td>
+                            <td className="px-3 py-2">{r.record_id ?? '—'}</td>
+                          </tr>
+                        ))
+                      )}
+                      {!auditLoading && !auditRows.length && (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-6 text-slate-400">
+                            Nenhum registro encontrado.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
             </>
           )}
         </section>
