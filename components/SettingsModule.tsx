@@ -609,7 +609,7 @@ export default function SettingsModule({ user }: { user: any }) {
           <ul className="mt-3 space-y-2">
             <li>
               <a
-                href="mailto:suporte@logisticasbill.com.br?subject=Suporte%20Logísticas%20Bill"
+                href="mailto:marcopassarela@hotmail.com?subject=Suporte%20Logísticas%20Bill"
                 className="block w-full rounded-lg border px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Abrir chamado (e-mail)
