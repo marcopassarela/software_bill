@@ -376,7 +376,7 @@ export default function SettingsModule({ user }: { user: any }) {
 
       {/* 2. Auditoria */}
       {tab === 'audit' && (
-        <section className="rounded-xl bg-white p-5 shadow-sm">
+        <section className="min-w-0 rounded-xl bg-white p-5 shadow-sm">
           <h3 className="font-semibold text-slate-800">Auditoria de atividades</h3>
           {!isMainAdmin ? (
             <p className="mt-3 text-sm text-slate-500">
@@ -438,7 +438,7 @@ export default function SettingsModule({ user }: { user: any }) {
               >
                 Filtrar
               </button>
-              <div className="mt-4 max-h-96 w-full overflow-x-auto overflow-y-auto rounded-lg border border-slate-200">
+              <div className="mt-4 h-[420px] max-h-[60vh] min-w-0 max-w-full overflow-auto overscroll-contain rounded-lg border border-slate-200">
                   <table className="w-full min-w-[640px] text-left text-sm">
                     <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
                       <tr>
