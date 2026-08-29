@@ -2,6 +2,7 @@
 import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
+import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -55,6 +56,7 @@ const items = [
   ['reports', 'Relatórios', BarChart3],
   ['users', 'Usuários', Users],
   ['settings', 'Configurações', Settings],
+  ['critical-settings', 'Configurações críticas', Settings],
 ] as const;
 
 const resource: any = {
@@ -751,7 +753,10 @@ export default function AppShell({
 
         <nav className="px-2 pb-3">
           {items
-            .filter(([k]) => allowed(k))
+            .filter(([k]) => {
+              if (k === 'critical-settings') return isMainAdmin;
+              return allowed(k);
+            })
             .map(([k, label, Icon]) => (
               <button
                 key={k}
@@ -804,7 +809,7 @@ export default function AppShell({
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">
-              {page === 'dashboard' ? 'Visão geral' : titleFor(page)}
+              {page === 'dashboard' ? 'critical-settings' : titleFor(page)}
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -838,6 +843,8 @@ export default function AppShell({
           <CommercialModule user={user} />
         ) : page === 'settings' ? (
           <SettingsModule user={user} />
+        ) : page === 'critical-settings' ? (
+          <CriticalSettingsModule user={user} />
         ) : page === 'dashboard' ? (
           <Dashboard metrics={metrics} onNavigate={setPage} />
         ) : (

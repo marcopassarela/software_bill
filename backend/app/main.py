@@ -1617,3 +1617,92 @@ def commercial_closing_report(
         "date_from": date_from.isoformat() if date_from else None,
         "date_to": date_to.isoformat() if date_to else None,
     }
+
+# ============================================================
+# CONFIGURAÇÕES CRÍTICAS — somente Admin Principal + senha
+# ============================================================
+
+class CriticalBody(BaseModel):
+    password: str = Field(min_length=1)
+    confirm_text: str | None = None
+
+
+def _assert_critical(user: User, body: CriticalBody, expected_confirm: str | None = None):
+    if user.id != 1 or user.role != Role.ADMIN:
+        raise HTTPException(403, "Apenas o Administrador Principal")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Senha incorreta")
+    if expected_confirm and (body.confirm_text or "").strip() != expected_confirm:
+        raise HTTPException(400, f'Digite exatamente: {expected_confirm}')
+
+
+@app.post("/admin/critical/reset-settings")
+def critical_reset_settings(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Remove preferências (keys pref_*) e settings não essenciais."""
+    _assert_critical(user, body, "REDEFINIR")
+    rows = db.scalars(select(Setting)).all()
+    for s in rows:
+        if str(s.key).startswith("pref_"):
+            db.delete(s)
+    audit(db, user, "CRITICO_RESET_SETTINGS", "admin", request=request)
+    db.commit()
+    return {"ok": True, "detail": "Preferências redefinidas"}
+
+
+@app.post("/admin/critical/purge-users")
+def critical_purge_users(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Remove todos os usuários exceto o Admin Principal (id=1)."""
+    _assert_critical(user, body, "REMOVER USUARIOS")
+    others = db.scalars(select(User).where(User.id != 1)).all()
+    for u in others:
+        db.execute(update(AuditLog).where(AuditLog.user_id == u.id).values(user_id=None))
+        try:
+            db.delete(u)
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                409,
+                f"Não foi possível excluir o usuário {u.username}: há vínculos. Desative-o em Usuários.",
+            )
+    audit(db, user, "CRITICO_PURGE_USERS", "admin", request=request)
+    db.commit()
+    return {"ok": True, "removed": len(others)}
+
+
+@app.post("/admin/critical/wipe-operational")
+def critical_wipe_operational(
+    body: CriticalBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Apaga dados operacionais: agenda, estoque (movimentações), manutenção, combustível.
+    Mantém usuários e catálogo comercial a critério — aqui remove movimentos e agenda.
+    """
+    _assert_critical(user, body, "EXCLUIR DADOS")
+    # Ordem: filhos → pais (ajuste se o model tiver nomes diferentes)
+    for model in (
+        ScheduleExtra,
+        ScheduleEntry,
+        RouteSlot,
+        ScheduleWeek,
+        StockMovement,
+        Maintenance,
+        FuelRecord,
+    ):
+        db.execute(model.__table__.delete())
+    audit(db, user, "CRITICO_WIPE_OPERATIONAL", "admin", request=request)
+    db.commit()
+    return {"ok": True, "detail": "Dados operacionais removidos"}
