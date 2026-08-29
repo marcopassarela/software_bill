@@ -18,14 +18,12 @@ function extractErrorMessage(detail: unknown): string {
  * A rota de login fica fora desse tratamento para que credenciais incorretas
  * continuem sendo exibidas normalmente no formulário.
  */
-function redirectToLogin(path: string, status: number) {
+function notifySessionExpired(path: string, status: number) {
   if (status !== 401 || typeof window === 'undefined') return;
 
-  // Erros de credenciais permanecem no formulário de login.
-  if (path === '/auth/login') return;
-
-  if (window.location.pathname !== '/login') {
-    window.location.replace('/login');
+  // Não trata credenciais incorretas como sessão encerrada.
+  if (path !== '/auth/login') {
+    window.dispatchEvent(new Event('session-expired'));
   }
 }
 
@@ -38,7 +36,7 @@ export async function request(path: string, options: RequestInit = {}) {
 
   if (!r.ok) {
     const body = await r.json().catch(() => ({ detail: 'Erro de comunicação' }));
-    redirectToLogin(path, r.status);
+    notifySessionExpired(path, r.status);
     throw new Error(extractErrorMessage(body.detail));
   }
 
