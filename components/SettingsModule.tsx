@@ -183,26 +183,25 @@ export default function SettingsModule({ user }: { user: any }) {
   const [backupBusy, setBackupBusy] = useState(false);
 
   const loadAudit = useCallback(async () => {
-    if (!isMainAdmin) return;
-    setAuditLoading(true);
-    setError('');
-    try {
-      const qs = new URLSearchParams();
-      if (auditUser.trim()) qs.set('user', auditUser.trim());
-      if (auditModule.trim()) qs.set('module', auditModule.trim());
-      if (auditAction.trim()) qs.set('action', auditAction.trim());
-      if (auditFrom) qs.set('date_from', auditFrom);
-      if (auditTo) qs.set('date_to', auditTo);
-      const q = qs.toString();
-      const rows = await request(`/audit${q ? `?${q}` : ''}`);
-      setAuditRows(Array.isArray(rows) ? rows : []);
-    } catch (e: any) {
-      setError(e.message);
-      setAuditRows([]);
-    } finally {
-      setAuditLoading(false);
-    }
-  }, [isMainAdmin, auditUser, auditModule, auditAction, auditFrom, auditTo]);
+  if (!isMainAdmin) return;
+  setError('');
+
+  try {
+    const qs = new URLSearchParams();
+    if (auditUser.trim()) qs.set('user', auditUser.trim());
+    if (auditModule.trim()) qs.set('module', auditModule.trim());
+    if (auditAction.trim()) qs.set('action', auditAction.trim());
+    if (auditFrom) qs.set('date_from', auditFrom);
+    if (auditTo) qs.set('date_to', auditTo);
+
+    const q = qs.toString();
+    const rows = await request(`/audit${q ? `?${q}` : ''}`);
+    setAuditRows(Array.isArray(rows) ? rows : []);
+  } catch (e: any) {
+    setError(e.message);
+    // Não apaga a tabela quando uma atualização automática falhar.
+  }
+}, [isMainAdmin, auditUser, auditModule, auditAction, auditFrom, auditTo]);
 
   const loadPrefs = useCallback(async () => {
     try {
@@ -451,26 +450,19 @@ export default function SettingsModule({ user }: { user: any }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {auditLoading ? (
-                        <tr>
-                          <td colSpan={5} className="px-3 py-6 text-slate-400">
-                            Carregando…
-                          </td>
-                        </tr>
-                      ) : (
-                        auditRows.map((r) => (
+                      {auditRows.map((r) => (
                           <tr key={r.id} className="border-t">
                             <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                              {r.created_at
-                                ? new Date(r.created_at).toLocaleString('pt-BR')
-                                : '—'}
+                              {r.created_at ? new Date(r.created_at).toLocaleString('pt-BR') : '—'}
                             </td>
-                            <td className="px-3 py-2">{r.user_name || r.username || 'Sistema'}</td>
+                            <td className="px-3 py-2">
+                              {r.user_name || r.username || (r.user_id ? `Usuário ${r.user_id}` : 'Sistema')}
+                            </td>
                             <td className="px-3 py-2">{auditActionLabel(r.action)}</td>
                             <td className="px-3 py-2">{auditModuleLabel(r.module)}</td>
                             <td className="px-3 py-2">{r.record_id ?? '—'}</td>
                           </tr>
-                        ))
+                        )
                       )}
                       {!auditLoading && !auditRows.length && (
                         <tr>

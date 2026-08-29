@@ -333,11 +333,19 @@ def delete_user(
 
 @app.get("/audit")
 def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(AuditLog, User.name.label("user_name"))
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .order_by(AuditLog.created_at.desc())
+        .limit(50)
+    ).all()
+
     return [
-        serialize(x)
-        for x in db.scalars(
-            select(AuditLog).order_by(AuditLog.created_at.desc()).limit(300)
-        ).all()
+        {
+            **serialize(log),
+            "user_name": user_name or "Sistema",
+        }
+        for log, user_name in rows
     ]
 
 
