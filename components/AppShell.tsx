@@ -2300,7 +2300,7 @@ function Module({
                             onClick={() => printProductLabels([r])}
                             className="mr-2 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                           >
-                            Etiqueta QR
+                            QR Code
                           </button>
                         )}
                         <button
