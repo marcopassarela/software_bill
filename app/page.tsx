@@ -5,16 +5,28 @@ import AppShell from '@/components/AppShell';
 
 function formatRemaining(until: Date): string {
   const ms = until.getTime() - Date.now();
-  if (ms <= 0) return 'expirando…';
-  const min = Math.floor(ms / 60000);
-  const days = Math.floor(min / (60 * 24));
-  const hours = Math.floor((min % (60 * 24)) / 60);
-  const mins = min % 60;
+  if (ms <= 0) return 'menos de 1 min';
+  // arredonda para cima (90s → 2 min, não 1)
+  const totalSec = Math.max(1, Math.ceil(ms / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+
   const parts: string[] = [];
   if (days) parts.push(`${days}d`);
   if (hours) parts.push(`${hours}h`);
-  parts.push(`${mins}min`);
+  if (mins || !parts.length) parts.push(`${mins}min`);
+  // abaixo de 5 min mostra segundos também
+  if (totalSec < 300) parts.push(`${secs}s`);
   return parts.join(' ');
+}
+
+function parseUntil(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const s = /Z$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 export default function Home() {
@@ -93,7 +105,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!blockedInfo?.blocked_until) return;
-    const t = setInterval(() => setTick((x) => x + 1), 30000);
+    const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, [blockedInfo?.blocked_until]);
 
@@ -170,9 +182,7 @@ export default function Home() {
   }
 
   if (blockedInfo) {
-    const until = blockedInfo.blocked_until
-      ? new Date(blockedInfo.blocked_until)
-      : null;
+    const until = parseUntil(blockedInfo.blocked_until);
     const remaining =
       until && !isNaN(until.getTime()) ? formatRemaining(until) : null;
 

@@ -633,8 +633,9 @@ export default function AppShell({
         body: JSON.stringify({
           mode: blockMode,
           blocked_until:
-            blockMode === 'scheduled' ? new Date(blockedUntil).toISOString() : null,
-          reason: blockReason || null,
+            blockMode === 'scheduled'
+            ? new Date(blockedUntil).toISOString()
+            : null,
         }),
       });
       setBlockModal(null);

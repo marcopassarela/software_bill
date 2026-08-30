@@ -459,7 +459,10 @@ def block_user(
     if mode == "scheduled":
         if not body.blocked_until:
             raise HTTPException(400, "Informe data e hora para desbloqueio automático")
-        u.blocked_until = body.blocked_until
+        until = body.blocked_until
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        u.blocked_until = until
     else:
         u.blocked_until = None
 
