@@ -5,7 +5,7 @@ import AppShell from '@/components/AppShell';
 
 function formatRemaining(until: Date): string {
   const ms = until.getTime() - Date.now();
-  if (ms <= 0) return 'menos de 1 min';
+  if (ms <= 0) return 'Login liberado';
   // arredonda para cima (90s → 2 min, não 1)
   const totalSec = Math.max(1, Math.ceil(ms / 1000));
   const days = Math.floor(totalSec / 86400);
