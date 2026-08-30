@@ -3,21 +3,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 
-
 type Tab =
   | 'backup'
   | 'audit'
   | 'company'
-  | 'prefs'
   | 'system'
   | 'license'
   | 'support';
+
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'backup', label: 'Backup e dados' },
   { id: 'audit', label: 'Auditoria' },
   { id: 'company', label: 'Dados da empresa' },
-  { id: 'prefs', label: 'Preferências' },
   { id: 'system', label: 'Sistema / Atualizações' },
   { id: 'license', label: 'Licença' },
   { id: 'support', label: 'Suporte' },
@@ -171,12 +169,6 @@ export default function SettingsModule({ user }: { user: any }) {
   const [auditFrom, setAuditFrom] = useState('');
   const [auditTo, setAuditTo] = useState('');
 
-  const [prefs, setPrefs] = useState({
-    currency: 'BRL',
-    date_format: 'DD/MM/YYYY',
-    timezone: 'America/Sao_Paulo',
-    page_size: '50',
-  });
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [health, setHealth] = useState<{ status?: string } | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
@@ -202,33 +194,15 @@ export default function SettingsModule({ user }: { user: any }) {
   }
 }, [isMainAdmin, auditUser, auditModule, auditAction, auditFrom, auditTo]);
 
-  const loadPrefs = useCallback(async () => {
-    try {
-      const all = await request('/settings').catch(() => []);
-      const map: Record<string, string> = {};
-      (Array.isArray(all) ? all : []).forEach((s: any) => {
-        if (s?.key) map[s.key] = s.value ?? '';
-      });
-      setPrefs({
-        currency: map.pref_currency || 'BRL',
-        date_format: map.pref_date_format || 'DD/MM/YYYY',
-        timezone: map.pref_timezone || 'America/Sao_Paulo',
-        page_size: map.pref_page_size || '50',
-      });
-    } catch {
-      /* defaults */
-    }
-  }, []);
-
   useEffect(() => {
-    if (tab === 'audit') loadAudit();
-    if (tab === 'prefs') loadPrefs();
-    if (tab === 'system') {
-      request('/health')
-        .then(setHealth)
-        .catch(() => setHealth({ status: 'erro' }));
-    }
-  }, [tab, loadAudit, loadPrefs]);
+  if (tab === 'audit') loadAudit();
+  if (tab === 'system') {
+    request('/health')
+      .then(setHealth)
+      .catch(() => setHealth({ status: 'erro' }));
+  }
+  }, [tab, loadAudit]);
+
 
   useEffect(() => {
   if (tab !== 'audit' || !isMainAdmin) return;
@@ -239,35 +213,6 @@ export default function SettingsModule({ user }: { user: any }) {
 
   return () => window.clearInterval(timer);
   }, [tab, isMainAdmin, loadAudit]);
-
-  async function savePref(key: string, value: string) {
-    await request(`/settings/${key}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ data: { value } }),
-    });
-  }
-
-  async function savePrefs(e: React.FormEvent) {
-  e.preventDefault();
-  setPrefsSaving(true);
-  setError('');
-  setOkMsg('');
-
-  try {
-    await Promise.all([
-      savePref('pref_currency', prefs.currency),
-      savePref('pref_date_format', prefs.date_format),
-      savePref('pref_timezone', prefs.timezone),
-      savePref('pref_page_size', prefs.page_size),
-    ]);
-
-    setOkMsg('Preferências salvas.');
-  } catch (err: any) {
-    setError(err?.message || 'Erro ao salvar preferências.');
-  } finally {
-    setPrefsSaving(false);
-  }
-}
 
 
   async function downloadBackupJson() {
@@ -297,7 +242,7 @@ export default function SettingsModule({ user }: { user: any }) {
       <div className="rounded-xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Configurações</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Backup, auditoria, dados da empresa, preferências e informações do sistema.
+          Backup, auditoria, dados da empresa e informações do sistema.
         </p>
       </div>
 
@@ -482,79 +427,6 @@ export default function SettingsModule({ user }: { user: any }) {
       {tab === 'company' && (
         <CompanyDataPanel setError={setError} setOkMsg={setOkMsg} />
       )}
-
-      {/* 4. Preferências */}
-{tab === 'prefs' && (
-  <section className="rounded-xl bg-white p-5 shadow-sm">
-    <h3 className="font-semibold text-slate-800">
-      Preferências do sistema
-    </h3>
-
-    <form
-      onSubmit={savePrefs}
-      className="mt-4 grid gap-4 sm:grid-cols-2"
-    >
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">
-              Formato da data
-            </span>
-            <select
-              value={prefs.date_format}
-              onChange={(e) =>
-                setPrefs((s) => ({ ...s, date_format: e.target.value }))
-              }
-              className="w-full rounded-lg border p-2"
-            >
-              <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-              <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-              <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-            </select>
-          </label>
-            
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">
-              Fuso horário
-            </span>
-            <select
-              value={prefs.timezone}
-              onChange={(e) =>
-                setPrefs((s) => ({ ...s, timezone: e.target.value }))
-              }
-              className="w-full rounded-lg border p-2"
-            >
-              <option value="America/Sao_Paulo">America/Sao_Paulo</option>
-              <option value="UTC">UTC</option>
-            </select>
-          </label>
-            
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">
-              Paginação (itens por página)
-            </span>
-            <input
-              type="number"
-              min={10}
-              max={200}
-              value={prefs.page_size}
-              onChange={(e) =>
-                setPrefs((s) => ({ ...s, page_size: e.target.value }))
-              }
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
-            
-          <div className="sm:col-span-2">
-            <button
-              type="submit"
-              disabled={prefsSaving}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {prefsSaving ? 'Salvando…' : 'Salvar preferências'}
-            </button>
-          </div>
-        </form>
-      </section>
-    )}
 
     {/* 5. Sistema */}
     {tab === 'system' && (
