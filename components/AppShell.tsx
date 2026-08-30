@@ -2244,7 +2244,9 @@ function Module({
           <div className="w-full max-w-full overflow-x-auto overflow-y-hidden">
             <table
               className={`w-full ${
-                page === 'maintenance' ? 'min-w-[1100px]' : 'min-w-[900px]'
+                page === 'maintenance' || page === 'vehicles'
+                 ? 'min-w-[1200px]'
+                 : 'min-w-[900px]'
               } table-fixed border-collapse text-left text-sm`}
             >
               <thead className="bg-slate-50">
@@ -2288,18 +2290,20 @@ function Module({
                         <td
                           key={k}
                           className={`px-3 py-2.5 align-top text-sm text-slate-800 ${
-                          k === 'id' || k === 'code'
-                            ? 'w-14 max-w-[3.5rem] whitespace-nowrap px-2 text-center tabular-nums'
-                            : k === 'vehicle_id'
-                            ? 'w-[280px] min-w-[280px] max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap'
-                            : k === 'type'
-                            ? 'w-[140px] min-w-[140px] max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap'
-                            : k === 'description'
-                            ? 'min-w-[280px] max-w-[360px] whitespace-normal break-words'
-                            : long
-                            ? 'max-w-[220px] truncate'
-                            : 'whitespace-nowrap'
-                        }`}
+                            k === 'id' || k === 'code'
+                              ? 'w-14 max-w-[3.5rem] whitespace-nowrap px-2 text-center tabular-nums'
+                              : k === 'vehicle_id'
+                              ? 'w-[440px] min-w-[440px] max-w-[440px] whitespace-normal break-words overflow-visible'
+                              : k === 'brand' || k === 'model'
+                              ? 'w-[190px] min-w-[190px] max-w-[190px] whitespace-normal break-words'
+                              : k === 'type'
+                              ? 'w-[140px] min-w-[140px] max-w-[140px] whitespace-normal break-words'
+                              : k === 'description'
+                              ? 'min-w-[280px] max-w-[360px] whitespace-normal break-words'
+                              : long
+                              ? 'max-w-[220px] truncate'
+                              : 'whitespace-nowrap'
+                          }`}
                           title={long || k === 'description' ? String(cell || '') : undefined}
                         >
                           {k === 'status' ? (
