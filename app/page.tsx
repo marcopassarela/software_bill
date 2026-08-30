@@ -28,7 +28,6 @@ export default function Home() {
     request('/auth/me')
       .then(setUser)
       .catch(() => {
-        // Sem sessão válida ao abrir a página: exibe o login normalmente.
         setUser(undefined);
       });
 
