@@ -127,6 +127,35 @@ class MovementEdit(BaseModel):
 class MovementDelete(BaseModel):
     password: str
 
+from datetime import datetime, timezone
+
+def user_is_blocked(u: User, db: Session) -> bool:
+    """True se o usuário não pode usar o sistema agora."""
+
+    if not u.active:
+        # Bloqueio agendado que já terminou
+        if u.block_type == "scheduled" and u.blocked_until:
+            now = datetime.now(timezone.utc)
+            until = u.blocked_until
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
+            if now >= until:
+                clear_block(u)
+                db.commit()
+                # Auto-libera o usuário
+                return False
+        # Bloqueio permanente/manual ou agendado ainda ativo
+        return True
+
+    return False
+
+
+def clear_block(u: User):
+    u.active = True
+    u.block_type = None
+    u.blocked_until = None
+    u.block_reason = None
+
 
 def serialize(o):
     d = {c.name: getattr(o, c.name) for c in o.__table__.columns}
@@ -368,6 +397,53 @@ def delete_user(
     audit(db, admin, "EXCLUSÃO_DE_USUÁRIO", "users", user_id, request)
     db.commit()
     return {"ok": True}
+
+class BlockUserBody(BaseModel):
+    mode: str  # "manual" | "scheduled" | "permanent" | "unblock"
+    blocked_until: datetime | None = None  # obrigatório se scheduled
+    reason: str | None = None
+
+
+@app.post("/users/{user_id}/block")
+def block_user(
+    user_id: int,
+    body: BlockUserBody,
+    request: Request,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404, "Usuário não encontrado")
+    if u.id == 1:
+        raise HTTPException(400, "Não é possível bloquear o Administrador Principal")
+
+    mode = (body.mode or "").lower().strip()
+
+    if mode == "unblock":
+        clear_block(u)
+        audit(db, admin, "DESBLOQUEIO_USUARIO", "users", u.id, request)
+        db.commit()
+        return serialize_user(u)
+
+    if mode not in ("manual", "scheduled", "permanent"):
+        raise HTTPException(400, "mode inválido")
+
+    if mode == "scheduled":
+        if not body.blocked_until:
+            raise HTTPException(400, "Informe data e hora para desbloqueio automático")
+        u.blocked_until = body.blocked_until
+    else:
+        u.blocked_until = None
+
+    u.active = False
+    u.block_type = mode
+    u.block_reason = (body.reason or "").strip() or None
+    u.token_version = int(getattr(u, "token_version", 0) or 0) + 1  # derruba sessão
+
+    audit(db, admin, f"BLOQUEIO_{mode.upper()}", "users", u.id, request)
+    db.commit()
+    return serialize_user(u)
 
 
 @app.get("/audit")

@@ -521,6 +521,12 @@ export default function AppShell({
   } | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // Bloqueio de usuários
+  const [blockModal, setBlockModal] = useState<any>(null);
+  const [blockMode, setBlockMode] = useState<'manual' | 'scheduled' | 'permanent'>('manual');
+  const [blockedUntil, setBlockedUntil] = useState('');
+  const [blockReason, setBlockReason] = useState('');
+  const [blockBusy, setBlockBusy] = useState(false);
 
   async function load(p = page) {
     setError('');
@@ -607,6 +613,49 @@ export default function AppShell({
     setError('');
     try {
       await request('/users/' + id, { method: 'DELETE' });
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function confirmBlock() {
+    if (!blockModal) return;
+    if (blockMode === 'scheduled' && !blockedUntil) {
+      setError('Informe data e hora do desbloqueio.');
+      return;
+    }
+    setBlockBusy(true);
+    setError('');
+    try {
+      await request(`/users/${blockModal.id}/block`, {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: blockMode,
+          blocked_until:
+            blockMode === 'scheduled' ? new Date(blockedUntil).toISOString() : null,
+          reason: blockReason || null,
+        }),
+      });
+      setBlockModal(null);
+      setBlockedUntil('');
+      setBlockReason('');
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function unblockUser(id: number) {
+    if (!confirm('Desbloquear este usuário?')) return;
+    setError('');
+    try {
+      await request(`/users/${id}/block`, {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'unblock' }),
+      });
       load();
     } catch (e: any) {
       setError(e.message);
@@ -859,6 +908,11 @@ export default function AppShell({
             setEditingUser={setEditingUser}
             updateUser={updateUser}
             deleteUser={deleteUser}
+            setBlockModal={setBlockModal}
+            setBlockMode={setBlockMode}
+            setBlockedUntil={setBlockedUntil}
+            setBlockReason={setBlockReason}
+            unblockUser={unblockUser}
             editingResource={editingResource}
             setEditingResource={setEditingResource}
             updateResource={updateResource}
@@ -917,9 +971,89 @@ export default function AppShell({
           </div>
         </div>
       )}
+
+      {blockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Bloquear {blockModal.name}</h3>
+
+            <div className="mt-4 space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="blockMode"
+                  checked={blockMode === 'manual'}
+                  onChange={() => setBlockMode('manual')}
+                />
+                Bloquear (só desbloqueia manualmente)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="blockMode"
+                  checked={blockMode === 'scheduled'}
+                  onChange={() => setBlockMode('scheduled')}
+                />
+                Programar data e hora de desbloqueio
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="blockMode"
+                  checked={blockMode === 'permanent'}
+                  onChange={() => setBlockMode('permanent')}
+                />
+                Bloquear permanentemente
+              </label>
+            </div>
+
+            {blockMode === 'scheduled' && (
+              <label className="mt-3 block text-sm">
+                <span className="mb-1 block text-slate-600">Desbloquear em *</span>
+                <input
+                  type="datetime-local"
+                  value={blockedUntil}
+                  onChange={(e) => setBlockedUntil(e.target.value)}
+                  className="w-full rounded-lg border p-2"
+                />
+              </label>
+            )}
+
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Motivo (opcional)</span>
+              <input
+                value={blockReason}
+                onChange={(e) => setBlockReason(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBlockModal(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={blockBusy}
+                onClick={confirmBlock}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {blockBusy ? 'Salvando…' : 'Confirmar bloqueio'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
+
 
 function AccountPanel({
   user,
@@ -2131,6 +2265,11 @@ function ReportsExport({ lookups }: { lookups: any }) {
 }
 
 function Module({
+  setBlockModal,
+  setBlockMode,
+  setBlockedUntil,
+  setBlockReason,
+  unblockUser,
   page,
   rows,
   loading,
@@ -2168,6 +2307,11 @@ function Module({
   setEditingMovement: (m: any) => void;
   updateMovement: (id: number, data: any) => Promise<void>;
   deleteMovement: (id: number) => Promise<void>;
+  setBlockModal: (u: any) => void;
+  setBlockMode: (m: 'manual' | 'scheduled' | 'permanent') => void;
+  setBlockedUntil: (v: string) => void;
+  setBlockReason: (v: string) => void;
+  unblockUser: (id: number) => Promise<void>;
 }) {
   const createAllowed =
     !['movements', 'reports'].includes(page) && (page !== 'users' || isAdmin);
@@ -2346,6 +2490,31 @@ function Module({
                             >
                               Editar
                             </button>
+
+                            {isUsers && !r.is_main_admin && (
+                              r.active !== false ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBlockModal(r);
+                                    setBlockMode('manual');
+                                    setBlockedUntil('');
+                                    setBlockReason('');
+                                  }}
+                                  className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                                >
+                                  Bloquear
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => unblockUser(r.id)}
+                                  className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                                >
+                                  Desbloquear
+                                </button>
+                              )
+                            )}
                             
                             {!(isUsers && r.is_main_admin) && (
                               <button

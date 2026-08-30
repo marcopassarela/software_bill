@@ -11,6 +11,37 @@ export default function Home() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  function obterLocalizacao(): Promise<{
+  latitude?: number;
+  longitude?: number;
+}> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({});
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      () => {
+        // Usuário recusou ou localização indisponível.
+        resolve({});
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      },
+    );
+  });
+}
+
+
   useEffect(() => {
     function handleSessionExpired() {
       // Limpa o usuário atual e faz o componente renderizar o login novamente.
@@ -60,9 +91,15 @@ export default function Home() {
   setError('');
 
   try {
+    const localizacao = await obterLocalizacao();
+
     const result = await request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({
+        username,
+        password,
+        ...localizacao,
+      }),
     });
 
     setUser(result.user);
@@ -72,6 +109,7 @@ export default function Home() {
     setBusy(false);
   }
 }
+
 
 
   async function change(e: React.FormEvent) {
