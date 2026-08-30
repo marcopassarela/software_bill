@@ -484,7 +484,6 @@ export default function SettingsModule({ user }: { user: any }) {
       )}
 
       {/* 4. Preferências */}
-      {/* 4. Preferências */}
 {tab === 'prefs' && (
   <section className="rounded-xl bg-white p-5 shadow-sm">
     <h3 className="font-semibold text-slate-800">
@@ -495,21 +494,6 @@ export default function SettingsModule({ user }: { user: any }) {
       onSubmit={savePrefs}
       className="mt-4 grid gap-4 sm:grid-cols-2"
     >
-      <label className="text-sm">
-        <span className="mb-1 block text-slate-600">Moeda</span>
-        <select
-          value={prefs.currency}
-          onChange={(e) =>
-            setPrefs((s) => ({ ...s, currency: e.target.value }))
-          }
-          className="w-full rounded-lg border p-2"
-        >
-          <option value="BRL">BRL (R$)</option>
-          <option value="USD">USD</option>
-          <option value="EUR">EUR</option>
-        </select>
-      </label>
-
           <label className="text-sm">
             <span className="mb-1 block text-slate-600">
               Formato da data
@@ -571,43 +555,6 @@ export default function SettingsModule({ user }: { user: any }) {
         </form>
       </section>
     )}
-
-      {/* 5. Sistema */}
-      {tab === 'system' && (
-        <section className="rounded-xl bg-white p-5 shadow-sm">
-          <h3 className="font-semibold text-slate-800">Sistema / Atualizações</h3>
-          <ul className="mt-3 space-y-2 text-sm text-slate-600">
-            <li>
-              Versão do app: <strong>1.0.0</strong>
-            </li>
-            <li>
-              API:{' '}
-              <strong
-                className={
-                  health?.status === 'ok' ? 'text-emerald-600' : 'text-red-600'
-                }
-              >
-                {health?.status === 'ok' ? 'Online' : health ? 'Instável' : 'Verificando…'}
-              </strong>
-            </li>
-            <li>Última atualização: conforme deploy na Vercel</li>
-          </ul>
-          <button
-            type="button"
-            className="mt-4 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium"
-            onClick={() =>
-              request('/health')
-                .then((h) => {
-                  setHealth(h);
-                  setOkMsg('Status da API atualizado.');
-                })
-                .catch(() => setError('Falha ao consultar /health'))
-            }
-          >
-            Verificar status
-          </button>
-        </section>
-      )}
 
       {/* 6. Licença */}
       {tab === 'license' && (
