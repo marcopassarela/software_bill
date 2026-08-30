@@ -175,9 +175,7 @@ export default function SettingsModule({ user }: { user: any }) {
     currency: 'BRL',
     date_format: 'DD/MM/YYYY',
     timezone: 'America/Sao_Paulo',
-    language: 'pt-BR',
     page_size: '50',
-    auto_refresh_sec: '10',
   });
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [health, setHealth] = useState<{ status?: string } | null>(null);
@@ -215,9 +213,7 @@ export default function SettingsModule({ user }: { user: any }) {
         currency: map.pref_currency || 'BRL',
         date_format: map.pref_date_format || 'DD/MM/YYYY',
         timezone: map.pref_timezone || 'America/Sao_Paulo',
-        language: map.pref_language || 'pt-BR',
         page_size: map.pref_page_size || '50',
-        auto_refresh_sec: map.pref_auto_refresh_sec || '10',
       });
     } catch {
       /* defaults */
@@ -530,7 +526,6 @@ export default function SettingsModule({ user }: { user: any }) {
             <label className="text-sm">
               <span className="mb-1 block text-slate-600">Idioma</span>
               <select
-                value={prefs.language}
                 onChange={(e) => setPrefs((s) => ({ ...s, language: e.target.value }))}
                 className="w-full rounded-lg border p-2"
               >
@@ -555,7 +550,6 @@ export default function SettingsModule({ user }: { user: any }) {
                 type="number"
                 min={0}
                 max={120}
-                value={prefs.auto_refresh_sec}
                 onChange={(e) =>
                   setPrefs((s) => ({ ...s, auto_refresh_sec: e.target.value }))
                 }

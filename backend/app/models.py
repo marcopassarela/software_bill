@@ -39,10 +39,6 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role, name="role"), default=Role.VIEWER)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
-    language: Mapped[str] = mapped_column(
-    String(10), default="pt-BR", server_default="pt-BR", nullable=False
-    )
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
