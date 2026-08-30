@@ -109,6 +109,31 @@ export default function Home() {
     return () => clearInterval(t);
   }, [blockedInfo?.blocked_until]);
 
+    useEffect(() => {
+    if (!blockedInfo?.blocked_until || blockedInfo.block_type !== 'scheduled') {
+      return;
+    }
+    const until = parseUntil(blockedInfo.blocked_until);
+    if (!until) return;
+
+    const goLogin = () => {
+      if (until.getTime() <= Date.now()) {
+        setBlockedInfo(null);
+        setError('Seu acesso foi liberado. Faça login novamente.');
+      }
+    };
+
+    goLogin();
+    const id = setInterval(goLogin, 1000);
+    return () => clearInterval(id);
+  }, [blockedInfo]);
+
+  useEffect(() => {
+    if (!blockedInfo?.blocked_until) return;
+    const t = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [blockedInfo?.blocked_until]);
+
   function passwordStrength(pwd: string): {
     score: number;
     label: string;
@@ -183,8 +208,21 @@ export default function Home() {
 
   if (blockedInfo) {
     const until = parseUntil(blockedInfo.blocked_until);
+    if (
+      blockedInfo.block_type === 'scheduled' &&
+      until &&
+      until.getTime() <= Date.now()
+    ) {
+      setTimeout(() => {
+        setBlockedInfo(null);
+        setError('Seu acesso foi liberado. Faça login novamente.');
+      }, 0);
+    }
+
     const remaining =
-      until && !isNaN(until.getTime()) ? formatRemaining(until) : null;
+      until && !isNaN(until.getTime()) && until.getTime() > Date.now()
+        ? formatRemaining(until)
+        : null;
 
     return (
       <main className="grid min-h-screen place-items-center bg-slate-100 p-4">
@@ -203,14 +241,16 @@ export default function Home() {
             </p>
           )}
 
-          {blockedInfo.block_type === 'scheduled' && until && (
+          {blockedInfo.block_type === 'scheduled' && until && until.getTime() > Date.now() && (
             <div className="mt-4 rounded-lg bg-amber-50 px-3 py-3 text-center text-sm text-amber-900">
               <p className="font-medium">Desbloqueio automático em</p>
               <p className="mt-1 text-lg font-bold tabular-nums">
                 {until.toLocaleString('pt-BR')}
               </p>
               {remaining && (
-                <p className="mt-1 text-xs text-amber-800">Tempo restante: {remaining}</p>
+                <p className="mt-1 text-xs text-amber-800">
+                  Tempo restante: {remaining}
+                </p>
               )}
             </div>
           )}
