@@ -1,7 +1,7 @@
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Any
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -341,10 +341,46 @@ def delete_user(
 
 
 @app.get("/audit")
-def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
-    rows = db.execute(
+def logs(
+    user_filter: str | None = Query(default=None, alias="user"),
+    module: str | None = None,
+    action: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    _: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    query = (
         select(AuditLog, User.name.label("user_name"))
         .outerjoin(User, AuditLog.user_id == User.id)
+    )
+
+    if user_filter and user_filter.strip():
+        term = f"%{user_filter.strip()}%"
+        query = query.where(
+            (User.name.ilike(term))
+            | (User.username.ilike(term))
+        )
+
+    if module and module.strip():
+        query = query.where(AuditLog.module.ilike(f"%{module.strip()}%"))
+
+    if action and action.strip():
+        query = query.where(AuditLog.action.ilike(f"%{action.strip()}%"))
+
+    if date_from:
+        start_datetime = datetime.combine(date_from, datetime.min.time())
+        query = query.where(AuditLog.created_at >= start_datetime)
+
+    if date_to:
+        end_datetime = datetime.combine(
+            date_to + timedelta(days=1),
+            datetime.min.time(),
+        )
+        query = query.where(AuditLog.created_at < end_datetime)
+
+    rows = db.execute(
+        query
         .order_by(AuditLog.created_at.desc())
         .limit(50)
     ).all()
@@ -356,6 +392,7 @@ def logs(_: User = Depends(main_admin), db: Session = Depends(get_db)):
         }
         for log, user_name in rows
     ]
+
 
 
 @app.get("/dashboard")
