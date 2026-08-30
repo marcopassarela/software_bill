@@ -169,7 +169,6 @@ export default function SettingsModule({ user }: { user: any }) {
   const [auditFrom, setAuditFrom] = useState('');
   const [auditTo, setAuditTo] = useState('');
 
-  const [prefsSaving, setPrefsSaving] = useState(false);
   const [health, setHealth] = useState<{ status?: string } | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
 
