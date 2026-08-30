@@ -119,7 +119,7 @@ export default function Home() {
     const goLogin = () => {
       if (until.getTime() <= Date.now()) {
         setBlockedInfo(null);
-        setError('Seu acesso foi liberado. Faça login novamente.');
+        setError('Seu acesso foi liberado, faça login novamente!');
       }
     };
 
