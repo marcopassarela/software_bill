@@ -2242,7 +2242,11 @@ function Module({
           <ReportsExport lookups={lookups} />
         ) : (
           <div className="w-full max-w-full overflow-x-auto overflow-y-hidden">
-            <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-sm">
+            <table
+              className={`w-full ${
+                page === 'maintenance' ? 'min-w-[1100px]' : 'min-w-[900px]'
+              } table-fixed border-collapse text-left text-sm`}
+            >
               <thead className="bg-slate-50">
                 <tr>
                   {cols.map((k) => (
@@ -2267,6 +2271,7 @@ function Module({
                   <tr key={resourceIdOf(page, r) || i} className="border-t border-slate-100">
                     {cols.map((k) => {
                       const long =
+                        k === 'description' ||
                         k === 'observation' ||
                         k === 'notes' ||
                         k === 'name' ||
@@ -2276,14 +2281,16 @@ function Module({
                       return (
                         <td
                           key={k}
-                          className={`px-3 py-2.5 align-middle text-sm text-slate-800 ${
+                          className={`px-3 py-2.5 align-top text-sm text-slate-800 ${
                             k === 'id' || k === 'code'
                               ? 'w-14 max-w-[3.5rem] whitespace-nowrap px-2 text-center tabular-nums'
+                              : k === 'description'
+                              ? 'min-w-[280px] max-w-[360px] whitespace-normal break-words'
                               : long
                               ? 'max-w-[220px] truncate'
                               : 'whitespace-nowrap'
-                          }`}
-                          title={long ? String(cell || '') : undefined}
+                          }`}  
+                          title={long || k === 'description' ? String(cell || '') : undefined}
                         >
                           {k === 'status' ? (
                             <span
@@ -2300,48 +2307,52 @@ function Module({
                       );
                     })}
                     {showActions && (
-                      <td className="whitespace-nowrap px-3 py-2.5 align-middle">
-                        {page === 'stock' && (
-                          <button
-                            type="button"
-                            onClick={() => printProductLabels([r])}
-                            className="mr-2 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-                          >
-                            QR Code
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            isUsers
-                              ? setEditingUser(r)
-                              : isMovementModule
-                              ? setEditingMovement(r)
-                              : setEditingResource(r)
-                          }
-                          className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
-                        >
-                          Editar
-                        </button>
-                        {!(isUsers && r.is_main_admin) && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              isUsers
-                                ? deleteUser(r.id)
-                                : isMovementModule
-                                ? deleteMovement(r.id)
-                                : deleteResource(resourceIdOf(page, r))
-                            }
-                            className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
-                          >
-                            Excluir
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                        <td className="whitespace-nowrap px-3 py-2.5 align-top">
+                          <div className="flex min-w-max items-center gap-2">
+                            {page === 'stock' && (
+                              <button
+                                type="button"
+                                onClick={() => printProductLabels([r])}
+                                className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                              >
+                                QR Code
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                isUsers
+                                  ? setEditingUser(r)
+                                  : isMovementModule
+                                  ? setEditingMovement(r)
+                                  : setEditingResource(r)
+                              }
+                              className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                            >
+                              Editar
+                            </button>
+                            
+                            {!(isUsers && r.is_main_admin) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isUsers
+                                    ? deleteUser(r.id)
+                                    : isMovementModule
+                                    ? deleteMovement(r.id)
+                                    : deleteResource(resourceIdOf(page, r))
+                                }
+                                className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                              >
+                                Excluir
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
                 {!rows.length && (
                   <tr>
                     <td
