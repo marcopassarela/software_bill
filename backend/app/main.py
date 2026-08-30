@@ -218,39 +218,66 @@ def login(
     db: Session = Depends(get_db),
 ):
     u = db.scalar(select(User).where(User.username == body.username))
-    if not u or not u.active or not verify_password(body.password, u.password_hash):
-        motivo = "Usuário inexistente"
-        if u and not u.active:
-            motivo = "Usuário inativo"
-        elif u:
-            motivo = "Senha inválida"
-
+    if not u:
         audit(
             db,
-            u,
-            'LOGIN_INVÁLIDO',
-            'auth',
+            None,
+            "LOGIN_INVÁLIDO",
+            "auth",
             request=request,
-            details=f'Tentativa de login inválida: {motivo}',
-            username_attempted=body.username.strip()[:120],
-            latitude=body.latitude,
-            longitude=body.longitude,
+            details="Tentativa de login inválida: Usuário inexistente",
+            username_attempted=(body.username or "").strip()[:120],
+            latitude=getattr(body, "latitude", None),
+            longitude=getattr(body, "longitude", None),
         )
-
         db.commit()
         raise HTTPException(401, "Usuário ou senha inválidos")
+
+    if not verify_password(body.password, u.password_hash):
         audit(
             db,
             u,
-            'LOGIN',
-            'auth',
+            "LOGIN_INVÁLIDO",
+            "auth",
             request=request,
-            details='Login realizado com sucesso',
-            username_attempted=u.username,
-            latitude=body.latitude,
-            longitude=body.longitude,
+            details="Tentativa de login inválida: Senha inválida",
+            username_attempted=body.username.strip()[:120],
+            latitude=getattr(body, "latitude", None),
+            longitude=getattr(body, "longitude", None),
         )
-    
+        db.commit()
+        raise HTTPException(401, "Usuário ou senha inválidos")
+
+    # auto-desbloqueio se scheduled venceu
+    from .security import apply_auto_unblock, block_detail
+
+    still_blocked = apply_auto_unblock(u)
+    if still_blocked:
+        audit(
+            db,
+            u,
+            "LOGIN_BLOQUEADO",
+            "auth",
+            request=request,
+            details="Login recusado: conta bloqueada",
+            username_attempted=u.username,
+            latitude=getattr(body, "latitude", None),
+            longitude=getattr(body, "longitude", None),
+        )
+        db.commit()
+        raise HTTPException(status_code=403, detail=block_detail(u))
+
+    audit(
+        db,
+        u,
+        "LOGIN",
+        "auth",
+        request=request,
+        details="Login realizado com sucesso",
+        username_attempted=u.username,
+        latitude=getattr(body, "latitude", None),
+        longitude=getattr(body, "longitude", None),
+    )
     db.commit()
     response.set_cookie(
         "gl_session",
@@ -1630,15 +1657,36 @@ def backup_export(
 ):
     from datetime import timezone
 
+def block_payload(u: User) -> dict | None:
+    """Se bloqueado agora, retorna info; se scheduled já passou, limpa e retorna None."""
+    if u.active and not u.block_type:
+        return None
+
+    # auto-desbloqueio programado
+    if u.block_type == "scheduled" and u.blocked_until:
+        until = u.blocked_until
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if now >= until:
+            u.active = True
+            u.block_type = None
+            u.blocked_until = None
+            u.block_reason = None
+            return None
+
+    until_iso = None
+    if u.blocked_until:
+        until = u.blocked_until
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        until_iso = until.isoformat()
+
     return {
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "vehicles": [serialize(x) for x in db.scalars(select(Vehicle)).all()],
-        "drivers": [serialize(x) for x in db.scalars(select(Driver)).all()],
-        "products": [serialize(x) for x in db.scalars(select(Product)).all()],
-        "commercial_products": [
-            serialize(x) for x in db.scalars(select(CommercialProduct)).all()
-        ],
-        "settings": [serialize(x) for x in db.scalars(select(Setting)).all()],
+        "blocked": True,
+        "block_type": u.block_type or "manual",
+        "blocked_until": until_iso,
+        "reason": u.block_reason,
     }
 
 

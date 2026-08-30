@@ -51,6 +51,46 @@ def token_for(user: User):
         algorithm="HS256",
     )
 
+def clear_block(u: User):
+    u.active = True
+    u.block_type = None
+    u.blocked_until = None
+    u.block_reason = None
+
+
+def block_detail(u: User) -> dict:
+    until = getattr(u, "blocked_until", None)
+    until_iso = None
+    if until is not None:
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        until_iso = until.isoformat()
+    return {
+        "code": "USER_BLOCKED",
+        "message": "Conta bloqueada",
+        "blocked": True,
+        "block_type": getattr(u, "block_type", None) or "manual",
+        "blocked_until": until_iso,
+        "reason": getattr(u, "block_reason", None),
+    }
+
+
+def apply_auto_unblock(u: User) -> bool:
+    """Se scheduled venceu, libera. Retorna True se ainda bloqueado."""
+    if u.active and not getattr(u, "block_type", None):
+        return False
+    if not u.active:
+        if u.block_type == "scheduled" and u.blocked_until:
+            until = u.blocked_until
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= until:
+                clear_block(u)
+                return False
+        return True
+    return False
+
+
 def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_db)):
     if not token:
         raise HTTPException(status_code=401, detail="Não autenticado")
@@ -59,8 +99,17 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
         user = db.get(User, int(data["sub"]))
     except Exception:
         raise HTTPException(status_code=401, detail="Sessão inválida")
-    if not user or not user.active:
+    if not user:
         raise HTTPException(status_code=401, detail="Usuário indisponível")
+
+    still_blocked = apply_auto_unblock(user)
+    if still_blocked:
+        db.commit()
+        raise HTTPException(status_code=403, detail=block_detail(user))
+    else:
+        # pode ter auto-liberado
+        db.commit()
+
     token_ver = int(data.get("ver", 0) or 0)
     user_ver = int(getattr(user, "token_version", 0) or 0)
     if token_ver != user_ver:
