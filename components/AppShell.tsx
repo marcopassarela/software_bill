@@ -2434,8 +2434,10 @@ function Module({
                     <th
                       key={k}
                       className={`whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500 ${
-                        k === 'id' || k === 'code'
+                          k === 'id' || k === 'code'
                           ? 'w-14 max-w-[3.5rem] px-2'
+                          : k === 'active'
+                          ? 'w-20 max-w-[5rem] px-2 text-center'
                           : k === 'vehicle_id'
                           ? 'w-[280px] min-w-[280px] max-w-[280px]'
                           : k === 'type'
