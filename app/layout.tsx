@@ -21,11 +21,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default function Layout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="pt-BR">
       <body>
-        I18nProvider>{children}</I18nProvider>
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );
