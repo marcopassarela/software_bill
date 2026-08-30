@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -188,10 +188,32 @@ def login(
 ):
     u = db.scalar(select(User).where(User.username == body.username))
     if not u or not u.active or not verify_password(body.password, u.password_hash):
-        audit(db, u, "LOGIN_INVÁLIDO", "auth", request=request)
+        motivo = "Usuário inexistente"
+        if u and not u.active:
+            motivo = "Usuário inativo"
+        elif u:
+            motivo = "Senha inválida"
+
+        audit(
+            db,
+            u,
+            "LOGIN_INVÁLIDO",
+            "auth",
+            request=request,
+            details=f"Tentativa de login inválida: {motivo}",
+            username_attempted=body.username.strip()[:120],
+        )
         db.commit()
         raise HTTPException(401, "Usuário ou senha inválidos")
-    audit(db, u, "LOGIN", "auth", request=request)
+    audit(
+        db,
+        u,
+        "LOGIN",
+        "auth",
+        request=request,
+        details="Login realizado com sucesso",
+        username_attempted=u.username,
+    )
     db.commit()
     response.set_cookie(
         "gl_session",
@@ -385,10 +407,30 @@ def logs(
         .limit(50)
     ).all()
 
+    window_start = datetime.now(timezone.utc) - timedelta(minutes=10)
+    brute_force_counts = dict(
+        db.execute(
+            select(AuditLog.ip, func.count(AuditLog.id))
+            .where(
+                AuditLog.action == "LOGIN_INVÁLIDO",
+                AuditLog.ip.is_not(None),
+                AuditLog.created_at >= window_start,
+            )
+            .group_by(AuditLog.ip)
+        ).all()
+    )
+
     return [
         {
             **serialize(log),
-            "user_name": user_name or "Sistema",
+            "user_name": user_name or (
+                "Usuário desconhecido"
+                if log.action == "LOGIN_INVÁLIDO"
+                else "Sistema"
+            ),
+            "is_brute_force": bool(
+                log.ip and brute_force_counts.get(log.ip, 0) >= 5
+            ),
         }
         for log, user_name in rows
     ]

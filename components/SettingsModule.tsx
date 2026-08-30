@@ -162,6 +162,7 @@ export default function SettingsModule({ user }: { user: any }) {
   const [okMsg, setOkMsg] = useState('');
 
   const [auditRows, setAuditRows] = useState<any[]>([]);
+  const [selectedAudit, setSelectedAudit] = useState<any | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditUser, setAuditUser] = useState('');
   const [auditModule, setAuditModule] = useState('');
@@ -393,7 +394,19 @@ export default function SettingsModule({ user }: { user: any }) {
                     </thead>
                     <tbody>
                       {auditRows.map((r) => (
-                          <tr key={r.id} className="border-t">
+                          <tr
+                            key={r.id}
+                            className="cursor-pointer border-t transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                            onClick={() => setSelectedAudit(r)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setSelectedAudit(r);
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                          >
                             <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                               {r.created_at ? new Date(r.created_at).toLocaleString('pt-BR') : '—'}
                             </td>
@@ -543,6 +556,141 @@ export default function SettingsModule({ user }: { user: any }) {
             </li>
           </ul>
         </section>
+      )}
+
+      {selectedAudit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="presentation"
+          onClick={() => setSelectedAudit(null)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audit-detail-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 id="audit-detail-title" className="text-lg font-semibold text-slate-900">
+                  Detalhes da atividade
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Registro completo da ação realizada no sistema.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAudit(null)}
+                className="rounded-lg bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Usuário</dt>
+                <dd className="mt-1 font-medium text-slate-900">
+                  {selectedAudit.user_name ||
+                    (selectedAudit.action === 'LOGIN_INVÁLIDO'
+                      ? 'Usuário desconhecido'
+                      : 'Sistema')}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Login informado</dt>
+                <dd className="mt-1 text-slate-800">{selectedAudit.username_attempted || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Ação</dt>
+                <dd className="mt-1 text-slate-800">{auditActionLabel(selectedAudit.action)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Módulo</dt>
+                <dd className="mt-1 text-slate-800">{auditModuleLabel(selectedAudit.module)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Registro afetado</dt>
+                <dd className="mt-1 text-slate-800">{selectedAudit.record_id || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Data e hora</dt>
+                <dd className="mt-1 text-slate-800">
+                  {selectedAudit.created_at
+                    ? new Date(selectedAudit.created_at).toLocaleString('pt-BR')
+                    : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Endereço IP</dt>
+                <dd className="mt-1 font-mono text-sm text-slate-800">{selectedAudit.ip || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase text-slate-500">Classificação</dt>
+                <dd className="mt-1">
+                  {selectedAudit.is_brute_force ? (
+                    <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                      Possível força bruta
+                    </span>
+                  ) : selectedAudit.action === 'LOGIN_INVÁLIDO' ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
+                      Tentativa inválida
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
+                      Atividade identificada
+                    </span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h4 className="font-semibold text-slate-800">Localização aproximada</h4>
+              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-slate-500">País</dt>
+                  <dd className="font-medium text-slate-800">{selectedAudit.country || 'Não disponível'}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Região</dt>
+                  <dd className="font-medium text-slate-800">{selectedAudit.region || 'Não disponível'}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Cidade</dt>
+                  <dd className="font-medium text-slate-800">{selectedAudit.city || 'Não disponível'}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Latitude e longitude</dt>
+                  <dd className="font-mono text-sm text-slate-800">
+                    {selectedAudit.latitude && selectedAudit.longitude
+                      ? `${selectedAudit.latitude}, ${selectedAudit.longitude}`
+                      : 'Não disponível'}
+                  </dd>
+                </div>
+              </dl>
+              {selectedAudit.latitude && selectedAudit.longitude && (
+                <a
+                  href={`https://www.google.com/maps?q=${encodeURIComponent(`${selectedAudit.latitude},${selectedAudit.longitude}`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block text-sm font-medium text-brand hover:underline"
+                >
+                  Ver localização aproximada no mapa
+                </a>
+              )}
+            </div>
+
+            <div className="mt-5 rounded-xl border border-slate-200 p-4">
+              <h4 className="font-semibold text-slate-800">O que foi feito</h4>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700">
+                {selectedAudit.details || 'Este registro não possui detalhes adicionais.'}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

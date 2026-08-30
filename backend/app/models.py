@@ -65,6 +65,13 @@ class AuditLog(Base):
     module: Mapped[str] = mapped_column(String(80))
     record_id: Mapped[str | None] = mapped_column(String(80))
     ip: Mapped[str | None] = mapped_column(String(64))
+    country: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    region: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    latitude: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    longitude: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    username_attempted: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
