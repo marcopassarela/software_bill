@@ -556,7 +556,54 @@ export default function SettingsModule({ user }: { user: any }) {
       </section>
     )}
 
-      {/* 6. Licença */}
+    {/* 5. Sistema */}
+    {tab === 'system' && (
+      <section className="rounded-xl bg-white p-5 shadow-sm">
+        <h3 className="font-semibold text-slate-800">
+          Sistema / Atualizações
+        </h3>
+
+        <ul className="mt-3 space-y-2 text-sm text-slate-600">
+          <li>
+            Versão do app: <strong>1.0.0</strong>
+          </li>
+          <li>
+            API:{' '}
+            <strong
+              className={
+                health?.status === 'ok'
+                  ? 'text-emerald-600'
+                  : 'text-red-600'
+              }
+            >
+              {health?.status === 'ok'
+                ? 'Online'
+                : health
+                ? 'Instável'
+                : 'Verificando…'}
+            </strong>
+          </li>
+          <li>Última atualização: conforme deploy na Vercel</li>
+        </ul>
+
+        <button
+          type="button"
+          className="mt-4 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium"
+          onClick={() =>
+            request('/health')
+              .then((h) => {
+                setHealth(h);
+                setOkMsg('Status da API atualizado.');
+              })
+              .catch(() => setError('Falha ao consultar /health'))
+          }
+        >
+          Verificar status
+        </button>
+      </section>
+    )}
+
+    {/* 6. Licença */}
       {tab === 'license' && (
         <section className="rounded-xl bg-white p-5 shadow-sm">
           <h3 className="font-semibold text-slate-800">Licença</h3>
