@@ -484,93 +484,93 @@ export default function SettingsModule({ user }: { user: any }) {
       )}
 
       {/* 4. Preferências */}
-      {tab === 'prefs' && (
-        <section className="rounded-xl bg-white p-5 shadow-sm">
-          <h3 className="font-semibold text-slate-800">Preferências do sistema</h3>
-          <form onSubmit={savePrefs} className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Moeda</span>
-              <select
-                value={prefs.currency}
-                onChange={(e) => setPrefs((s) => ({ ...s, currency: e.target.value }))}
-                className="w-full rounded-lg border p-2"
-              >
-                <option value="BRL">BRL (R$)</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Formato da data</span>
-              <select
-                value={prefs.date_format}
-                onChange={(e) => setPrefs((s) => ({ ...s, date_format: e.target.value }))}
-                className="w-full rounded-lg border p-2"
-              >
-                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Fuso horário</span>
-              <select
-                value={prefs.timezone}
-                onChange={(e) => setPrefs((s) => ({ ...s, timezone: e.target.value }))}
-                className="w-full rounded-lg border p-2"
-              >
-                <option value="America/Sao_Paulo">America/Sao_Paulo</option>
-                <option value="UTC">UTC</option>
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Idioma</span>
-              <select
-                onChange={(e) => setPrefs((s) => ({ ...s, language: e.target.value }))}
-                className="w-full rounded-lg border p-2"
-              >
-                <option value="pt-BR">Português (Brasil)</option>
-                <option value="en">English</option>
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Paginação (itens por página)</span>
-              <input
-                type="number"
-                min={10}
-                max={200}
-                value={prefs.page_size}
-                onChange={(e) => setPrefs((s) => ({ ...s, page_size: e.target.value }))}
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Atualização automática (segundos)</span>
-              <input
-                type="number"
-                min={0}
-                max={120}
-                onChange={(e) =>
-                  setPrefs((s) => ({ ...s, auto_refresh_sec: e.target.value }))
-                }
-                className="w-full rounded-lg border p-2"
-              />
-              <span className="mt-1 block text-xs text-slate-400">
-                0 = desligado. Usado no Agendamento após ligar o passo 6 no AppShell.
-              </span>
-            </label>
-            <div className="sm:col-span-2">
-              <button
-                type="submit"
-                disabled={prefsSaving}
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-              >
-                {prefsSaving ? 'Salvando…' : 'Salvar preferências'}
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
+      {/* 4. Preferências */}
+{tab === 'prefs' && (
+  <section className="rounded-xl bg-white p-5 shadow-sm">
+    <h3 className="font-semibold text-slate-800">
+      Preferências do sistema
+    </h3>
+
+    <form
+      onSubmit={savePrefs}
+      className="mt-4 grid gap-4 sm:grid-cols-2"
+    >
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Moeda</span>
+        <select
+          value={prefs.currency}
+          onChange={(e) =>
+            setPrefs((s) => ({ ...s, currency: e.target.value }))
+          }
+          className="w-full rounded-lg border p-2"
+        >
+          <option value="BRL">BRL (R$)</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+        </select>
+      </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">
+              Formato da data
+            </span>
+            <select
+              value={prefs.date_format}
+              onChange={(e) =>
+                setPrefs((s) => ({ ...s, date_format: e.target.value }))
+              }
+              className="w-full rounded-lg border p-2"
+            >
+              <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+              <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+            </select>
+          </label>
+            
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">
+              Fuso horário
+            </span>
+            <select
+              value={prefs.timezone}
+              onChange={(e) =>
+                setPrefs((s) => ({ ...s, timezone: e.target.value }))
+              }
+              className="w-full rounded-lg border p-2"
+            >
+              <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+              <option value="UTC">UTC</option>
+            </select>
+          </label>
+            
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">
+              Paginação (itens por página)
+            </span>
+            <input
+              type="number"
+              min={10}
+              max={200}
+              value={prefs.page_size}
+              onChange={(e) =>
+                setPrefs((s) => ({ ...s, page_size: e.target.value }))
+              }
+              className="w-full rounded-lg border p-2"
+            />
+          </label>
+            
+          <div className="sm:col-span-2">
+            <button
+              type="submit"
+              disabled={prefsSaving}
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {prefsSaving ? 'Salvando…' : 'Salvar preferências'}
+            </button>
+          </div>
+        </form>
+      </section>
+    )}
 
       {/* 5. Sistema */}
       {tab === 'system' && (
