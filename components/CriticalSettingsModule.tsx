@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { request } from '@/lib/api';
+import { useI18n } from '@/lib/i18n';
 
 const ACTIONS: {
   id: string;
@@ -67,6 +68,7 @@ const ACTIONS: {
 
 export default function CriticalSettingsModule({ user }: { user: any }) {
   const isMainAdmin = !!user?.is_main_admin;
+  const { t } = useI18n();
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [modal, setModal] = useState<(typeof ACTIONS)[0] | null>(null);
@@ -77,7 +79,7 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
   if (!isMainAdmin) {
     return (
       <div className="rounded-xl bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-red-700">Configurações críticas</h2>
+        <h2 className="text-lg font-semibold text-red-700">{t('critical.title', 'Configurações críticas')}</h2>
         <p className="mt-2 text-sm text-slate-600">
           Acesso restrito ao Administrador Principal.
         </p>
@@ -111,7 +113,7 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-red-200 bg-red-50 p-5">
-        <h2 className="text-lg font-semibold text-red-800">Configurações críticas</h2>
+        <h2 className="text-lg font-semibold text-red-800">{t('critical.title', 'Configurações críticas')}</h2>
         <p className="mt-1 text-sm text-red-700">
           Operações irreversíveis. Exigem senha do Administrador Principal e texto de
           confirmação. A API valida no servidor.
@@ -136,8 +138,12 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4 shadow-sm"
           >
             <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-slate-900">{a.title}</h3>
-              <p className="mt-0.5 text-sm text-slate-500">{a.description}</p>
+              <h3 className="font-semibold text-slate-900">
+                {t(`critical.action.${a.id}.title`, a.title)}
+              </h3>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {t(`critical.action.${a.id}.description`, a.description)}
+              </p>
             </div>
             <button
               type="button"
@@ -155,7 +161,7 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
                   : 'bg-amber-600 hover:bg-amber-700'
               }`}
             >
-              {a.soon ? 'Em breve' : 'Executar…'}
+              {a.soon ? t('common.soon', 'Em breve') : t('common.execute', 'Executar…')}
             </button>
           </div>
         ))}
@@ -164,10 +170,14 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-red-700">{modal.title}</h3>
-            <p className="mt-2 text-sm text-slate-600">{modal.description}</p>
+            <h3 className="text-lg font-semibold text-red-700">
+              {t(`critical.action.${modal.id}.title`, modal.title)}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              {t(`critical.action.${modal.id}.description`, modal.description)}
+            </p>
             <label className="mt-4 block text-sm">
-              <span className="mb-1 block text-slate-600">Senha do Admin Principal *</span>
+              <span className="mb-1 block text-slate-600">{t('critical.adminPassword', 'Senha do Administrador Principal')} *</span>
               <input
                 type="password"
                 autoComplete="current-password"
@@ -196,7 +206,7 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
                 onClick={() => setModal(null)}
                 className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium"
               >
-                Cancelar
+                {t('critical.cancel', 'Cancelar')}
               </button>
               <button
                 type="button"
@@ -204,7 +214,7 @@ export default function CriticalSettingsModule({ user }: { user: any }) {
                 onClick={runAction}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
-                {busy ? 'Executando…' : 'Confirmar'}
+                {busy ? t('common.executing', 'Executando…') : t('critical.confirm', 'Confirmar')}
               </button>
             </div>
           </div>
