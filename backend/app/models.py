@@ -202,6 +202,23 @@ class Product(Base):
     unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
     notes: Mapped[str | None] = mapped_column(Text)
 
+class CommercialProduct(Base):
+    __tablename__ = "commercial_products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    name: Mapped[str] = mapped_column(String(160))
+    price: Mapped[float] = mapped_column(Numeric(12, 2))
+    unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
 
 class StockMovement(Base):
     __tablename__ = "stock_movements"

@@ -87,6 +87,16 @@ class UserCreate(BaseModel):
 class Payload(BaseModel):
     data: dict[str, Any]
 
+class CommercialProductBody(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    price: float = Field(ge=0)
+    code: str | None = Field(default=None, max_length=60)
+    unit: str | None = Field(default="UN", max_length=20)
+    category: str | None = Field(default=None, max_length=80)
+    notes: str | None = None
+    active: bool = True
+
+
 
 class Movement(BaseModel):
     product_id: int
@@ -630,6 +640,78 @@ RESOURCES = {
     "products": (Product, "stock"),
     "settings": (Setting, "settings"),
 }
+
+@app.get("/commercial/products")
+def list_commercial_products(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial")(user)
+    rows = db.scalars(
+        select(CommercialProduct).order_by(
+            CommercialProduct.code.asc(),
+            CommercialProduct.id.asc(),
+        )
+    ).all()
+    return [serialize(row) for row in rows]
+
+
+@app.post("/commercial/products")
+def create_commercial_product(
+    body: CommercialProductBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    product = CommercialProduct(**body.model_dump())
+    db.add(product)
+    db.flush()
+    audit(db, user, "CADASTRO", "commercial", product.id, request)
+    db.commit()
+    db.refresh(product)
+    return serialize(product)
+
+
+@app.patch("/commercial/products/{product_id}")
+def update_commercial_product(
+    product_id: int,
+    body: CommercialProductBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    product = db.get(CommercialProduct, product_id)
+    if not product:
+        raise HTTPException(404, "Produto/serviço não encontrado")
+
+    for key, value in body.model_dump().items():
+        setattr(product, key, value)
+
+    audit(db, user, "ALTERAÇÃO", "commercial", product.id, request)
+    db.commit()
+    db.refresh(product)
+    return serialize(product)
+
+
+@app.delete("/commercial/products/{product_id}")
+def delete_commercial_product(
+    product_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("commercial", write=True)(user)
+    product = db.get(CommercialProduct, product_id)
+    if not product:
+        raise HTTPException(404, "Produto/serviço não encontrado")
+
+    db.delete(product)
+    audit(db, user, "EXCLUSÃO", "commercial", product_id, request)
+    db.commit()
+    return {"ok": True}
+
 
 
 @app.get("/{resource}")
