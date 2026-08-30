@@ -1429,22 +1429,6 @@ def critical_revoke_sessions(
     }
 
 
-@app.post("/admin/critical/reset-settings")
-def critical_reset_settings(
-    body: CriticalBody,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    _assert_critical(user, body, "REDEFINIR")
-    for s in db.scalars(select(Setting)).all():
-        if str(s.key).startswith("pref_"):
-            db.delete(s)
-    audit(db, user, "CRITICO_RESET_SETTINGS", "admin", None, request)
-    db.commit()
-    return {"ok": True, "detail": "Preferências redefinidas"}
-
-
 @app.post("/admin/critical/purge-users")
 def critical_purge_users(
     body: CriticalBody,

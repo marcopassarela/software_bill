@@ -22,14 +22,6 @@ const ACTIONS: {
     danger: 'red',
   },
   {
-    id: 'reset-settings',
-    title: 'Redefinir configurações',
-    description: 'Apaga preferências do sistema (moeda, fuso, paginação, etc.).',
-    confirmText: 'REDEFINIR',
-    endpoint: '/admin/critical/reset-settings',
-    danger: 'amber',
-  },
-  {
     id: 'purge-users',
     title: 'Remover todos os usuários',
     description: 'Mantém somente o Administrador Principal. Irreversível.',
