@@ -64,8 +64,10 @@ def seed():
 
 
 class Login(BaseModel):
-    username: str = Field(min_length=1, max_length=60)
-    password: str = Field(min_length=1, max_length=200)
+    username: str
+    password: str
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class PasswordChange(BaseModel):
@@ -197,23 +199,29 @@ def login(
         audit(
             db,
             u,
-            "LOGIN_INVÁLIDO",
-            "auth",
+            'LOGIN_INVÁLIDO',
+            'auth',
             request=request,
-            details=f"Tentativa de login inválida: {motivo}",
+            details=f'Tentativa de login inválida: {motivo}',
             username_attempted=body.username.strip()[:120],
+            latitude=body.latitude,
+            longitude=body.longitude,
         )
+
         db.commit()
         raise HTTPException(401, "Usuário ou senha inválidos")
-    audit(
-        db,
-        u,
-        "LOGIN",
-        "auth",
-        request=request,
-        details="Login realizado com sucesso",
-        username_attempted=u.username,
-    )
+        audit(
+            db,
+            u,
+            'LOGIN',
+            'auth',
+            request=request,
+            details='Login realizado com sucesso',
+            username_attempted=u.username,
+            latitude=body.latitude,
+            longitude=body.longitude,
+        )
+    
     db.commit()
     response.set_cookie(
         "gl_session",

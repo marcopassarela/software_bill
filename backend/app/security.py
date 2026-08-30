@@ -105,10 +105,26 @@ def audit(
     request: Request | None = None,
     details: str | None = None,
     username_attempted: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ):
     from .models import AuditLog
 
     headers = request.headers if request else {}
+
+    # Usa a localização autorizada pelo navegador quando existir.
+    # Se não existir, utiliza a localização aproximada fornecida pela Vercel.
+    client_latitude = (
+        str(latitude)
+        if latitude is not None
+        else headers.get('x-vercel-ip-latitude')
+    )
+    client_longitude = (
+        str(longitude)
+        if longitude is not None
+        else headers.get('x-vercel-ip-longitude')
+    )
+
     db.add(
         AuditLog(
             user_id=user.id if user else None,
@@ -116,11 +132,11 @@ def audit(
             module=module,
             record_id=str(record_id) if record_id else None,
             ip=request.client.host if request and request.client else None,
-            country=headers.get("x-vercel-ip-country"),
-            region=headers.get("x-vercel-ip-country-region"),
-            city=headers.get("x-vercel-ip-city"),
-            latitude=headers.get("x-vercel-ip-latitude"),
-            longitude=headers.get("x-vercel-ip-longitude"),
+            country=headers.get('x-vercel-ip-country'),
+            region=headers.get('x-vercel-ip-country-region'),
+            city=headers.get('x-vercel-ip-city'),
+            latitude=client_latitude,
+            longitude=client_longitude,
             username_attempted=username_attempted,
             details=details,
         )

@@ -155,6 +155,17 @@ function auditModuleLabel(value: string | undefined) {
   return value ? AUDIT_MODULE_LABELS[value] || value : '—';
 }
 
+function decodeLocation(value: unknown) {
+  if (!value) return 'Não disponível';
+
+  try {
+    return decodeURIComponent(String(value));
+  } catch {
+    return String(value);
+  }
+}
+
+
 export default function SettingsModule({ user }: { user: any }) {
   const isMainAdmin = !!user?.is_main_admin;
   const [tab, setTab] = useState<Tab>('backup');
@@ -652,15 +663,15 @@ export default function SettingsModule({ user }: { user: any }) {
               <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-slate-500">País</dt>
-                  <dd className="font-medium text-slate-800">{selectedAudit.country || 'Não disponível'}</dd>
+                  <dd className="font-medium text-slate-800">{decodeLocation(selectedAudit.country)}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Região</dt>
-                  <dd className="font-medium text-slate-800">{selectedAudit.region || 'Não disponível'}</dd>
+                  <dd className="font-medium text-slate-800">{decodeLocation(selectedAudit.region)}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Cidade</dt>
-                  <dd className="font-medium text-slate-800">{selectedAudit.city || 'Não disponível'}</dd>
+                  <dd className="font-medium text-slate-800">{decodeLocation(selectedAudit.city)}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Latitude e longitude</dt>
