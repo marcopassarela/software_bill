@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { request } from '@/lib/api';
-import { useI18n } from '@/lib/i18n';
 
 
 type Tab =
@@ -160,7 +159,6 @@ function auditModuleLabel(value: string | undefined) {
 
 export default function SettingsModule({ user }: { user: any }) {
   const isMainAdmin = !!user?.is_main_admin;
-  const { setLanguage } = useI18n();
   const [tab, setTab] = useState<Tab>('backup');
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
@@ -264,16 +262,9 @@ export default function SettingsModule({ user }: { user: any }) {
       savePref('pref_currency', prefs.currency),
       savePref('pref_date_format', prefs.date_format),
       savePref('pref_timezone', prefs.timezone),
-      request('/auth/language', {
-        method: 'PATCH',
-        body: JSON.stringify({ language: prefs.language }),
-      }),
       savePref('pref_page_size', prefs.page_size),
-      savePref('pref_auto_refresh_sec', prefs.auto_refresh_sec),
     ]);
 
-    // Aplica o idioma somente depois que o backend confirmar o salvamento.
-    setLanguage(prefs.language === 'en' ? 'en' : 'pt-BR');
     setOkMsg('Preferências salvas.');
   } catch (err: any) {
     setError(err?.message || 'Erro ao salvar preferências.');

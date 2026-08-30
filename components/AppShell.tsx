@@ -2,7 +2,6 @@
 import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
-import { useI18n } from '@/lib/i18n';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import React, { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
@@ -484,7 +483,6 @@ export default function AppShell({
   onUserUpdate: (u: any) => void;
 }) {
   const isMainAdmin = !!user.is_main_admin;
-  const { t } = useI18n();
 
   const allowed = (key: string) =>
     isMainAdmin ||
@@ -774,7 +772,7 @@ export default function AppShell({
                     sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
                   }`}
                 >
-                  {t(`menu.${k}`, label)}
+                  {label}
                 </span>
               </button>
             ))}

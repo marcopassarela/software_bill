@@ -2,10 +2,8 @@
 import { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import AppShell from '@/components/AppShell';
-import { useI18n } from '@/lib/i18n';
 
 export default function Home() {
-  const { setLanguage } = useI18n();
   const [user, setUser] = useState<any>();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -58,24 +56,24 @@ export default function Home() {
   }
 
   async function login(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      const result = await request('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password }),
-      });
-      setUser(result.user);
-      if (result.user.language === 'en' || result.user.language === 'pt-BR') {
-        setLanguage(result.user.language);
-      }
-      } catch (e: any) {
-      setError(e?.message || 'Erro ao realizar login');
-      } finally {
-      setBusy(false);
-      }
+  e.preventDefault();
+  setBusy(true);
+  setError('');
+
+  try {
+    const result = await request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+
+    setUser(result.user);
+  } catch (e: any) {
+    setError(e?.message || 'Erro ao realizar login');
+  } finally {
+    setBusy(false);
   }
+}
+
 
   async function change(e: React.FormEvent) {
     e.preventDefault();
