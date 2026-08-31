@@ -1151,7 +1151,9 @@ def serialize_route_slot(x: RouteSlot, db: Session):
 
 def serialize_week(x: ScheduleWeek, db: Session):
     slots = db.scalars(
-        select(RouteSlot).where(RouteSlot.week_id == x.id).order_by(RouteSlot.date)
+        select(RouteSlot)
+        .where(RouteSlot.week_id == x.id)
+        .order_by(RouteSlot.date, RouteSlot.id)
     ).all()
     d = serialize(x)
     d["route_slots"] = [serialize_route_slot(s, db) for s in slots]

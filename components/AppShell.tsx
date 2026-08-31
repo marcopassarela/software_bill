@@ -3321,13 +3321,18 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const selectedWeek = weeks.find((w) => w.id === selectedWeekId);
 
   const slotsByDate = selectedWeek
-    ? selectedWeek.route_slots.reduce((acc: any, slot: any) => {
-        const d = slot.date;
-        if (!acc[d]) acc[d] = [];
-        acc[d].push(slot);
+    ? selectedWeek.route_slots.reduce((acc: Record<string, any[]>, slot: any) => {
+        const key = slot.date;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(slot);
         return acc;
       }, {})
     : {};
+
+  // ordem fixa dentro do dia (ordem de criação)
+  Object.keys(slotsByDate).forEach((key) => {
+    slotsByDate[key].sort((a: any, b: any) => Number(a.id) - Number(b.id));
+  });
 
   const dates = Object.keys(slotsByDate).sort();
 
@@ -3384,15 +3389,15 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       doc.setFontSize(14);
       doc.text('LOGÍSTICAS BILL — Agenda de Instalações', margin, y);
       y += 7;
-    
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
-    
+
       const weekTitle =
         week.label && String(week.label).trim()
           ? String(week.label).trim()
           : formatDate(week.start_date);
-    
+
       doc.text(`Semana: ${weekTitle}`, margin, y);
       y += 5;
       doc.text(`Status: ${week.status || '—'}`, margin, y);
