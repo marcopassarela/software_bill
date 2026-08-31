@@ -3386,8 +3386,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     y += 6;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Semana: ${week.label || week.start_date}  |  Status: ${week.status}`, margin, y);
-    y += 8;
+    doc.text(`Semana: ${week.label || formatDate(week.start_date)}  |  Status: ${week.status}`,
+    margin,y);
 
     const slots = week.route_slots || [];
     const byDate: Record<string, any[]> = {};
@@ -3405,7 +3405,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         }
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
-        doc.text(date, margin, y);
+        doc.text(formatDate(date), margin, y);
         y += 5;
 
         byDate[date].forEach((slot: any) => {
@@ -3482,14 +3482,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     let y = 12;
     const pageW = doc.internal.pageSize.getWidth();
 
-    const [yy, mm, dd] = printDate.split('-');
-    const dateObj = new Date(Number(yy), Number(mm) - 1, Number(dd));
-    const dateLabel = dateObj.toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    const dateLabel = formatDate(printDate);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
@@ -3498,13 +3491,10 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(
-      `Data: ${dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}  |  Semana: ${
-        selectedWeek.label || selectedWeek.start_date
-      }`,
+      `Data: ${dateLabel}  |  Semana: ${selectedWeek.label || selectedWeek.start_date}`,
       margin,
       y
     );
-    y += 8;
 
     const head: string[] = [];
     if (printFields.position) head.push('Pos');
@@ -3791,9 +3781,20 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   }
 
   function formatDate(d: string) {
+    if (!d) return '—';
     const [y, m, day] = d.split('-');
     const date = new Date(Number(y), Number(m) - 1, Number(day));
-    return date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    if (isNaN(date.getTime())) return d;
+
+    const weekday = date
+      .toLocaleDateString('pt-BR', { weekday: 'long' })
+      .replace(/^\w/, (c) => c.toUpperCase()); // Segunda-feira
+
+    const dd = String(day).padStart(2, '0');
+    const mm = String(m).padStart(2, '0');
+
+    // Segunda-feira | 24-08-2026
+    return `${weekday} | ${dd}-${mm}-${y}`;
   }
 
   if (loading && weeks.length === 0) {
