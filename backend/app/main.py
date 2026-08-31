@@ -99,6 +99,184 @@ class CommercialProductBody(BaseModel):
     notes: str | None = None
     active: bool = True
 
+# ============================================================
+# PRODUÇÃO / MONTAGEM
+# ============================================================
+
+PRODUCTION_MODELS = [
+    "MONO - 7MTs",
+    "TRIF - 7MTs",
+    "BI+MONO - 7MTs",
+    "MURETA",
+    "MONO 2CXs - 7MTs",
+    "3CXs - 7MTs",
+    "TRIF - 8MTs",
+    "BI+MONO - 8MTs",
+    "2CXs - 8MTs",
+    "3CXs - 8MTs",
+    "DUPLO T - 7MTs",
+    "DUPLO T - 8MTs",
+    "DUPLO T - 8.3MTs",
+    "DUPLO T - 9MTs",
+    "MURETA ÁGUA",
+]
+
+
+class ProductionLineIn(BaseModel):
+    model: str = Field(min_length=1, max_length=80)
+    quantity: float = Field(ge=0)
+    emergency_altered: float = Field(default=0, ge=0)
+
+
+class ProductionBatchIn(BaseModel):
+    kind: str  # fabricacao | montagem
+    production_date: date
+    lines: list[ProductionLineIn]
+    notes: str | None = None
+
+
+def _require_production_kind(user: User, kind: str):
+    kind = (kind or "").lower().strip()
+    if kind not in ("fabricacao", "montagem"):
+        raise HTTPException(400, "kind deve ser fabricacao ou montagem")
+    is_main = user.id == 1
+    perms = set((user.permissions or "").split(",")) if user.permissions else set()
+    role_modules = MODULES.get(user.role, set()) if not user.permissions else perms
+    if is_main or "*" in role_modules or "*" in perms:
+        return kind
+    if kind == "fabricacao" and (
+        "production" in perms or "production" in role_modules
+    ):
+        return kind
+    if kind == "montagem" and (
+        "assembly" in perms or "assembly" in role_modules or "production" in perms
+    ):
+        # assembly específico; production genérico no role pode ver ambos se admin liberar só assembly
+        if "assembly" in perms or "assembly" in role_modules:
+            return kind
+        if "production" in perms and "assembly" not in perms and user.permissions:
+            # tem production mas não assembly → não monta
+            if kind == "montagem":
+                raise HTTPException(403, "Sem permissão de Montagem")
+            return kind
+    if kind == "montagem" and "assembly" in perms:
+        return kind
+    if kind == "fabricacao" and "production" in perms:
+        return kind
+    raise HTTPException(403, "Sem permissão para este tipo de lançamento")
+
+
+@app.get("/production/models")
+def production_models(user: User = Depends(current_user)):
+    require("production")(user) if False else None  # noqa — validado abaixo
+    # qualquer um com production ou assembly
+    perms = set((user.permissions or "").split(",")) if user.permissions else set()
+    grants = MODULES.get(user.role, set()) if not user.permissions else perms
+    if user.id != 1 and "*" not in grants and "production" not in grants and "assembly" not in grants:
+        # tenta require production module generico
+        try:
+            require("production")(user)
+        except HTTPException:
+            if "assembly" not in perms and "assembly" not in grants:
+                raise HTTPException(403, "Sem permissão")
+    return list(PRODUCTION_MODELS)
+
+
+@app.post("/production/batch")
+def create_production_batch(
+    body: ProductionBatchIn,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    kind = _require_production_kind(user, body.kind)
+    if not body.lines:
+        raise HTTPException(400, "Informe ao menos um modelo")
+    created = []
+    for line in body.lines:
+        qty = float(line.quantity or 0)
+        em = float(line.emergency_altered or 0) if kind == "montagem" else 0.0
+        if qty <= 0 and em <= 0:
+            continue
+        rec = ProductionRecord(
+            kind=kind,
+            production_date=body.production_date,
+            model=line.model.strip(),
+            quantity=qty,
+            emergency_altered=em,
+            notes=body.notes,
+            user_id=user.id,
+        )
+        db.add(rec)
+        db.flush()
+        created.append(serialize(rec))
+    if not created:
+        raise HTTPException(400, "Nenhuma quantidade informada")
+    audit(db, user, "PRODUCAO_LOTE", "production", None, request)
+    db.commit()
+    return {"ok": True, "count": len(created), "records": created}
+
+
+@app.get("/production/records")
+def list_production_records(
+    kind: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    perms = set((user.permissions or "").split(",")) if user.permissions else set()
+    grants = MODULES.get(user.role, set()) if not user.permissions else perms
+    if user.id != 1 and "*" not in grants and "production" not in grants and "assembly" not in grants:
+        raise HTTPException(403, "Sem permissão")
+
+    q = select(ProductionRecord).order_by(
+        ProductionRecord.production_date.desc(),
+        ProductionRecord.id.desc(),
+    )
+    if kind in ("fabricacao", "montagem"):
+        # restringe por permissão
+        if user.id != 1 and "*" not in grants:
+            if kind == "fabricacao" and "production" not in grants and "production" not in perms:
+                raise HTTPException(403, "Sem permissão de Produção")
+            if kind == "montagem" and "assembly" not in perms and "assembly" not in grants:
+                if "production" not in perms and "production" not in grants:
+                    raise HTTPException(403, "Sem permissão de Montagem")
+        q = q.where(ProductionRecord.kind == kind)
+    if date_from:
+        q = q.where(ProductionRecord.production_date >= date_from)
+    if date_to:
+        q = q.where(ProductionRecord.production_date <= date_to)
+
+    rows = db.scalars(q.limit(2000)).all()
+    out = []
+    for r in rows:
+        d = serialize(r)
+        if r.user_id:
+            uu = db.get(User, r.user_id)
+            d["username"] = uu.username if uu else None
+            d["user_name"] = uu.name if uu else None
+        out.append(d)
+    return out
+
+
+@app.get("/production/by-day")
+def production_by_day(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Agrupado por data + kind para a sub-aba Produção do dia."""
+    rows = list_production_records(None, date_from, date_to, user, db)  # type: ignore
+    # se list_production_records for Depends-heavy, duplique a query:
+    # (abaixo versão self-contained)
+    return rows
+
+from .security import (
+    audit, current_user, hash_password, main_admin, require, token_for, verify_password, MODULES,
+)
+
 
 
 class Movement(BaseModel):

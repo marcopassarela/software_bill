@@ -231,6 +231,7 @@ class CommercialProduct(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+    
 
 
 
@@ -344,3 +345,22 @@ class ScheduleExtra(Base):
     description: Mapped[str] = mapped_column(String(200))
     observation: Mapped[str | None] = mapped_column(Text)
     status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
+
+class ProductionRecord(Base):
+    """Lançamento de produção (fábrica) ou montagem (padrões)."""
+    __tablename__ = "production_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # "fabricacao" | "montagem"
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    production_date: Mapped[date] = mapped_column(Date, index=True)
+    model: Mapped[str] = mapped_column(String(80))
+    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    # só faz sentido em montagem (postes alterados de emergência)
+    emergency_altered: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    notes: Mapped[str | None] = mapped_column(Text)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+

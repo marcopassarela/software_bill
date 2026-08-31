@@ -1,0 +1,426 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { request } from '@/lib/api';
+
+const PRODUCTION_MODELS = [
+  'MONO - 7MTs',
+  'TRIF - 7MTs',
+  'BI+MONO - 7MTs',
+  'MURETA',
+  'MONO 2CXs - 7MTs',
+  '3CXs - 7MTs',
+  'TRIF - 8MTs',
+  'BI+MONO - 8MTs',
+  '2CXs - 8MTs',
+  '3CXs - 8MTs',
+  'DUPLO T - 7MTs',
+  'DUPLO T - 8MTs',
+  'DUPLO T - 8.3MTs',
+  'DUPLO T - 9MTs',
+  'MURETA ÁGUA',
+];
+
+type Tab = 'fabricacao' | 'montagem' | 'dia';
+
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export default function ProductionModule({ user }: { user: any }) {
+  const isMainAdmin = !!user?.is_main_admin;
+  const perms = (user?.permissions || '').split(',').filter(Boolean);
+  const canFab =
+    isMainAdmin ||
+    perms.includes('production') ||
+    user?.role === 'ADMINISTRADOR' ||
+    user?.role === 'GERENTE';
+  const canAsm =
+    isMainAdmin ||
+    perms.includes('assembly') ||
+    user?.role === 'ADMINISTRADOR' ||
+    user?.role === 'GERENTE' ||
+    user?.role === 'MONTAGEM';
+
+  const [tab, setTab] = useState<Tab>(() =>
+    canFab ? 'fabricacao' : canAsm ? 'montagem' : 'dia'
+  );
+  const [error, setError] = useState('');
+  const [okMsg, setOkMsg] = useState('');
+  const [date, setDate] = useState(todayISO());
+  const [notes, setNotes] = useState('');
+  const [qty, setQty] = useState<Record<string, string>>({});
+  const [emerg, setEmerg] = useState<Record<string, string>>({});
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [days, setDays] = useState<any[]>([]);
+  const [loadingDays, setLoadingDays] = useState(false);
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+
+  const loadDays = useCallback(async () => {
+    setLoadingDays(true);
+    setError('');
+    try {
+      const qs = new URLSearchParams();
+      if (filterFrom) qs.set('date_from', filterFrom);
+      if (filterTo) qs.set('date_to', filterTo);
+      const data = await request(`/production/by-day?${qs.toString()}`);
+      setDays(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(e.message);
+      setDays([]);
+    } finally {
+      setLoadingDays(false);
+    }
+  }, [filterFrom, filterTo]);
+
+  useEffect(() => {
+    if (tab === 'dia') loadDays();
+  }, [tab, loadDays]);
+
+  const linesPreview = useMemo(() => {
+    return PRODUCTION_MODELS.map((model) => ({
+      model,
+      quantity: Number(qty[model] || 0),
+      emergency_altered: Number(emerg[model] || 0),
+    })).filter((l) => l.quantity > 0 || l.emergency_altered > 0);
+  }, [qty, emerg]);
+
+  function openConfirm() {
+    setError('');
+    if (!date) {
+      setError('Informe a data.');
+      return;
+    }
+    if (!linesPreview.length) {
+      setError('Informe a quantidade de pelo menos um modelo.');
+      return;
+    }
+    setConfirmOpen(true);
+  }
+
+  async function submitBatch() {
+    const kind = tab === 'montagem' ? 'montagem' : 'fabricacao';
+    setSaving(true);
+    setError('');
+    try {
+      await request('/production/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind,
+          production_date: date,
+          notes: notes || null,
+          lines: linesPreview,
+        }),
+      });
+      setConfirmOpen(false);
+      setQty({});
+      setEmerg({});
+      setNotes('');
+      setOkMsg('Lançamento registrado.');
+      setTab('dia');
+      loadDays();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function renderForm(kind: 'fabricacao' | 'montagem') {
+    return (
+      <section className="rounded-xl bg-white p-5 shadow-sm">
+        <h3 className="font-semibold text-slate-900">
+          {kind === 'fabricacao' ? 'Produção do dia (fábrica)' : 'Montagem de padrões'}
+        </h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Informe as quantidades. Depois confira no modal e confirme.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Data *</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded-lg border p-2"
+            />
+          </label>
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-1 block text-slate-600">Observação</span>
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full rounded-lg border p-2"
+            />
+          </label>
+        </div>
+        <div className="mt-4 max-h-[420px] overflow-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-left">Modelo</th>
+                <th className="px-3 py-2 text-left">Quantidade</th>
+                {kind === 'montagem' && (
+                  <th className="px-3 py-2 text-left">Postes alterados (emergência)</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {PRODUCTION_MODELS.map((model) => (
+                <tr key={model} className="border-t">
+                  <td className="px-3 py-2 font-medium text-slate-800">{model}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={qty[model] || ''}
+                      onChange={(e) =>
+                        setQty((s) => ({ ...s, [model]: e.target.value }))
+                      }
+                      className="w-28 rounded-lg border p-2"
+                      placeholder="0"
+                    />
+                  </td>
+                  {kind === 'montagem' && (
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={emerg[model] || ''}
+                        onChange={(e) =>
+                          setEmerg((s) => ({ ...s, [model]: e.target.value }))
+                        }
+                        className="w-28 rounded-lg border p-2"
+                        placeholder="0"
+                      />
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <button
+          type="button"
+          onClick={openConfirm}
+          className="mt-4 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white"
+        >
+          Revisar e enviar
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold">Produção</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Fabricação e montagem de postes — lançamentos diários.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {canFab && (
+          <button
+            type="button"
+            onClick={() => {
+              setTab('fabricacao');
+              setOkMsg('');
+            }}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+              tab === 'fabricacao' ? 'border-brand bg-brand text-white' : 'bg-white'
+            }`}
+          >
+            Lançar produção
+          </button>
+        )}
+        {canAsm && (
+          <button
+            type="button"
+            onClick={() => {
+              setTab('montagem');
+              setOkMsg('');
+            }}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+              tab === 'montagem' ? 'border-brand bg-brand text-white' : 'bg-white'
+            }`}
+          >
+            Lançar montagem
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setTab('dia');
+            setOkMsg('');
+          }}
+          className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+            tab === 'dia' ? 'border-brand bg-brand text-white' : 'bg-white'
+          }`}
+        >
+          Produção do dia
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+      {okMsg && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+          {okMsg}
+        </div>
+      )}
+
+      {tab === 'fabricacao' && canFab && renderForm('fabricacao')}
+      {tab === 'montagem' && canAsm && renderForm('montagem')}
+
+      {tab === 'dia' && (
+        <section className="rounded-xl bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-slate-600">De</span>
+              <input
+                type="date"
+                value={filterFrom}
+                onChange={(e) => setFilterFrom(e.target.value)}
+                className="rounded-lg border p-2"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-slate-600">Até</span>
+              <input
+                type="date"
+                value={filterTo}
+                onChange={(e) => setFilterTo(e.target.value)}
+                className="rounded-lg border p-2"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={loadDays}
+              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
+            >
+              Filtrar
+            </button>
+          </div>
+          {loadingDays ? (
+            <p className="text-sm text-slate-500">Carregando…</p>
+          ) : (
+            <div className="space-y-4">
+              {days.map((d) => (
+                <div key={d.date} className="rounded-xl border p-4">
+                  <h3 className="font-semibold text-slate-900">
+                    {d.date.split('-').reverse().join('/')}
+                  </h3>
+                  <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                    {canFab && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-slate-500">
+                          Fabricação — total {d.fabricacao_total}
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {(d.fabricacao || []).map((x: any) => (
+                            <li key={x.id} className="flex justify-between gap-2">
+                              <span>{x.model}</span>
+                              <span className="font-medium tabular-nums">{x.quantity}</span>
+                            </li>
+                          ))}
+                          {!d.fabricacao?.length && (
+                            <li className="text-slate-400">Sem lançamento</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                    {canAsm && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-slate-500">
+                          Montagem — total {d.montagem_total}
+                          {d.emergency_total > 0 && (
+                            <span className="ml-2 text-amber-700">
+                              · Emergência {d.emergency_total}
+                            </span>
+                          )}
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {(d.montagem || []).map((x: any) => (
+                            <li key={x.id} className="flex justify-between gap-2">
+                              <span>
+                                {x.model}
+                                {x.emergency_altered > 0 && (
+                                  <span className="ml-1 text-xs text-amber-700">
+                                    (+{x.emergency_altered} alt.)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-medium tabular-nums">{x.quantity}</span>
+                            </li>
+                          ))}
+                          {!d.montagem?.length && (
+                            <li className="text-slate-400">Sem lançamento</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!days.length && (
+                <p className="text-sm text-slate-400">Nenhum registro no período.</p>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Confirmar lançamento</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {tab === 'montagem' ? 'Montagem' : 'Produção'} · {date.split('-').reverse().join('/')}
+            </p>
+            <ul className="mt-4 max-h-60 space-y-1 overflow-y-auto text-sm">
+              {linesPreview.map((l) => (
+                <li key={l.model} className="flex justify-between border-b py-1">
+                  <span>{l.model}</span>
+                  <span className="tabular-nums">
+                    {l.quantity}
+                    {l.emergency_altered > 0 ? ` · alt. ${l.emergency_altered}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={submitBatch}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {saving ? 'Salvando…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

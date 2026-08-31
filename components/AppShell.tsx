@@ -1,4 +1,5 @@
 'use client';
+import ProductionModule from './ProductionModule';
 import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
@@ -57,6 +58,7 @@ const items = [
   ['users', 'Usuários', Users],
   ['settings', 'Configurações', Settings],
   ['critical-settings', 'Configurações críticas', Settings],
+  ['production', 'Produção', PackagePlus], // ou Factory se importar do lucide
 ] as const;
 
 const resource: any = {
@@ -113,6 +115,7 @@ function titleFor(k: string) {
       entry: 'Entradas',
       output: 'Saídas',
       movements: 'Movimentações',
+      production: 'Produção',
       reports: 'Relatórios',
       users: 'Usuários',
     } as any)[k] || k
@@ -958,6 +961,8 @@ export default function AppShell({
           <ScheduleModule user={user} lookups={lookups} />
         ) : page === 'commercial' ? (
           <CommercialModule user={user} />
+        ) : page === 'production' ? (
+          <ProductionModule user={user} />
         ) : page === 'settings' ? (
           <SettingsModule user={user} />
         ) : page === 'critical-settings' ? (
