@@ -140,8 +140,12 @@ def require(module: str, write: bool = False):
 
 
 def main_admin(user: User = Depends(current_user)):
-    if user.id != 1 or user.role != Role.ADMIN:
-        raise HTTPException(status_code=403, detail="Apenas o Administrador Principal pode executar esta ação")
+    if user.id != 1 or user.role not in (Role.ADMIN, Role.MONTAGEM):
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas o Administrador Principal pode executar esta ação"
+        )
+
     return user
 
 

@@ -77,7 +77,26 @@ const moduleAccess: any = {
   MOTORISTA: [],
   VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
+  MONTAGEM: ['production', 'dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
 };
+
+export const PRODUCTION_MODELS = [
+  'MONO - 7MTs',
+  'TRIF - 7MTs',
+  'BI+MONO - 7MTs',
+  'MURETA',
+  'MONO 2CXs - 7MTs',
+  '3CXs - 7MTs',
+  'TRIF - 8MTs',
+  'BI+MONO - 8MTs',
+  '2CXs - 8MTs',
+  '3CXs - 8MTs',
+  'DUPLO T - 7MTs',
+  'DUPLO T - 8MTs',
+  'DUPLO T - 8.3MTs',
+  'DUPLO T - 9MTs',
+  'MURETA ÁGUA',
+] as const;
 
 function titleFor(k: string) {
   return (
@@ -110,6 +129,8 @@ const MODULE_OPTIONS = [
   { value: 'schedule_export', label: 'Agendamento → Exportar TXT/PDF' },
   { value: 'schedule_archive', label: 'Agendamento → Arquivar semana (backup)' },
   { value: 'commercial', label: 'Comercial' },
+  { value: 'production', label: 'Produção (fábrica)' },
+  { value: 'assembly', label: 'Montagem (padrões)' },
 ];
 
 function expandPermissions(keys: string[]): string[] {
@@ -290,12 +311,21 @@ const FIELDS: Record<string, FieldDef[]> = {
   users: [
     { key: 'name', label: 'Nome', type: 'text', required: true },
     { key: 'username', label: 'Usuário', type: 'text', required: true },
+    { key: 'email', label: 'E-mail', type: 'text', required: true },
     { key: 'password', label: 'Senha temporária', type: 'text', required: true },
     {
       key: 'role',
       label: 'Perfil',
       type: 'select',
-      options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR'],
+      options: [
+        'ADMINISTRADOR',
+        'GERENTE',
+        'LOGÍSTICA',
+        'ALMOXARIFADO',
+        'MOTORISTA',
+        'VENDEDOR',
+        'MONTAGEM',
+      ],
       required: true,
     },
     { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
@@ -305,6 +335,7 @@ const FIELDS: Record<string, FieldDef[]> = {
 const USER_EDIT_FIELDS: FieldDef[] = [
   { key: 'name', label: 'Nome completo', type: 'text', required: true },
   { key: 'username', label: 'Nome de usuário (login)', type: 'text', required: true },
+  { key: 'email', label: 'E-mail', type: 'text', required: true },
   {
     key: 'role',
     label: 'Perfil',
@@ -375,6 +406,7 @@ const LABELS: Record<string, string> = {
   invoice: 'Nota fiscal',
   observation: 'Observação',
   sector: 'Setor',
+  email: 'E-mail',
 };
 
 function labelFor(k: string) {

@@ -81,6 +81,7 @@ class ProfileUpdate(BaseModel):
 class UserCreate(BaseModel):
     name: str
     username: str
+    email: str = Field(min_length=5, max_length=160)
     password: str = Field(min_length=1)
     role: Role
     permissions: str | None = None
@@ -350,9 +351,13 @@ def create_user(
     admin: User = Depends(main_admin),
     db: Session = Depends(get_db),
 ):
+    email = (body.email or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(422, "E-mail inválido")
     u = User(
         name=body.name,
         username=body.username,
+        email=email,
         password_hash=hash_password(body.password),
         role=body.role,
         permissions=body.permissions,
@@ -380,6 +385,8 @@ def update_user(
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
+    if "email" in body.data and body.data["email"] is not None:
+        body.data["email"] = str(body.data["email"]).strip().lower()
     for k in ("name", "username", "role", "active", "permissions"):
         if k in body.data:
             setattr(u, k, body.data[k])
