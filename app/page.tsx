@@ -43,27 +43,6 @@ export default function Home() {
   } | null>(null);
   const [, setTick] = useState(0);
 
-  function obterLocalizacao(): Promise<{
-    latitude?: number;
-    longitude?: number;
-  }> {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve({});
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-        },
-        () => resolve({}),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-      );
-    });
-  }
 
   useEffect(() => {
     function handleSessionExpired() {
@@ -156,14 +135,27 @@ export default function Home() {
     setBusy(true);
     setError('');
     try {
-      const localizacao = await obterLocalizacao();
+      // Só usa cache se já existir — NÃO pede permissão no login
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      try {
+        const cached = localStorage.getItem('geo_coords');
+        if (cached) {
+          const c = JSON.parse(cached);
+          latitude = c.latitude;
+          longitude = c.longitude;
+        }
+      } catch {
+        /* ignore */
+      }
+
       const result = await request('/auth/login', {
         method: 'POST',
         body: JSON.stringify({
           username,
           password,
-          latitude: localizacao.latitude,
-          longitude: localizacao.longitude,
+          latitude,
+          longitude,
         }),
       });
       setUser(result.user);

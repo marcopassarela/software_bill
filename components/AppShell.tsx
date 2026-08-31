@@ -581,6 +581,41 @@ export default function AppShell({
     } catch {}
   }, [sidebarCollapsed]);
 
+    useEffect(() => {
+    try {
+      if (localStorage.getItem('geo_coords') || localStorage.getItem('geo_denied') === '1') {
+        return;
+      }
+    } catch {
+      return;
+    }
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        try {
+          localStorage.setItem(
+            'geo_coords',
+            JSON.stringify({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            })
+          );
+        } catch {
+          /* ignore */
+        }
+      },
+      () => {
+        try {
+          localStorage.setItem('geo_denied', '1');
+        } catch {
+          /* ignore */
+        }
+      },
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 86400000 }
+    );
+  }, []);
+
   async function create(data: any) {
     setError('');
     try {
