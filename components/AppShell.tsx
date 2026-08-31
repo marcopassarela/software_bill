@@ -3501,7 +3501,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.text('LOGÍSTICAS BILL — Rota do dia', margin, y);
-    y += 6;
+    y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(
@@ -3509,8 +3509,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       margin,
       y
     );
+    y += 10;
 
     const head: string[] = [];
+
+    const head: string[] = [];
+    
     if (printFields.position) head.push('Pos');
     if (printFields.client) head.push('Cliente');
     if (printFields.service) head.push('Serviço');
