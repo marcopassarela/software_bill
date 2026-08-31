@@ -14,7 +14,18 @@ from slowapi.util import get_remote_address
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
-from .security import audit, current_user, hash_password, main_admin, require, token_for, verify_password
+from .security import (
+    audit,
+    current_user,
+    hash_password,
+    main_admin,
+    require,
+    token_for,
+    verify_password,
+    MODULES,
+    apply_auto_unblock,
+    block_detail,
+)
 
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
@@ -427,8 +438,6 @@ def login(
         db.commit()
         raise HTTPException(401, "Usuário ou senha inválidos")
 
-    # auto-desbloqueio se scheduled venceu
-    from .security import apply_auto_unblock, block_detail
 
     still_blocked = apply_auto_unblock(u)
     if still_blocked:
