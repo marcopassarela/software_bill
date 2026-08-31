@@ -3381,13 +3381,22 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     let y = 12;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('LOGÍSTICAS BILL — Agenda de Instalações', margin, y);
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Semana: ${week.label || formatDate(week.start_date)}  |  Status: ${week.status}`,
-    margin,y);
+      doc.setFontSize(14);
+      doc.text('LOGÍSTICAS BILL — Agenda de Instalações', margin, y);
+      y += 7;
+    
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+    
+      const weekTitle =
+        week.label && String(week.label).trim()
+          ? String(week.label).trim()
+          : formatDate(week.start_date);
+    
+      doc.text(`Semana: ${weekTitle}`, margin, y);
+      y += 5;
+      doc.text(`Status: ${week.status || '—'}`, margin, y);
+      y += 8;
 
     const slots = week.route_slots || [];
     const byDate: Record<string, any[]> = {};
