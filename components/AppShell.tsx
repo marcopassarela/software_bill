@@ -3512,8 +3512,6 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     y += 10;
 
     const head: string[] = [];
-
-    const head: string[] = [];
     
     if (printFields.position) head.push('Pos');
     if (printFields.client) head.push('Cliente');
