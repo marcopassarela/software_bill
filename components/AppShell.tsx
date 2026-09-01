@@ -2985,6 +2985,7 @@ function EditUserForm({
   const [values, setValues] = useState<any>({
     name: user.name || '',
     username: user.username || '',
+    email: user.email || '',
     role: user.role || '',
     permissions: user.permissions || '',
     active: user.active ? 'Sim' : 'Não',
@@ -3002,6 +3003,7 @@ function EditUserForm({
     const data: any = {
       name: values.name,
       username: values.username,
+      email: (values.email || '').trim().toLowerCase(),
       role: values.role,
       permissions: values.permissions
         ? expandPermissions(String(values.permissions).split(',').filter(Boolean)).join(
