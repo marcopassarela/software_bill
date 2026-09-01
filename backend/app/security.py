@@ -14,12 +14,18 @@ cookie = APIKeyCookie(name="gl_session", auto_error=False)
 
 MODULES = {
     Role.ADMIN: {"*"},
-    Role.MANAGER: {"dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel", "stock", "customers", "reports", "schedule", "commercial", "production"},
-    Role.LOGISTICS: {"dashboard","routes","vehicles","drivers","fuel","customers", "commercial"},
-    Role.STOCK: {"dashboard","stock", "commercial"},
+    Role.MANAGER: {
+        "dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel",
+        "stock", "customers", "reports", "schedule", "commercial", "production", "assembly",
+    },
+    Role.LOGISTICS: {"dashboard", "routes", "vehicles", "drivers", "fuel", "customers", "commercial"},
+    Role.STOCK: {"dashboard", "stock", "commercial"},
     Role.DRIVER: {"routes", "commercial"},
-    Role.VIEWER: {"dashboard","routes","vehicles","drivers","maintenance","fuel","stock","customers","reports","schedule", "commercial"},
-    Role.MONTAGEM: set("dashboard", "drivers", "stock", "customers", "reports", "schedule", "commercial", "production"),
+    Role.VIEWER: {
+        "dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel",
+        "stock", "customers", "reports", "schedule", "commercial",
+    },
+    Role.MONTAGEM: {"dashboard", "production", "assembly"},
 }
 
 # Módulos onde view e edição são diferentes: só os perfis listados aqui podem
