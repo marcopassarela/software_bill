@@ -52,7 +52,6 @@ export default function Home() {
   const [resetPass2, setResetPass2] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
 
-
   useEffect(() => {
     function handleSessionExpired() {
       setUser(undefined);
@@ -85,28 +84,34 @@ export default function Home() {
         setUser(undefined);
       });
 
-        useEffect(() => {
-        try {
-          const t = new URLSearchParams(window.location.search).get('reset_token');
-          if (t) setResetToken(t);
-        } catch {
-          /* ignore */
-        }
-      }, []);
-
     return () => {
       window.removeEventListener('session-expired', handleSessionExpired);
       window.removeEventListener('user-blocked', onBlocked);
     };
   }, []);
 
+  // Lê o token de reset da URL (?reset_token=...) — precisa ser um useEffect
+  // separado no nível do componente, nunca aninhado dentro de outro useEffect.
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('reset_token');
+      if (t) setResetToken(t);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Faz o "tick" a cada segundo enquanto houver um bloqueio com prazo,
+  // para recalcular o tempo restante exibido.
   useEffect(() => {
     if (!blockedInfo?.blocked_until) return;
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, [blockedInfo?.blocked_until]);
 
-    useEffect(() => {
+  // Quando o bloqueio é "scheduled" e o prazo expira, libera o login
+  // automaticamente sem precisar recarregar a página.
+  useEffect(() => {
     if (!blockedInfo?.blocked_until || blockedInfo.block_type !== 'scheduled') {
       return;
     }
@@ -124,12 +129,6 @@ export default function Home() {
     const id = setInterval(goLogin, 1000);
     return () => clearInterval(id);
   }, [blockedInfo]);
-
-  useEffect(() => {
-    if (!blockedInfo?.blocked_until) return;
-    const t = setInterval(() => setTick((x) => x + 1), 1000);
-    return () => clearInterval(t);
-  }, [blockedInfo?.blocked_until]);
 
   function passwordStrength(pwd: string): {
     score: number;
@@ -218,17 +217,6 @@ export default function Home() {
 
   if (blockedInfo) {
     const until = parseUntil(blockedInfo.blocked_until);
-    if (
-      blockedInfo.block_type === 'scheduled' &&
-      until &&
-      until.getTime() <= Date.now()
-    ) {
-      setTimeout(() => {
-        setBlockedInfo(null);
-        setError('Seu acesso foi liberado. Faça login novamente.');
-      }, 0);
-    }
-
     const remaining =
       until && !isNaN(until.getTime()) && until.getTime() > Date.now()
         ? formatRemaining(until)
@@ -287,7 +275,7 @@ export default function Home() {
     );
   }
 
-    async function submitForgot(e: React.FormEvent) {
+  async function submitForgot(e: React.FormEvent) {
     e.preventDefault();
     setForgotBusy(true);
     setForgotMsg('');
@@ -343,7 +331,7 @@ export default function Home() {
     }
   }
 
-    if (resetToken) {
+  if (resetToken) {
     return (
       <main className="grid min-h-screen place-items-center bg-slate-100 p-4">
         <form
@@ -506,6 +494,13 @@ export default function Home() {
             className="w-full rounded-lg border p-2"
           />
           <button
+            type="submit"
+            disabled={busy}
+            className="mt-5 w-full rounded-lg bg-brand p-2.5 font-medium text-white disabled:opacity-60"
+          >
+            {busy ? 'Entrando…' : 'Entrar'}
+          </button>
+          <button
              type="button"
              onClick={() => {
                setForgotOpen(true);
@@ -518,7 +513,7 @@ export default function Home() {
           </button>
         </form>
       </div>
-            {forgotOpen && (
+      {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Esqueci minha senha</h3>
