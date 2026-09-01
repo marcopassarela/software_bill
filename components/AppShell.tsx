@@ -4,7 +4,7 @@ import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -76,14 +76,14 @@ const resource: any = {
 
 const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
-  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
+  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial', 'production'],
   LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel', 'commercial'],
   ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'],
   ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'], // se ainda existir
   MOTORISTA: [],
   VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
-  MONTAGEM: ['production', 'dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
+  MONTAGEM: ['production'],
 };
 
 export const PRODUCTION_MODELS = [
@@ -523,12 +523,22 @@ export default function AppShell({
 }) {
   const isMainAdmin = !!user.is_main_admin;
 
-  const allowed = (key: string) =>
-    isMainAdmin ||
-    (user.permissions
-      ? user.permissions.split(',').includes(key)
-      : (moduleAccess[user.role] || []).includes('*') ||
-        (moduleAccess[user.role] || []).includes(key));
+  const allowed = (key: string) => {
+    if (isMainAdmin) return true;
+    const perms = user.permissions
+      ? user.permissions.split(',').filter(Boolean)
+      : null;
+    if (perms) {
+      if (perms.includes(key)) return true;
+      // Montagem: vê o menu Produção se tiver só assembly
+      if (key === 'production' && perms.includes('assembly')) return true;
+      return false;
+    }
+    const roleMods = moduleAccess[user.role] || [];
+    if (roleMods.includes('*') || roleMods.includes(key)) return true;
+    if (key === 'production' && roleMods.includes('assembly')) return true;
+    return false;
+  };
 
   // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
   // já entra direto na primeira aba que ele efetivamente pode ver.
@@ -550,6 +560,7 @@ export default function AppShell({
   const [editingResource, setEditingResource] = useState<any>(null);
   const [editingMovement, setEditingMovement] = useState<any>(null);
   const [showAccount, setShowAccount] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [deletePasswordModal, setDeletePasswordModal] = useState<{
@@ -592,15 +603,18 @@ export default function AppShell({
   }
 
   useEffect(() => {
-    if (!userMenuOpen) return;
+    if (!showAccount) return;
     function onDoc(e: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false);
+      if (
+        accountMenuRef.current &&
+        !accountMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowAccount(false);
       }
     }
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, [userMenuOpen]);
+  }, [showAccount]);
 
   async function onPickAvatar(file: File | null) {
     if (!file || !file.type.startsWith('image/')) return;
@@ -637,7 +651,7 @@ export default function AppShell({
         body: JSON.stringify({ avatar_data: dataUrl }),
       });
       onUserUpdate?.(u);
-      setUserMenuOpen(false);
+      setShowAccount(false);
     } catch (e: any) {
       setError?.(e.message);
     }
@@ -671,6 +685,18 @@ export default function AppShell({
       localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
     } catch {}
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!showAccount) return;
+    function onDoc(e: MouseEvent) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setShowAccount(false);
+      }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [showAccount]);
+
 
     useEffect(() => {
     try {
@@ -930,7 +956,7 @@ export default function AppShell({
         <nav className="px-2 pb-3">
           {items
             .filter(([k]) => {
-              if (k === 'critical-settings') return isMainAdmin;
+              if (k === 'critical') return isMainAdmin;
               return allowed(k);
             })
             .map(([k, label, Icon]) => (
@@ -985,27 +1011,39 @@ export default function AppShell({
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">
-              {page === 'critical-settings' ? 'Configurações críticas' : titleFor(page)}
+              page === 'critical' ? 'Configurações críticas' : titleFor(page)
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative">
+            <div className="relative" ref={accountMenuRef}>
               <button
+                type="button"
                 onClick={() => setShowAccount((s) => !s)}
-                className="rounded-full bg-white px-3 py-2 text-sm shadow-sm"
+                className="flex items-center gap-1.5 rounded-full bg-white py-1 pl-1 pr-2 text-sm shadow-sm hover:bg-slate-50"
+                aria-label="Menu da conta"
               >
-                {user.name}
+                {user.avatar_data ? (
+                  <img
+                    src={user.avatar_data}
+                    alt=""
+                    className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200"
+                  />
+                ) : (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
+                    {(user.name || user.username || '?').slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <ChevronDown size={16} className="text-slate-500" />
               </button>
               {showAccount && (
-  <AccountPanel
-    user={user}
-    onClose={() => setShowAccount(false)}
-    onUserUpdate={onUserUpdate}
-    onLogout={logout}
-  />
-)}
+                <AccountPanel
+                  user={user}
+                  onClose={() => setShowAccount(false)}
+                  onUserUpdate={onUserUpdate}
+                  onLogout={logout}
+                />
+              )}
             </div>
-            
           </div>
         </header>
 
@@ -1021,7 +1059,7 @@ export default function AppShell({
           <ProductionModule user={user} />
         ) : page === 'settings' ? (
           <SettingsModule user={user} />
-        ) : page === 'critical-settings' ? (
+        ) : page === 'critical' ? (
           <CriticalSettingsModule user={user} />
         ) : page === 'dashboard' ? (
           <Dashboard metrics={metrics} onNavigate={setPage} />
@@ -1238,8 +1276,7 @@ function AccountPanel({
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1283,14 +1320,122 @@ function AccountPanel({
     }
   }
 
+  async function onPickAvatar(file: File | null) {
+    if (!file || !file.type.startsWith('image/')) return;
+    setAvatarBusy(true);
+    setErr('');
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const max = 128;
+          let w = img.width;
+          let h = img.height;
+          if (w > h) {
+            if (w > max) {
+              h = Math.round((h * max) / w);
+              w = max;
+            }
+          } else if (h > max) {
+            w = Math.round((w * max) / h);
+            h = max;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, w, h);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL('image/jpeg', 0.72));
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Não foi possível ler a imagem'));
+        };
+        img.src = url;
+      });
+      if (dataUrl.length > 200000) {
+        throw new Error('Imagem ainda grande demais. Escolha outra mais leve.');
+      }
+      const updated = await request('/auth/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ avatar_data: dataUrl }),
+      });
+      onUserUpdate(updated);
+      setMsg('Foto atualizada.');
+    } catch (e: any) {
+      setErr(e.message || 'Erro ao enviar foto');
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarBusy(true);
+    setErr('');
+    try {
+      const updated = await request('/auth/avatar', { method: 'DELETE' });
+      onUserUpdate(updated);
+      setMsg('Foto removida.');
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
   return (
-    <div className="absolute right-0 top-14 z-10 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg space-y-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold">Minha conta</h4>
-        <button onClick={onClose} className="text-xs text-slate-500 hover:underline">
-          Fechar
-        </button>
+    <div className="absolute right-0 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg space-y-4">
+      <div className="flex items-center gap-3 border-b pb-3">
+        {user.avatar_data ? (
+          <img
+            src={user.avatar_data}
+            alt=""
+            className="h-12 w-12 rounded-full object-cover ring-2 ring-slate-100"
+          />
+        ) : (
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
+            {(user.name || user.username || '?').slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
+          <p className="truncate text-xs text-slate-500">@{user.username}</p>
+        </div>
       </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-slate-500">Foto de perfil</p>
+        <div className="flex flex-wrap gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
+            <Camera size={14} />
+            {avatarBusy ? 'Enviando…' : 'Alterar foto'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={avatarBusy}
+              onChange={(e) => {
+                onPickAvatar(e.target.files?.[0] || null);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {user.avatar_data && (
+            <button
+              type="button"
+              disabled={avatarBusy}
+              onClick={removeAvatar}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+            >
+              Remover
+            </button>
+          )}
+        </div>
+        <p className="text-[10px] text-slate-400">JPEG/PNG leve (redimensionada automaticamente).</p>
+      </div>
+
       <form onSubmit={submitName} className="space-y-2" autoComplete="off">
         <p className="text-xs font-medium text-slate-500">Nome</p>
         {nameErr && <p className="text-xs text-red-600">{nameErr}</p>}
@@ -1303,19 +1448,20 @@ function AccountPanel({
           className="w-full rounded-lg border p-2 text-sm"
         />
         <button
+          type="submit"
           disabled={savingName}
-          className="w-full rounded-lg bg-slate-100 p-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
         >
           {savingName ? 'Salvando…' : 'Salvar nome'}
         </button>
       </form>
-      <form onSubmit={submitPassword} className="space-y-2 border-t pt-4" autoComplete="off">
-        <p className="text-xs font-medium text-slate-500">Senha</p>
+
+      <form onSubmit={submitPassword} className="space-y-2 border-t pt-3" autoComplete="off">
+        <p className="text-xs font-medium text-slate-500">Alterar senha</p>
         {err && <p className="text-xs text-red-600">{err}</p>}
         {msg && <p className="text-xs text-green-600">{msg}</p>}
         <input
           type="password"
-          autoComplete="off"
           placeholder="Senha atual"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
@@ -1324,7 +1470,6 @@ function AccountPanel({
         />
         <input
           type="password"
-          autoComplete="new-password"
           placeholder="Nova senha"
           value={next}
           onChange={(e) => setNext(e.target.value)}
@@ -1333,23 +1478,26 @@ function AccountPanel({
           className="w-full rounded-lg border p-2 text-sm"
         />
         <button
+          type="submit"
           disabled={saving}
-          className="w-full rounded-lg bg-brand p-2 text-sm font-medium text-white disabled:opacity-60"
+          className="w-full rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
         >
-          {saving ? 'Salvando…' : 'Salvar nova senha'}
+          {saving ? 'Salvando…' : 'Atualizar senha'}
         </button>
-            </form>
+      </form>
+
       <button
         type="button"
         onClick={onLogout}
-        className="flex w-full items-center justify-center gap-2 rounded-lg border-t border-slate-200 pt-4 text-sm font-medium text-red-600 hover:text-red-700"
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
       >
-        <LogOut size={16} />
+        <LogOut size={14} />
         Sair
       </button>
     </div>
   );
 }
+
 
 function Dashboard({
   metrics,

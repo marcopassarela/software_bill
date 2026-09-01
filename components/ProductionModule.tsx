@@ -405,6 +405,15 @@ export default function ProductionModule({ user }: { user: any }) {
             </tbody>
           </table>
         </div>
+        <label className="mt-4 block text-sm">
+          <span className="mb-1 block text-slate-600">Observação</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="h-20 w-full rounded-lg border p-2"
+            placeholder="Opcional"
+          />
+        </label>
         <button
           type="button"
           onClick={openConfirm}
