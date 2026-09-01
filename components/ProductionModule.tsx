@@ -25,6 +25,7 @@ const PRODUCTION_MODELS = [
 ];
 
 type Tab = 'fabricacao' | 'montagem' | 'dia';
+type PrintScope = 'all' | 'fabricacao' | 'montagem';
 
 function todayISO() {
   const d = new Date();
@@ -32,6 +33,17 @@ function todayISO() {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function formatDayLabel(iso: string) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  if (isNaN(date.getTime())) return iso;
+  const w = date
+    .toLocaleDateString('pt-BR', { weekday: 'long' })
+    .replace(/^\w/, (c) => c.toUpperCase());
+  return `${w} | ${d}-${m}-${y}`;
 }
 
 export default function ProductionModule({ user }: { user: any }) {
@@ -67,129 +79,83 @@ export default function ProductionModule({ user }: { user: any }) {
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgePassword, setPurgePassword] = useState('');
   const [purgeBusy, setPurgeBusy] = useState(false);
+  const [purgeDate, setPurgeDate] = useState('');
   const [showPrintDay, setShowPrintDay] = useState(false);
   const [printDate, setPrintDate] = useState('');
-  const [printScope, setPrintScope] = useState<'all' | 'fabricacao' | 'montagem'>('all');
+  const [printScope, setPrintScope] = useState<PrintScope>('all');
 
-  function printDay(day: any, only?: 'fabricacao' | 'montagem' | 'all') {
-    const scope = only || 'all';
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    let y = 12;
-    const margin = 12;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('LOGÍSTICAS BILL — Produção', margin, y);
-    y += 7;
-    doc.setFontSize(11);
-    doc.text(formatDayLabel(day.date), margin, y);
-    y += 8;
-
-    function block(title: string, lines: any[], total: number, extra?: string) {
-      if (!lines?.length && scope !== 'all') return;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text(
-        `${title} — total: ${total}${extra ? ' ' + extra : ''}`,
-        margin,
-        y
-      );
-      y += 4;
-      const body = (lines || []).map((x: any) => [
-        x.model,
-        String(x.quantity),
-        x.emergency_altered ? String(x.emergency_altered) : '—',
-      ]);
-      if (body.length) {
-        autoTable(doc, {
-          startY: y,
-          head: [['Modelo', 'Qtd', 'Emergência']],
-          body,
-          margin: { left: margin, right: margin },
-          styles: { fontSize: 8, cellPadding: 1.2 },
-          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
-        });
-        y = (doc as any).lastAutoTable.finalY + 8;
-      } else {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.text('Sem lançamentos', margin, y);
-        y += 8;
-      }
+  const loadDays = useCallback(async () => {
+    setLoadingDays(true);
+    setError('');
+    try {
+      const qs = new URLSearchParams();
+      if (filterFrom) qs.set('date_from', filterFrom);
+      if (filterTo) qs.set('date_to', filterTo);
+      const data = await request(`/production/by-day?${qs.toString()}`);
+      setDays(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(e.message);
+      setDays([]);
+    } finally {
+      setLoadingDays(false);
     }
+  }, [filterFrom, filterTo]);
 
-    if (scope === 'all' || scope === 'fabricacao') {
-      block('Fabricação', day.fabricacao, day.fabricacao_total);
-    }
-    if (scope === 'all' || scope === 'montagem') {
-      block(
-        'Montagem',
-        day.montagem,
-        day.montagem_total,
-        day.emergency_total > 0 ? `(alt. emergência: ${day.emergency_total})` : ''
-      );
-    }
+  useEffect(() => {
+    if (tab === 'dia') loadDays();
+  }, [tab, loadDays]);
 
-    doc.save(`Producao_${day.date}_${scope}.pdf`);
-  }
+  const linesPreview = useMemo(() => {
+    return PRODUCTION_MODELS.map((model) => ({
+      model,
+      quantity: Number(qty[model] || 0),
+      emergency_altered: Number(emerg[model] || 0),
+    })).filter((l) => l.quantity > 0 || l.emergency_altered > 0);
+  }, [qty, emerg]);
 
-  function printAllFiltered() {
-    if (!days.length) {
-      setError('Nada para imprimir no filtro atual.');
+  function openConfirm() {
+    setError('');
+    setOkMsg('');
+    if (!date) {
+      setError('Informe a data.');
       return;
     }
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    let y = 12;
-    const margin = 12;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('LOGÍSTICAS BILL — Produção (período)', margin, y);
-    y += 8;
-
-    days.forEach((day: any) => {
-      if (y > 260) {
-        doc.addPage();
-        y = 12;
-      }
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(formatDayLabel(day.date), margin, y);
-      y += 5;
-      const rows: any[] = [];
-      (day.fabricacao || []).forEach((x: any) =>
-        rows.push(['Fabricação', x.model, x.quantity, x.emergency_altered || '—'])
-      );
-      (day.montagem || []).forEach((x: any) =>
-        rows.push(['Montagem', x.model, x.quantity, x.emergency_altered || '—'])
-      );
-      if (rows.length) {
-        autoTable(doc, {
-          startY: y,
-          head: [['Tipo', 'Modelo', 'Qtd', 'Emergência']],
-          body: rows,
-          margin: { left: margin, right: margin },
-          styles: { fontSize: 7, cellPadding: 1 },
-          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
-        });
-        y = (doc as any).lastAutoTable.finalY + 10;
-      }
-    });
-    const name = `Producao_periodo_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`;
-    doc.save(name);
+    if (!linesPreview.length) {
+      setError('Informe a quantidade de pelo menos um modelo.');
+      return;
+    }
+    setConfirmOpen(true);
   }
 
-    function formatDayLabel(iso: string) {
-    if (!iso) return '—';
-    const [y, m, d] = iso.split('-');
-    const date = new Date(Number(y), Number(m) - 1, Number(d));
-    if (isNaN(date.getTime())) return iso;
-    const w = date
-      .toLocaleDateString('pt-BR', { weekday: 'long' })
-      .replace(/^\w/, (c) => c.toUpperCase());
-    return `${w} | ${d}-${m}-${y}`;
+  async function submitBatch() {
+    const kind = tab === 'montagem' ? 'montagem' : 'fabricacao';
+    setSaving(true);
+    setError('');
+    try {
+      await request('/production/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind,
+          production_date: date,
+          notes: notes || null,
+          lines: linesPreview,
+        }),
+      });
+      setConfirmOpen(false);
+      setQty({});
+      setEmerg({});
+      setNotes('');
+      setOkMsg('Lançamento registrado.');
+      setTab('dia');
+      loadDays();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function buildDayRows(day: any, scope: 'all' | 'fabricacao' | 'montagem') {
+  function buildDayRows(day: any, scope: PrintScope) {
     const rows: (string | number)[][] = [];
     if (scope === 'all' || scope === 'fabricacao') {
       (day.fabricacao || []).forEach((x: any) => {
@@ -205,13 +171,14 @@ export default function ProductionModule({ user }: { user: any }) {
   }
 
   function printSelectedDay() {
+    setError('');
     if (!printDate) {
       setError('Selecione o dia para imprimir.');
       return;
     }
     const day = days.find((d: any) => d.date === printDate);
     if (!day) {
-      setError('Não há lançamento nesse dia no filtro atual. Ajuste De/Até e Filtrar.');
+      setError('Não há lançamento nesse dia no filtro atual. Use Filtrar.');
       return;
     }
     const rows = buildDayRows(day, printScope);
@@ -288,8 +255,10 @@ export default function ProductionModule({ user }: { user: any }) {
     const ws = XLSX.utils.json_to_sheet(flat);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Producao');
-    const name = `backup_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`;
-    XLSX.writeFile(wb, name);
+    XLSX.writeFile(
+      wb,
+      `backup_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`
+    );
     setOkMsg(`Backup Excel gerado (${flat.length} linhas).`);
   }
 
@@ -308,11 +277,7 @@ export default function ProductionModule({ user }: { user: any }) {
     y += 6;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(
-      `Filtro: ${filterFrom || '…'} → ${filterTo || '…'}`,
-      margin,
-      y
-    );
+    doc.text(`Filtro: ${filterFrom || '…'} → ${filterTo || '…'}`, margin, y);
     y += 6;
 
     const body: any[] = [];
@@ -335,103 +300,37 @@ export default function ProductionModule({ user }: { user: any }) {
     setOkMsg('Backup PDF do período gerado.');
   }
 
-  async function openPurgeAfterBackup(kind: 'excel' | 'pdf') {
-    if (kind === 'excel') backupExcel();
-    else backupPdfPeriodo();
+  function openPurgeDay(dayIso: string) {
+    setPurgeDate(dayIso);
     setPurgePassword('');
     setPurgeOpen(true);
   }
 
   async function confirmPurge() {
+    if (!purgeDate) return;
     setPurgeBusy(true);
     setError('');
     try {
+      const dia = purgeDate;
       const res = await request('/production/purge', {
         method: 'POST',
         body: JSON.stringify({
           password: purgePassword,
-          date_from: filterFrom || null,
-          date_to: filterTo || null,
+          date_from: dia,
+          date_to: dia,
           confirm_text: 'APAGAR PRODUCAO',
         }),
       });
       setPurgeOpen(false);
-      setOkMsg(`Apagados ${res.deleted} registros do período filtrado.`);
+      setPurgeDate('');
+      setOkMsg(
+        `Apagados ${res.deleted} registros do dia ${dia.split('-').reverse().join('/')}.`
+      );
       loadDays();
     } catch (e: any) {
       setError(e.message);
     } finally {
       setPurgeBusy(false);
-    }
-  }
-
-  const loadDays = useCallback(async () => {
-    setLoadingDays(true);
-    setError('');
-    try {
-      const qs = new URLSearchParams();
-      if (filterFrom) qs.set('date_from', filterFrom);
-      if (filterTo) qs.set('date_to', filterTo);
-      const data = await request(`/production/by-day?${qs.toString()}`);
-      setDays(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(e.message);
-      setDays([]);
-    } finally {
-      setLoadingDays(false);
-    }
-  }, [filterFrom, filterTo]);
-
-  useEffect(() => {
-    if (tab === 'dia') loadDays();
-  }, [tab, loadDays]);
-
-  const linesPreview = useMemo(() => {
-    return PRODUCTION_MODELS.map((model) => ({
-      model,
-      quantity: Number(qty[model] || 0),
-      emergency_altered: Number(emerg[model] || 0),
-    })).filter((l) => l.quantity > 0 || l.emergency_altered > 0);
-  }, [qty, emerg]);
-
-  function openConfirm() {
-    setError('');
-    if (!date) {
-      setError('Informe a data.');
-      return;
-    }
-    if (!linesPreview.length) {
-      setError('Informe a quantidade de pelo menos um modelo.');
-      return;
-    }
-    setConfirmOpen(true);
-  }
-
-  async function submitBatch() {
-    const kind = tab === 'montagem' ? 'montagem' : 'fabricacao';
-    setSaving(true);
-    setError('');
-    try {
-      await request('/production/batch', {
-        method: 'POST',
-        body: JSON.stringify({
-          kind,
-          production_date: date,
-          notes: notes || null,
-          lines: linesPreview,
-        }),
-      });
-      setConfirmOpen(false);
-      setQty({});
-      setEmerg({});
-      setNotes('');
-      setOkMsg('Lançamento registrado.');
-      setTab('dia');
-      loadDays();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -538,6 +437,7 @@ export default function ProductionModule({ user }: { user: any }) {
             onClick={() => {
               setTab('fabricacao');
               setOkMsg('');
+              setError('');
             }}
             className={`rounded-lg border px-3 py-2 text-sm font-medium ${
               tab === 'fabricacao' ? 'border-brand bg-brand text-white' : 'bg-white'
@@ -552,6 +452,7 @@ export default function ProductionModule({ user }: { user: any }) {
             onClick={() => {
               setTab('montagem');
               setOkMsg('');
+              setError('');
             }}
             className={`rounded-lg border px-3 py-2 text-sm font-medium ${
               tab === 'montagem' ? 'border-brand bg-brand text-white' : 'bg-white'
@@ -565,6 +466,7 @@ export default function ProductionModule({ user }: { user: any }) {
           onClick={() => {
             setTab('dia');
             setOkMsg('');
+            setError('');
           }}
           className={`rounded-lg border px-3 py-2 text-sm font-medium ${
             tab === 'dia' ? 'border-brand bg-brand text-white' : 'bg-white'
@@ -609,7 +511,7 @@ export default function ProductionModule({ user }: { user: any }) {
                 className="rounded-lg border p-2"
               />
             </label>
-                        <button
+            <button
               type="button"
               onClick={loadDays}
               className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
@@ -641,49 +543,25 @@ export default function ProductionModule({ user }: { user: any }) {
             >
               Backup PDF (período)
             </button>
-            <button
-              type="button"
-              onClick={() => openPurgeAfterBackup('excel')}
-              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700"
-            >
-              Backup Excel e apagar…
-            </button>
           </div>
+
           {loadingDays ? (
             <p className="text-sm text-slate-500">Carregando…</p>
           ) : (
             <div className="space-y-4">
               {days.map((d) => (
                 <div key={d.date} className="rounded-xl border p-4">
-                  <h3 className="font-semibold text-slate-900">
-                    {d.date.split('-').reverse().join('/')}
-                  </h3>
-                                    <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-semibold text-slate-900">
+                      {formatDayLabel(d.date)}
+                    </h3>
                     <button
                       type="button"
-                      onClick={() => printDay(d, 'all')}
-                      className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
+                      onClick={() => openPurgeDay(d.date)}
+                      className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
                     >
-                      Imprimir dia
+                      Apagar este dia
                     </button>
-                    {canFab && (
-                      <button
-                        type="button"
-                        onClick={() => printDay(d, 'fabricacao')}
-                        className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
-                      >
-                        Só fabricação
-                      </button>
-                    )}
-                    {canAsm && (
-                      <button
-                        type="button"
-                        onClick={() => printDay(d, 'montagem')}
-                        className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
-                      >
-                        Só montagem
-                      </button>
-                    )}
                   </div>
                   <div className="mt-3 grid gap-4 lg:grid-cols-2">
                     {canFab && (
@@ -745,7 +623,7 @@ export default function ProductionModule({ user }: { user: any }) {
         </section>
       )}
 
-            {confirmOpen && (
+      {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Confirmar lançamento</h3>
@@ -785,7 +663,7 @@ export default function ProductionModule({ user }: { user: any }) {
         </div>
       )}
 
-            {showPrintDay && (
+      {showPrintDay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Imprimir produção do dia</h3>
@@ -811,9 +689,7 @@ export default function ProductionModule({ user }: { user: any }) {
               <span className="mb-1 block text-slate-600">Conteúdo</span>
               <select
                 value={printScope}
-                onChange={(e) =>
-                  setPrintScope(e.target.value as 'all' | 'fabricacao' | 'montagem')
-                }
+                onChange={(e) => setPrintScope(e.target.value as PrintScope)}
                 className="w-full rounded-lg border p-2"
               >
                 <option value="all">Fabricação + Montagem</option>
@@ -844,16 +720,13 @@ export default function ProductionModule({ user }: { user: any }) {
       {purgeOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-red-700">Apagar produção</h3>
+            <h3 className="text-lg font-semibold text-red-700">Apagar produção do dia</h3>
             <p className="mt-2 text-sm text-slate-600">
-              O backup JSON já foi baixado. Isso apaga os lançamentos do filtro atual
-              {filterFrom || filterTo
-                ? ` (${filterFrom || '…'} → ${filterTo || '…'})`
-                : ' (todos)'}
-              .
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              A exclusão exige sua senha. O texto de confirmação é enviado automaticamente.
+              Será apagado somente o dia{' '}
+              <strong>
+                {purgeDate ? purgeDate.split('-').reverse().join('/') : '—'}
+              </strong>
+              . Use Backup Excel antes se ainda precisar dos dados.
             </p>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">Sua senha *</span>
