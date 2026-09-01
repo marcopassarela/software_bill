@@ -51,19 +51,22 @@ export default function ProductionModule({ user }: { user: any }) {
   const perms = (user?.permissions || '').split(',').filter(Boolean);
   const canFab =
     isMainAdmin ||
-    perms.includes('production') ||
-    user?.role === 'ADMINISTRADOR' ||
-    user?.role === 'GERENTE';
-  const canAsm =
-    isMainAdmin ||
-    perms.includes('assembly') ||
     user?.role === 'ADMINISTRADOR' ||
     user?.role === 'GERENTE' ||
-    user?.role === 'MONTAGEM';
+    perms.includes('production');
 
-  const [tab, setTab] = useState<Tab>(() =>
-    canFab ? 'fabricacao' : canAsm ? 'montagem' : 'dia'
-  );
+  const canAsm =
+    isMainAdmin ||
+    user?.role === 'ADMINISTRADOR' ||
+    user?.role === 'GERENTE' ||
+    perms.includes('assembly');
+  // MONTAGEM sem "assembly" nas permissões → não vê montagem
+
+  const [tab, setTab] = useState<Tab>(() => {
+    if (canFab) return 'fabricacao';
+    if (canAsm) return 'montagem';
+    return 'dia';
+  });
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -350,14 +353,6 @@ export default function ProductionModule({ user }: { user: any }) {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-lg border p-2"
-            />
-          </label>
-          <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Observação</span>
-            <input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
               className="w-full rounded-lg border p-2"
             />
           </label>

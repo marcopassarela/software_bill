@@ -192,7 +192,9 @@ def serialize(o):
 def serialize_user(o):
     d = serialize(o)
     d.pop("password_hash", None)
+    # avatar pode ser grande; front usa avatar_data se existir
     d["is_main_admin"] = o.id == 1
+    d["has_avatar"] = bool(getattr(o, "avatar_data", None))
     return d
 
 
@@ -2045,15 +2047,70 @@ def _send_reset_email(to_email: str, reset_link: str) -> bool:
     from_addr = os.environ.get("SMTP_FROM") or user
     if not host or not user or not password or not from_addr:
         return False
+
+    front = (os.environ.get("FRONTEND_URL") or "https://logisticasbill.vercel.app").rstrip("/")
+    logo_url = f"{front}/icon2.png"
+
+    text = (
+        "LOGÍSTICAS BILL — Redefinição de senha\n\n"
+        "Recebemos um pedido para redefinir a senha da sua conta.\n"
+        f"Abra o link abaixo (válido por 1 hora):\n{reset_link}\n\n"
+        "Se você não solicitou, ignore este e-mail.\n"
+    )
+    html = f"""\
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head><meta charset="utf-8"/></head>
+        <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#16253a;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:24px 12px;">
+            <tr><td align="center">
+              <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+                <tr>
+                  <td style="background:#0f2846;padding:20px 24px;text-align:center;">
+                    <img src="{logo_url}" alt="Logísticas Bill" width="56" height="56" style="display:inline-block;border:0;"/>
+                    <div style="color:#ffffff;font-size:18px;font-weight:bold;margin-top:10px;letter-spacing:0.5px;">LOGÍSTICAS BILL</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 24px;">
+                    <h1 style="margin:0 0 12px;font-size:20px;color:#0f2846;">Redefinição de senha</h1>
+                    <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#475569;">
+                      Recebemos um pedido para redefinir a senha da sua conta no sistema.
+                      Clique no botão abaixo. Este link é <strong>válido por 1 hora</strong>.
+                    </p>
+                    <p style="text-align:center;margin:28px 0;">
+                      <a href="{reset_link}"
+                         style="display:inline-block;background:#0e7490;color:#ffffff;text-decoration:none;
+                                font-size:14px;font-weight:bold;padding:12px 28px;border-radius:8px;">
+                        Redefinir minha senha
+                      </a>
+                    </p>
+                    <p style="margin:0 0 8px;font-size:12px;color:#64748b;line-height:1.4;">
+                      Se o botão não funcionar, copie e cole no navegador:<br/>
+                      <a href="{reset_link}" style="color:#0e7490;word-break:break-all;">{reset_link}</a>
+                    </p>
+                    <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">
+                      Se você não solicitou esta alteração, ignore este e-mail. Nenhuma senha será alterada.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f8fafc;padding:14px 24px;text-align:center;font-size:11px;color:#94a3b8;">
+                    © Logísticas Bill — sistema interno · não responda este e-mail
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """
     msg = EmailMessage()
     msg["Subject"] = "Logísticas Bill — redefinir senha"
     msg["From"] = from_addr
     msg["To"] = to_email
-    msg.set_content(
-        "Você pediu para redefinir a senha do sistema Logísticas Bill.\n\n"
-        f"Abra o link (válido por 1 hora):\n{reset_link}\n\n"
-        "Se não foi você, ignore este e-mail.\n"
-    )
+    msg.set_content(text)
+    msg.add_alternative(html, subtype="html")
     try:
         with smtplib.SMTP(host, port, timeout=20) as s:
             s.starttls()
@@ -2137,10 +2194,14 @@ def reset_password(
     if not row or row.used_at is not None:
         raise HTTPException(400, "Link inválido ou já usado")
     exp = row.expires_at
+    if exp is None:
+        raise HTTPException(400, "Link inválido")
     if exp.tzinfo is None:
         exp = exp.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > exp:
-        raise HTTPException(400, "Link expirado. Solicite um novo.")
+    else:
+        exp = exp.astimezone(timezone.utc)
+    if datetime.now(timezone.utc) >= exp:
+        raise HTTPException(400, "Link expirado. Solicite a redefinição novamente.")
 
     u = db.get(User, row.user_id)
     if not u or not u.active:
@@ -2153,3 +2214,44 @@ def reset_password(
     audit(db, u, "RESET_PASSWORD", "auth", request=request)
     db.commit()
     return {"ok": True, "detail": "Senha alterada. Faça login."}
+
+
+class AvatarBody(BaseModel):
+    avatar_data: str  # data:image/jpeg;base64,...
+
+
+@app.post("/auth/avatar")
+def upload_avatar(
+    body: AvatarBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    raw = (body.avatar_data or "").strip()
+    if not raw.startswith("data:image/"):
+        raise HTTPException(400, "Envie uma imagem (JPEG ou PNG)")
+    # ~150 KB em base64
+    if len(raw) > 200_000:
+        raise HTTPException(400, "Imagem muito grande. Use uma foto leve (até ~150 KB).")
+    u = db.get(User, user.id)
+    if not u:
+        raise HTTPException(404)
+    u.avatar_data = raw
+    audit(db, u, "AVATAR", "auth", u.id, request)
+    db.commit()
+    return serialize_user(u)
+
+
+@app.delete("/auth/avatar")
+def delete_avatar(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    u = db.get(User, user.id)
+    if not u:
+        raise HTTPException(404)
+    u.avatar_data = None
+    audit(db, u, "AVATAR_REMOVE", "auth", u.id, request)
+    db.commit()
+    return serialize_user(u)

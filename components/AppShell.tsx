@@ -10,23 +10,27 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
 import {
-  BarChart3,
-  Box,
-  ClipboardList,
-  Fuel,
-  Settings,
-  Truck,
-  Users,
-  UserRound,
-  Wrench,
-  LogOut,
   LayoutDashboard,
-  PackagePlus,
-  PackageMinus,
-  Menu,
-  X,
   CalendarDays,
   ShoppingCart,
+  Truck,
+  UserRound,
+  Wrench,
+  Fuel,
+  Factory,
+  Boxes,
+  PackagePlus,
+  PackageMinus,
+  ArrowLeftRight,
+  FileBarChart,
+  Users,
+  Settings,
+  ShieldAlert,
+  LogOut,
+  Menu,
+  X,
+  ChevronDown,
+  Camera,
 } from 'lucide-react';
 import {
   PieChart,
@@ -50,15 +54,15 @@ const items = [
   ['drivers', 'Motoristas', UserRound],
   ['maintenance', 'Manutenção', Wrench],
   ['fuel', 'Combustível', Fuel],
-  ['production', 'Produção', PackagePlus],
+  ['production', 'Produção', Factory],
+  ['stock', 'Estoque', Boxes],
   ['entry', 'Entradas', PackagePlus],
   ['output', 'Saídas', PackageMinus],
-  ['stock', 'Estoque', Box],
-  ['movements', 'Movimentações', ClipboardList],
-  ['reports', 'Relatórios', BarChart3],
+  ['movements', 'Movimentações', ArrowLeftRight],
+  ['reports', 'Relatórios', FileBarChart],
   ['users', 'Usuários', Users],
   ['settings', 'Configurações', Settings],
-  ['critical-settings', 'Configurações críticas', Settings],
+  ['critical', 'Configurações críticas', ShieldAlert],
 ] as const;
 
 const resource: any = {
@@ -584,6 +588,58 @@ export default function AppShell({
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [userMenuOpen]);
+
+  async function onPickAvatar(file: File | null) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 128;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > max) {
+            h = Math.round((h * max) / w);
+            w = max;
+          }
+        } else if (h > max) {
+          w = Math.round((w * max) / h);
+          h = max;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+    try {
+      const u = await request('/auth/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ avatar_data: dataUrl }),
+      });
+      onUserUpdate?.(u);
+      setUserMenuOpen(false);
+    } catch (e: any) {
+      setError?.(e.message);
     }
   }
 
@@ -1182,6 +1238,8 @@ function AccountPanel({
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
