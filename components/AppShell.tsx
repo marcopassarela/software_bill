@@ -50,15 +50,15 @@ const items = [
   ['drivers', 'Motoristas', UserRound],
   ['maintenance', 'Manutenção', Wrench],
   ['fuel', 'Combustível', Fuel],
-  ['stock', 'Estoque', Box],
+  ['production', 'Produção', PackagePlus],
   ['entry', 'Entradas', PackagePlus],
   ['output', 'Saídas', PackageMinus],
+  ['stock', 'Estoque', Box],
   ['movements', 'Movimentações', ClipboardList],
   ['reports', 'Relatórios', BarChart3],
   ['users', 'Usuários', Users],
   ['settings', 'Configurações', Settings],
   ['critical-settings', 'Configurações críticas', Settings],
-  ['production', 'Produção', PackagePlus], // ou Factory se importar do lucide
 ] as const;
 
 const resource: any = {
