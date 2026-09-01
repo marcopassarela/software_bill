@@ -1937,3 +1937,79 @@ def production_by_day(
             days[key]["emergency_total"] += item["emergency_altered"]
 
     return sorted(days.values(), key=lambda x: x["date"], reverse=True)
+
+@app.get("/production/export")
+def export_production(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    kind: str | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """JSON completo para backup (antes de apagar)."""
+    if not (_can_prod(user, "production") or _can_prod(user, "assembly")):
+        raise HTTPException(403, "Sem permissão")
+    q = select(ProductionRecord).order_by(
+        ProductionRecord.production_date, ProductionRecord.kind, ProductionRecord.model
+    )
+    if date_from:
+        q = q.where(ProductionRecord.production_date >= date_from)
+    if date_to:
+        q = q.where(ProductionRecord.production_date <= date_to)
+    if kind in ("fabricacao", "montagem"):
+        q = q.where(ProductionRecord.kind == kind)
+    rows = db.scalars(q).all()
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "date_from": date_from.isoformat() if date_from else None,
+        "date_to": date_to.isoformat() if date_to else None,
+        "count": len(rows),
+        "records": [serialize(r) for r in rows],
+    }
+
+
+class ProductionPurgeBody(BaseModel):
+    password: str
+    date_from: date | None = None
+    date_to: date | None = None
+    confirm_text: str  # deve ser APAGAR PRODUCAO
+
+
+@app.post("/production/purge")
+def purge_production(
+    body: ProductionPurgeBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Apaga lançamentos (só depois do backup no front). Exige senha."""
+    if user.id != 1 and user.role != Role.ADMIN and user.role != Role.MANAGER:
+        # ajuste: só admin/gerente
+        if not getattr(user, "is_main_admin", False) and user.id != 1:
+            if user.role not in (Role.ADMIN, Role.MANAGER):
+                raise HTTPException(403, "Apenas administrador ou gerente")
+    if body.confirm_text.strip().upper() != "APAGAR PRODUCAO":
+        raise HTTPException(400, "Digite APAGAR PRODUCAO para confirmar")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(403, "Senha incorreta")
+
+    q = select(ProductionRecord)
+    if body.date_from:
+        q = q.where(ProductionRecord.production_date >= body.date_from)
+    if body.date_to:
+        q = q.where(ProductionRecord.production_date <= body.date_to)
+    rows = db.scalars(q).all()
+    n = len(rows)
+    for r in rows:
+        db.delete(r)
+    audit(
+        db,
+        user,
+        "PRODUCAO_PURGE",
+        "production",
+        None,
+        request,
+        details=f"Apagados {n} registros",
+    )
+    db.commit()
+    return {"ok": True, "deleted": n}

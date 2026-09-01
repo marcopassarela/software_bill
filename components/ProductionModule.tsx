@@ -1,5 +1,7 @@
 'use client';
 
+import { jsPDF } from 'jspdf';
+import { autoTable } from 'jspdf-autotable';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { request } from '@/lib/api';
 
@@ -61,6 +63,173 @@ export default function ProductionModule({ user }: { user: any }) {
   const [loadingDays, setLoadingDays] = useState(false);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgePassword, setPurgePassword] = useState('');
+  const [purgeBusy, setPurgeBusy] = useState(false);
+
+    function formatDayLabel(iso: string) {
+    const [y, m, d] = iso.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    const w = date
+      .toLocaleDateString('pt-BR', { weekday: 'long' })
+      .replace(/^\w/, (c) => c.toUpperCase());
+    return `${w} | ${d}-${m}-${y}`;
+  }
+
+  function printDay(day: any, only?: 'fabricacao' | 'montagem' | 'all') {
+    const scope = only || 'all';
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    let y = 12;
+    const margin = 12;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGÍSTICAS BILL — Produção', margin, y);
+    y += 7;
+    doc.setFontSize(11);
+    doc.text(formatDayLabel(day.date), margin, y);
+    y += 8;
+
+    function block(title: string, lines: any[], total: number, extra?: string) {
+      if (!lines?.length && scope !== 'all') return;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(
+        `${title} — total: ${total}${extra ? ' ' + extra : ''}`,
+        margin,
+        y
+      );
+      y += 4;
+      const body = (lines || []).map((x: any) => [
+        x.model,
+        String(x.quantity),
+        x.emergency_altered ? String(x.emergency_altered) : '—',
+      ]);
+      if (body.length) {
+        autoTable(doc, {
+          startY: y,
+          head: [['Modelo', 'Qtd', 'Emergência']],
+          body,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 8, cellPadding: 1.2 },
+          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 8;
+      } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text('Sem lançamentos', margin, y);
+        y += 8;
+      }
+    }
+
+    if (scope === 'all' || scope === 'fabricacao') {
+      block('Fabricação', day.fabricacao, day.fabricacao_total);
+    }
+    if (scope === 'all' || scope === 'montagem') {
+      block(
+        'Montagem',
+        day.montagem,
+        day.montagem_total,
+        day.emergency_total > 0 ? `(alt. emergência: ${day.emergency_total})` : ''
+      );
+    }
+
+    doc.save(`Producao_${day.date}_${scope}.pdf`);
+  }
+
+  function printAllFiltered() {
+    if (!days.length) {
+      setError('Nada para imprimir no filtro atual.');
+      return;
+    }
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    let y = 12;
+    const margin = 12;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGÍSTICAS BILL — Produção (período)', margin, y);
+    y += 8;
+
+    days.forEach((day: any) => {
+      if (y > 260) {
+        doc.addPage();
+        y = 12;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(formatDayLabel(day.date), margin, y);
+      y += 5;
+      const rows: any[] = [];
+      (day.fabricacao || []).forEach((x: any) =>
+        rows.push(['Fabricação', x.model, x.quantity, x.emergency_altered || '—'])
+      );
+      (day.montagem || []).forEach((x: any) =>
+        rows.push(['Montagem', x.model, x.quantity, x.emergency_altered || '—'])
+      );
+      if (rows.length) {
+        autoTable(doc, {
+          startY: y,
+          head: [['Tipo', 'Modelo', 'Qtd', 'Emergência']],
+          body: rows,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 7, cellPadding: 1 },
+          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+    });
+    const name = `Producao_periodo_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`;
+    doc.save(name);
+  }
+
+  async function downloadBackupThenMaybePurge(openPurge: boolean) {
+    setError('');
+    try {
+      const qs = new URLSearchParams();
+      if (filterFrom) qs.set('date_from', filterFrom);
+      if (filterTo) qs.set('date_to', filterTo);
+      const data = await request(`/production/export?${qs.toString()}`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `backup_producao_${filterFrom || 'all'}_${filterTo || 'all'}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setOkMsg(`Backup baixado (${data.count || 0} registros).`);
+      if (openPurge) {
+        setPurgePassword('');
+        setPurgeOpen(true);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function confirmPurge() {
+    setPurgeBusy(true);
+    setError('');
+    try {
+      const res = await request('/production/purge', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: purgePassword,
+          date_from: filterFrom || null,
+          date_to: filterTo || null,
+          confirm_text: 'APAGAR PRODUCAO',
+        }),
+      });
+      setPurgeOpen(false);
+      setOkMsg(`Apagados ${res.deleted} registros do período filtrado.`);
+      loadDays();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setPurgeBusy(false);
+    }
+  }
 
   const loadDays = useCallback(async () => {
     setLoadingDays(true);
@@ -306,12 +475,33 @@ export default function ProductionModule({ user }: { user: any }) {
                 className="rounded-lg border p-2"
               />
             </label>
-            <button
+                        <button
               type="button"
               onClick={loadDays}
-              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
+            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
             >
               Filtrar
+            </button>
+            <button
+              type="button"
+              onClick={printAllFiltered}
+              className="rounded-lg border px-4 py-2 text-sm font-medium"
+            >
+              Imprimir período
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadBackupThenMaybePurge(false)}
+              className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700"
+            >
+              Backup JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadBackupThenMaybePurge(true)}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700"
+            >
+              Backup e apagar…
             </button>
           </div>
           {loadingDays ? (
@@ -323,6 +513,33 @@ export default function ProductionModule({ user }: { user: any }) {
                   <h3 className="font-semibold text-slate-900">
                     {d.date.split('-').reverse().join('/')}
                   </h3>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => printDay(d, 'all')}
+                      className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
+                    >
+                      Imprimir dia
+                    </button>
+                    {canFab && (
+                      <button
+                        type="button"
+                        onClick={() => printDay(d, 'fabricacao')}
+                        className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
+                      >
+                        Só fabricação
+                      </button>
+                    )}
+                    {canAsm && (
+                      <button
+                        type="button"
+                        onClick={() => printDay(d, 'montagem')}
+                        className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
+                      >
+                        Só montagem
+                      </button>
+                    )}
+                  </div>
                   <div className="mt-3 grid gap-4 lg:grid-cols-2">
                     {canFab && (
                       <div>
@@ -383,12 +600,13 @@ export default function ProductionModule({ user }: { user: any }) {
         </section>
       )}
 
-      {confirmOpen && (
+            {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Confirmar lançamento</h3>
             <p className="mt-1 text-sm text-slate-500">
-              {tab === 'montagem' ? 'Montagem' : 'Produção'} · {date.split('-').reverse().join('/')}
+              {tab === 'montagem' ? 'Montagem' : 'Produção'} ·{' '}
+              {date.split('-').reverse().join('/')}
             </p>
             <ul className="mt-4 max-h-60 space-y-1 overflow-y-auto text-sm">
               {linesPreview.map((l) => (
@@ -416,6 +634,50 @@ export default function ProductionModule({ user }: { user: any }) {
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
                 {saving ? 'Salvando…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {purgeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-700">Apagar produção</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              O backup JSON já foi baixado. Isso apaga os lançamentos do filtro atual
+              {filterFrom || filterTo
+                ? ` (${filterFrom || '…'} → ${filterTo || '…'})`
+                : ' (todos)'}
+              .
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              A exclusão exige sua senha. O texto de confirmação é enviado automaticamente.
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Sua senha *</span>
+              <input
+                type="password"
+                value={purgePassword}
+                onChange={(e) => setPurgePassword(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPurgeOpen(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={purgeBusy || !purgePassword}
+                onClick={confirmPurge}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {purgeBusy ? 'Apagando…' : 'Confirmar exclusão'}
               </button>
             </div>
           </div>

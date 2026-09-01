@@ -1998,6 +1998,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
   function toggle(v: string) {
     setSelected((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]));
   }
+  
   async function loadPreview() {
     if (!selected.length) {
       setErr('Selecione pelo menos um módulo.');
