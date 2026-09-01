@@ -1,5 +1,6 @@
 'use client';
 import ProductionModule from './ProductionModule';
+import AvatarCropper from './AvatarCropper';
 import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
@@ -1277,6 +1278,7 @@ function AccountPanel({
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1320,42 +1322,18 @@ function AccountPanel({
     }
   }
 
-  async function onPickAvatar(file: File | null) {
+  function onPickAvatar(file: File | null) {
     if (!file || !file.type.startsWith('image/')) return;
+    setErr('');
+    setPendingAvatarFile(file); // abre o modal de recorte; o envio só acontece em saveCroppedAvatar
+  }
+
+  async function saveCroppedAvatar(dataUrl: string) {
+    setPendingAvatarFile(null);
     setAvatarBusy(true);
     setErr('');
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        img.onload = () => {
-          const max = 128;
-          let w = img.width;
-          let h = img.height;
-          if (w > h) {
-            if (w > max) {
-              h = Math.round((h * max) / w);
-              w = max;
-            }
-          } else if (h > max) {
-            w = Math.round((w * max) / h);
-            h = max;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, w, h);
-          URL.revokeObjectURL(url);
-          resolve(canvas.toDataURL('image/jpeg', 0.72));
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(url);
-          reject(new Error('Não foi possível ler a imagem'));
-        };
-        img.src = url;
-      });
-      if (dataUrl.length > 200000) {
+      if (dataUrl.length > 300000) {
         throw new Error('Imagem ainda grande demais. Escolha outra mais leve.');
       }
       const updated = await request('/auth/avatar', {
@@ -1494,6 +1472,14 @@ function AccountPanel({
         <LogOut size={14} />
         Sair
       </button>
+
+      {pendingAvatarFile && (
+        <AvatarCropper
+          file={pendingAvatarFile}
+          onCancel={() => setPendingAvatarFile(null)}
+          onConfirm={saveCroppedAvatar}
+        />
+      )}
     </div>
   );
 }
