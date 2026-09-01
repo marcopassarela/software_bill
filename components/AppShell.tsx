@@ -1011,7 +1011,7 @@ export default function AppShell({
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">
-              page === 'critical' ? 'Configurações críticas' : titleFor(page)
+              {page === 'critical' ? 'Configurações críticas' : titleFor(page)}
             </h1>
           </div>
           <div className="flex items-center gap-2">
