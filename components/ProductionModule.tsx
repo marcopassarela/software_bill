@@ -2,6 +2,7 @@
 
 import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { request } from '@/lib/api';
 
@@ -66,15 +67,9 @@ export default function ProductionModule({ user }: { user: any }) {
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgePassword, setPurgePassword] = useState('');
   const [purgeBusy, setPurgeBusy] = useState(false);
-
-    function formatDayLabel(iso: string) {
-    const [y, m, d] = iso.split('-');
-    const date = new Date(Number(y), Number(m) - 1, Number(d));
-    const w = date
-      .toLocaleDateString('pt-BR', { weekday: 'long' })
-      .replace(/^\w/, (c) => c.toUpperCase());
-    return `${w} | ${d}-${m}-${y}`;
-  }
+  const [showPrintDay, setShowPrintDay] = useState(false);
+  const [printDate, setPrintDate] = useState('');
+  const [printScope, setPrintScope] = useState<'all' | 'fabricacao' | 'montagem'>('all');
 
   function printDay(day: any, only?: 'fabricacao' | 'montagem' | 'all') {
     const scope = only || 'all';
@@ -183,29 +178,168 @@ export default function ProductionModule({ user }: { user: any }) {
     doc.save(name);
   }
 
-  async function downloadBackupThenMaybePurge(openPurge: boolean) {
-    setError('');
-    try {
-      const qs = new URLSearchParams();
-      if (filterFrom) qs.set('date_from', filterFrom);
-      if (filterTo) qs.set('date_to', filterTo);
-      const data = await request(`/production/export?${qs.toString()}`);
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
+    function formatDayLabel(iso: string) {
+    if (!iso) return '—';
+    const [y, m, d] = iso.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    if (isNaN(date.getTime())) return iso;
+    const w = date
+      .toLocaleDateString('pt-BR', { weekday: 'long' })
+      .replace(/^\w/, (c) => c.toUpperCase());
+    return `${w} | ${d}-${m}-${y}`;
+  }
+
+  function buildDayRows(day: any, scope: 'all' | 'fabricacao' | 'montagem') {
+    const rows: (string | number)[][] = [];
+    if (scope === 'all' || scope === 'fabricacao') {
+      (day.fabricacao || []).forEach((x: any) => {
+        rows.push(['Fabricação', x.model, x.quantity, x.emergency_altered || 0]);
       });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `backup_producao_${filterFrom || 'all'}_${filterTo || 'all'}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setOkMsg(`Backup baixado (${data.count || 0} registros).`);
-      if (openPurge) {
-        setPurgePassword('');
-        setPurgeOpen(true);
-      }
-    } catch (e: any) {
-      setError(e.message);
     }
+    if (scope === 'all' || scope === 'montagem') {
+      (day.montagem || []).forEach((x: any) => {
+        rows.push(['Montagem', x.model, x.quantity, x.emergency_altered || 0]);
+      });
+    }
+    return rows;
+  }
+
+  function printSelectedDay() {
+    if (!printDate) {
+      setError('Selecione o dia para imprimir.');
+      return;
+    }
+    const day = days.find((d: any) => d.date === printDate);
+    if (!day) {
+      setError('Não há lançamento nesse dia no filtro atual. Ajuste De/Até e Filtrar.');
+      return;
+    }
+    const rows = buildDayRows(day, printScope);
+    if (!rows.length) {
+      setError('Nada para imprimir nesse dia / tipo.');
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const margin = 12;
+    let y = 12;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGÍSTICAS BILL — Produção do dia', margin, y);
+    y += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`Data: ${formatDayLabel(printDate)}`, margin, y);
+    y += 5;
+    const tipo =
+      printScope === 'all'
+        ? 'Fabricação + Montagem'
+        : printScope === 'fabricacao'
+        ? 'Somente fabricação'
+        : 'Somente montagem';
+    doc.text(`Tipo: ${tipo}`, margin, y);
+    y += 8;
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Tipo', 'Modelo', 'Quantidade', 'Emergência']],
+      body: rows,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8, cellPadding: 1.2 },
+      headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+    });
+
+    doc.save(`Producao_${printDate}_${printScope}.pdf`);
+    setShowPrintDay(false);
+  }
+
+  function backupExcel() {
+    setError('');
+    if (!days.length) {
+      setError('Nada para exportar. Filtre o período antes.');
+      return;
+    }
+    const flat: any[] = [];
+    days.forEach((day: any) => {
+      (day.fabricacao || []).forEach((x: any) => {
+        flat.push({
+          Data: day.date,
+          Tipo: 'Fabricação',
+          Modelo: x.model,
+          Quantidade: x.quantity,
+          Emergencia: x.emergency_altered || 0,
+        });
+      });
+      (day.montagem || []).forEach((x: any) => {
+        flat.push({
+          Data: day.date,
+          Tipo: 'Montagem',
+          Modelo: x.model,
+          Quantidade: x.quantity,
+          Emergencia: x.emergency_altered || 0,
+        });
+      });
+    });
+    if (!flat.length) {
+      setError('Período sem linhas de produção.');
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(flat);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Producao');
+    const name = `backup_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`;
+    XLSX.writeFile(wb, name);
+    setOkMsg(`Backup Excel gerado (${flat.length} linhas).`);
+  }
+
+  function backupPdfPeriodo() {
+    setError('');
+    if (!days.length) {
+      setError('Nada para exportar. Filtre o período antes.');
+      return;
+    }
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const margin = 10;
+    let y = 12;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGÍSTICAS BILL — Backup produção (período)', margin, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(
+      `Filtro: ${filterFrom || '…'} → ${filterTo || '…'}`,
+      margin,
+      y
+    );
+    y += 6;
+
+    const body: any[] = [];
+    days.forEach((day: any) => {
+      buildDayRows(day, 'all').forEach((r) => {
+        body.push([formatDayLabel(day.date), r[0], r[1], r[2], r[3]]);
+      });
+    });
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Data', 'Tipo', 'Modelo', 'Qtd', 'Emergência']],
+      body,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 7, cellPadding: 1 },
+      headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+    });
+
+    doc.save(`backup_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`);
+    setOkMsg('Backup PDF do período gerado.');
+  }
+
+  async function openPurgeAfterBackup(kind: 'excel' | 'pdf') {
+    if (kind === 'excel') backupExcel();
+    else backupPdfPeriodo();
+    setPurgePassword('');
+    setPurgeOpen(true);
   }
 
   async function confirmPurge() {
@@ -478,30 +612,41 @@ export default function ProductionModule({ user }: { user: any }) {
                         <button
               type="button"
               onClick={loadDays}
-            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
+              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
             >
               Filtrar
             </button>
             <button
               type="button"
-              onClick={printAllFiltered}
+              onClick={() => {
+                setPrintDate(days[0]?.date || filterFrom || '');
+                setPrintScope('all');
+                setShowPrintDay(true);
+              }}
               className="rounded-lg border px-4 py-2 text-sm font-medium"
             >
-              Imprimir período
+              Imprimir dia (PDF)
             </button>
             <button
               type="button"
-              onClick={() => downloadBackupThenMaybePurge(false)}
+              onClick={backupExcel}
               className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700"
             >
-              Backup JSON
+              Backup Excel
             </button>
             <button
               type="button"
-              onClick={() => downloadBackupThenMaybePurge(true)}
+              onClick={backupPdfPeriodo}
+              className="rounded-lg border px-4 py-2 text-sm font-medium"
+            >
+              Backup PDF (período)
+            </button>
+            <button
+              type="button"
+              onClick={() => openPurgeAfterBackup('excel')}
               className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700"
             >
-              Backup e apagar…
+              Backup Excel e apagar…
             </button>
           </div>
           {loadingDays ? (
@@ -634,6 +779,62 @@ export default function ProductionModule({ user }: { user: any }) {
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
                 {saving ? 'Salvando…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {showPrintDay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Imprimir produção do dia</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Escolha a data e o que incluir no PDF.
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Dia *</span>
+              <select
+                value={printDate}
+                onChange={(e) => setPrintDate(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="">Selecione</option>
+                {days.map((d: any) => (
+                  <option key={d.date} value={d.date}>
+                    {formatDayLabel(d.date)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Conteúdo</span>
+              <select
+                value={printScope}
+                onChange={(e) =>
+                  setPrintScope(e.target.value as 'all' | 'fabricacao' | 'montagem')
+                }
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="all">Fabricação + Montagem</option>
+                <option value="fabricacao">Só fabricação</option>
+                <option value="montagem">Só montagem</option>
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPrintDay(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={printSelectedDay}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white"
+              >
+                Gerar PDF
               </button>
             </div>
           </div>
