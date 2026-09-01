@@ -400,7 +400,7 @@ def update_user(
         raise HTTPException(404, "Usuário não encontrado")
     if "email" in body.data and body.data["email"] is not None:
         body.data["email"] = str(body.data["email"]).strip().lower()
-    for k in ("name", "username", "role", "active", "permissions"):
+    for k in ("name", "username", "role", "active", "permissions"): por essa (só adicionei "email" na lista): for k in ("name", "username", "email", "role", "active", "permissions"):
         if k in body.data:
             setattr(u, k, body.data[k])
     if body.data.get("password"):
