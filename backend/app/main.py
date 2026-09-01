@@ -25,6 +25,7 @@ from .security import (
     MODULES,
     apply_auto_unblock,
     block_detail,
+    clear_block,
 )
 
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
@@ -114,155 +115,6 @@ class CommercialProductBody(BaseModel):
 # PRODUÇÃO / MONTAGEM
 # ============================================================
 
-PRODUCTION_MODELS = [
-    "MONO - 7MTs",
-    "TRIF - 7MTs",
-    "BI+MONO - 7MTs",
-    "MURETA",
-    "MONO 2CXs - 7MTs",
-    "3CXs - 7MTs",
-    "TRIF - 8MTs",
-    "BI+MONO - 8MTs",
-    "2CXs - 8MTs",
-    "3CXs - 8MTs",
-    "DUPLO T - 7MTs",
-    "DUPLO T - 8MTs",
-    "DUPLO T - 8.3MTs",
-    "DUPLO T - 9MTs",
-    "MURETA ÁGUA",
-]
-
-
-class ProductionLineIn(BaseModel):
-    model: str = Field(min_length=1, max_length=80)
-    quantity: float = Field(ge=0)
-    emergency_altered: float = Field(default=0, ge=0)
-
-
-class ProductionBatchIn(BaseModel):
-    kind: str
-    production_date: date
-    lines: list[ProductionLineIn]
-    notes: str | None = None
-
-
-def _can_prod(user: User, need: str) -> bool:
-    if user.id == 1:
-        return True
-    perms = set((user.permissions or "").split(",")) if user.permissions else set()
-    grants = MODULES.get(user.role, set()) if not user.permissions else perms
-    if "*" in grants or "*" in perms:
-        return True
-    return need in perms or need in grants
-
-
-@app.get("/production/models")
-def production_models(user: User = Depends(current_user)):
-    if not (_can_prod(user, "production") or _can_prod(user, "assembly")):
-        raise HTTPException(403, "Sem permissão")
-    return list(PRODUCTION_MODELS)
-
-
-@app.post("/production/batch")
-def create_production_batch(
-    body: ProductionBatchIn,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    kind = (body.kind or "").lower().strip()
-    if kind not in ("fabricacao", "montagem"):
-        raise HTTPException(400, "kind inválido")
-    if kind == "fabricacao" and not _can_prod(user, "production"):
-        raise HTTPException(403, "Sem permissão de Produção")
-    if kind == "montagem" and not _can_prod(user, "assembly"):
-        raise HTTPException(403, "Sem permissão de Montagem")
-    if not body.lines:
-        raise HTTPException(400, "Informe ao menos um modelo")
-
-    created = []
-    for line in body.lines:
-        qty = float(line.quantity or 0)
-        em = float(line.emergency_altered or 0) if kind == "montagem" else 0.0
-        if qty <= 0 and em <= 0:
-            continue
-        rec = ProductionRecord(
-            kind=kind,
-            production_date=body.production_date,
-            model=line.model.strip(),
-            quantity=qty,
-            emergency_altered=em,
-            notes=body.notes,
-            user_id=user.id,
-        )
-        db.add(rec)
-        db.flush()
-        created.append(serialize(rec))
-
-    if not created:
-        raise HTTPException(400, "Nenhuma quantidade informada")
-    audit(db, user, "PRODUCAO_LOTE", "production", None, request)
-    db.commit()
-    return {"ok": True, "count": len(created), "records": created}
-
-
-@app.get("/production/by-day")
-def production_by_day(
-    date_from: date | None = None,
-    date_to: date | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    allow_fab = _can_prod(user, "production")
-    allow_mnt = _can_prod(user, "assembly")
-    if not allow_fab and not allow_mnt:
-        raise HTTPException(403, "Sem permissão")
-
-    q = select(ProductionRecord).order_by(
-        ProductionRecord.production_date.desc(),
-        ProductionRecord.kind,
-        ProductionRecord.model,
-    )
-    if date_from:
-        q = q.where(ProductionRecord.production_date >= date_from)
-    if date_to:
-        q = q.where(ProductionRecord.production_date <= date_to)
-
-    rows = db.scalars(q.limit(3000)).all()
-    days: dict[str, dict] = {}
-    for r in rows:
-        if r.kind == "fabricacao" and not allow_fab:
-            continue
-        if r.kind == "montagem" and not allow_mnt:
-            continue
-        key = r.production_date.isoformat() if r.production_date else ""
-        if key not in days:
-            days[key] = {
-                "date": key,
-                "fabricacao": [],
-                "montagem": [],
-                "fabricacao_total": 0.0,
-                "montagem_total": 0.0,
-                "emergency_total": 0.0,
-            }
-        item = {
-            "id": r.id,
-            "model": r.model,
-            "quantity": float(r.quantity or 0),
-            "emergency_altered": float(r.emergency_altered or 0),
-            "user_id": r.user_id,
-            "notes": r.notes,
-        }
-        if r.kind == "fabricacao":
-            days[key]["fabricacao"].append(item)
-            days[key]["fabricacao_total"] += item["quantity"]
-        else:
-            days[key]["montagem"].append(item)
-            days[key]["montagem_total"] += item["quantity"]
-            days[key]["emergency_total"] += item["emergency_altered"]
-
-    return sorted(days.values(), key=lambda x: x["date"], reverse=True)
-
 
 class Movement(BaseModel):
     product_id: int
@@ -304,9 +156,8 @@ def user_is_blocked(u: User, db: Session) -> bool:
             if until.tzinfo is None:
                 until = until.replace(tzinfo=timezone.utc)
             if now >= until:
-                
+                clear_block(u)
                 db.commit()
-                # Auto-libera o usuário
                 return False
         # Bloqueio permanente/manual ou agendado ainda ativo
         return True
@@ -1933,3 +1784,156 @@ def critical_wipe_operational(
     audit(db, user, "CRITICO_WIPE_OPERATIONAL", "admin", None, request)
     db.commit()
     return {"ok": True, "detail": "Dados operacionais removidos"}
+
+# ============================================================
+# PRODUÇÃO / MONTAGEM
+# ============================================================
+
+PRODUCTION_MODELS = [
+    "MONO - 7MTs",
+    "TRIF - 7MTs",
+    "BI+MONO - 7MTs",
+    "MURETA",
+    "MONO 2CXs - 7MTs",
+    "3CXs - 7MTs",
+    "TRIF - 8MTs",
+    "BI+MONO - 8MTs",
+    "2CXs - 8MTs",
+    "3CXs - 8MTs",
+    "DUPLO T - 7MTs",
+    "DUPLO T - 8MTs",
+    "DUPLO T - 8.3MTs",
+    "DUPLO T - 9MTs",
+    "MURETA ÁGUA",
+]
+
+
+class ProductionLineIn(BaseModel):
+    model: str = Field(min_length=1, max_length=80)
+    quantity: float = Field(ge=0)
+    emergency_altered: float = Field(default=0, ge=0)
+
+
+class ProductionBatchIn(BaseModel):
+    kind: str
+    production_date: date
+    lines: list[ProductionLineIn]
+    notes: str | None = None
+
+
+def _can_prod(user: User, need: str) -> bool:
+    if user.id == 1:
+        return True
+    perms = set((user.permissions or "").split(",")) if user.permissions else set()
+    grants = MODULES.get(user.role, set()) if not user.permissions else perms
+    if "*" in grants or "*" in perms:
+        return True
+    return need in perms or need in grants
+
+
+@app.get("/production/models")
+def production_models(user: User = Depends(current_user)):
+    if not (_can_prod(user, "production") or _can_prod(user, "assembly")):
+        raise HTTPException(403, "Sem permissão")
+    return list(PRODUCTION_MODELS)
+
+
+@app.post("/production/batch")
+def create_production_batch(
+    body: ProductionBatchIn,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    kind = (body.kind or "").lower().strip()
+    if kind not in ("fabricacao", "montagem"):
+        raise HTTPException(400, "kind inválido")
+    if kind == "fabricacao" and not _can_prod(user, "production"):
+        raise HTTPException(403, "Sem permissão de Produção")
+    if kind == "montagem" and not _can_prod(user, "assembly"):
+        raise HTTPException(403, "Sem permissão de Montagem")
+    if not body.lines:
+        raise HTTPException(400, "Informe ao menos um modelo")
+
+    created = []
+    for line in body.lines:
+        qty = float(line.quantity or 0)
+        em = float(line.emergency_altered or 0) if kind == "montagem" else 0.0
+        if qty <= 0 and em <= 0:
+            continue
+        rec = ProductionRecord(
+            kind=kind,
+            production_date=body.production_date,
+            model=line.model.strip(),
+            quantity=qty,
+            emergency_altered=em,
+            notes=body.notes,
+            user_id=user.id,
+        )
+        db.add(rec)
+        db.flush()
+        created.append(serialize(rec))
+
+    if not created:
+        raise HTTPException(400, "Nenhuma quantidade informada")
+    audit(db, user, "PRODUCAO_LOTE", "production", None, request)
+    db.commit()
+    return {"ok": True, "count": len(created), "records": created}
+
+
+@app.get("/production/by-day")
+def production_by_day(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    allow_fab = _can_prod(user, "production")
+    allow_mnt = _can_prod(user, "assembly")
+    if not allow_fab and not allow_mnt:
+        raise HTTPException(403, "Sem permissão")
+
+    q = select(ProductionRecord).order_by(
+        ProductionRecord.production_date.desc(),
+        ProductionRecord.kind,
+        ProductionRecord.model,
+    )
+    if date_from:
+        q = q.where(ProductionRecord.production_date >= date_from)
+    if date_to:
+        q = q.where(ProductionRecord.production_date <= date_to)
+
+    rows = db.scalars(q.limit(3000)).all()
+    days: dict[str, dict] = {}
+    for r in rows:
+        if r.kind == "fabricacao" and not allow_fab:
+            continue
+        if r.kind == "montagem" and not allow_mnt:
+            continue
+        key = r.production_date.isoformat() if r.production_date else ""
+        if key not in days:
+            days[key] = {
+                "date": key,
+                "fabricacao": [],
+                "montagem": [],
+                "fabricacao_total": 0.0,
+                "montagem_total": 0.0,
+                "emergency_total": 0.0,
+            }
+        item = {
+            "id": r.id,
+            "model": r.model,
+            "quantity": float(r.quantity or 0),
+            "emergency_altered": float(r.emergency_altered or 0),
+            "user_id": r.user_id,
+            "notes": r.notes,
+        }
+        if r.kind == "fabricacao":
+            days[key]["fabricacao"].append(item)
+            days[key]["fabricacao_total"] += item["quantity"]
+        else:
+            days[key]["montagem"].append(item)
+            days[key]["montagem_total"] += item["quantity"]
+            days[key]["emergency_total"] += item["emergency_altered"]
+
+    return sorted(days.values(), key=lambda x: x["date"], reverse=True)

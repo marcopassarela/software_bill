@@ -103,13 +103,13 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
     if not user:
         raise HTTPException(status_code=401, detail="Usuário indisponível")
 
+    was_inactive = not user.active
     still_blocked = apply_auto_unblock(user)
+    if was_inactive and not still_blocked:
+        # auto-liberou scheduled
+        db.commit()
     if still_blocked:
-        db.commit()
         raise HTTPException(status_code=403, detail=block_detail(user))
-    else:
-        # pode ter auto-liberado
-        db.commit()
 
     token_ver = int(data.get("ver", 0) or 0)
     user_ver = int(getattr(user, "token_version", 0) or 0)
