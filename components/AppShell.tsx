@@ -422,7 +422,7 @@ function labelFor(k: string) {
 }
 
 const HIDDEN_TABLE_COLUMNS: Record<string, string[]> = {
-  users: ['permissions'],
+  users: ['permissions', 'avatar_data'],
 };
 
 const TABLE_COLUMNS: Record<string, string[]> = {
