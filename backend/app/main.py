@@ -140,56 +140,26 @@ class ProductionLineIn(BaseModel):
 
 
 class ProductionBatchIn(BaseModel):
-    kind: str  # fabricacao | montagem
+    kind: str
     production_date: date
     lines: list[ProductionLineIn]
     notes: str | None = None
 
 
-def _require_production_kind(user: User, kind: str):
-    kind = (kind or "").lower().strip()
-    if kind not in ("fabricacao", "montagem"):
-        raise HTTPException(400, "kind deve ser fabricacao ou montagem")
-    is_main = user.id == 1
+def _can_prod(user: User, need: str) -> bool:
+    if user.id == 1:
+        return True
     perms = set((user.permissions or "").split(",")) if user.permissions else set()
-    role_modules = MODULES.get(user.role, set()) if not user.permissions else perms
-    if is_main or "*" in role_modules or "*" in perms:
-        return kind
-    if kind == "fabricacao" and (
-        "production" in perms or "production" in role_modules
-    ):
-        return kind
-    if kind == "montagem" and (
-        "assembly" in perms or "assembly" in role_modules or "production" in perms
-    ):
-        # assembly específico; production genérico no role pode ver ambos se admin liberar só assembly
-        if "assembly" in perms or "assembly" in role_modules:
-            return kind
-        if "production" in perms and "assembly" not in perms and user.permissions:
-            # tem production mas não assembly → não monta
-            if kind == "montagem":
-                raise HTTPException(403, "Sem permissão de Montagem")
-            return kind
-    if kind == "montagem" and "assembly" in perms:
-        return kind
-    if kind == "fabricacao" and "production" in perms:
-        return kind
-    raise HTTPException(403, "Sem permissão para este tipo de lançamento")
+    grants = MODULES.get(user.role, set()) if not user.permissions else perms
+    if "*" in grants or "*" in perms:
+        return True
+    return need in perms or need in grants
 
 
 @app.get("/production/models")
 def production_models(user: User = Depends(current_user)):
-    require("production")(user) if False else None  # noqa — validado abaixo
-    # qualquer um com production ou assembly
-    perms = set((user.permissions or "").split(",")) if user.permissions else set()
-    grants = MODULES.get(user.role, set()) if not user.permissions else perms
-    if user.id != 1 and "*" not in grants and "production" not in grants and "assembly" not in grants:
-        # tenta require production module generico
-        try:
-            require("production")(user)
-        except HTTPException:
-            if "assembly" not in perms and "assembly" not in grants:
-                raise HTTPException(403, "Sem permissão")
+    if not (_can_prod(user, "production") or _can_prod(user, "assembly")):
+        raise HTTPException(403, "Sem permissão")
     return list(PRODUCTION_MODELS)
 
 
@@ -200,9 +170,16 @@ def create_production_batch(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    kind = _require_production_kind(user, body.kind)
+    kind = (body.kind or "").lower().strip()
+    if kind not in ("fabricacao", "montagem"):
+        raise HTTPException(400, "kind inválido")
+    if kind == "fabricacao" and not _can_prod(user, "production"):
+        raise HTTPException(403, "Sem permissão de Produção")
+    if kind == "montagem" and not _can_prod(user, "assembly"):
+        raise HTTPException(403, "Sem permissão de Montagem")
     if not body.lines:
         raise HTTPException(400, "Informe ao menos um modelo")
+
     created = []
     for line in body.lines:
         qty = float(line.quantity or 0)
@@ -221,54 +198,12 @@ def create_production_batch(
         db.add(rec)
         db.flush()
         created.append(serialize(rec))
+
     if not created:
         raise HTTPException(400, "Nenhuma quantidade informada")
     audit(db, user, "PRODUCAO_LOTE", "production", None, request)
     db.commit()
     return {"ok": True, "count": len(created), "records": created}
-
-
-@app.get("/production/records")
-def list_production_records(
-    kind: str | None = None,
-    date_from: date | None = None,
-    date_to: date | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    perms = set((user.permissions or "").split(",")) if user.permissions else set()
-    grants = MODULES.get(user.role, set()) if not user.permissions else perms
-    if user.id != 1 and "*" not in grants and "production" not in grants and "assembly" not in grants:
-        raise HTTPException(403, "Sem permissão")
-
-    q = select(ProductionRecord).order_by(
-        ProductionRecord.production_date.desc(),
-        ProductionRecord.id.desc(),
-    )
-    if kind in ("fabricacao", "montagem"):
-        # restringe por permissão
-        if user.id != 1 and "*" not in grants:
-            if kind == "fabricacao" and "production" not in grants and "production" not in perms:
-                raise HTTPException(403, "Sem permissão de Produção")
-            if kind == "montagem" and "assembly" not in perms and "assembly" not in grants:
-                if "production" not in perms and "production" not in grants:
-                    raise HTTPException(403, "Sem permissão de Montagem")
-        q = q.where(ProductionRecord.kind == kind)
-    if date_from:
-        q = q.where(ProductionRecord.production_date >= date_from)
-    if date_to:
-        q = q.where(ProductionRecord.production_date <= date_to)
-
-    rows = db.scalars(q.limit(2000)).all()
-    out = []
-    for r in rows:
-        d = serialize(r)
-        if r.user_id:
-            uu = db.get(User, r.user_id)
-            d["username"] = uu.username if uu else None
-            d["user_name"] = uu.name if uu else None
-        out.append(d)
-    return out
 
 
 @app.get("/production/by-day")
@@ -278,16 +213,55 @@ def production_by_day(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Agrupado por data + kind para a sub-aba Produção do dia."""
-    rows = list_production_records(None, date_from, date_to, user, db)  # type: ignore
-    # se list_production_records for Depends-heavy, duplique a query:
-    # (abaixo versão self-contained)
-    return rows
+    allow_fab = _can_prod(user, "production")
+    allow_mnt = _can_prod(user, "assembly")
+    if not allow_fab and not allow_mnt:
+        raise HTTPException(403, "Sem permissão")
 
-from .security import (
-    audit, current_user, hash_password, main_admin, require, token_for, verify_password, MODULES,
-)
+    q = select(ProductionRecord).order_by(
+        ProductionRecord.production_date.desc(),
+        ProductionRecord.kind,
+        ProductionRecord.model,
+    )
+    if date_from:
+        q = q.where(ProductionRecord.production_date >= date_from)
+    if date_to:
+        q = q.where(ProductionRecord.production_date <= date_to)
 
+    rows = db.scalars(q.limit(3000)).all()
+    days: dict[str, dict] = {}
+    for r in rows:
+        if r.kind == "fabricacao" and not allow_fab:
+            continue
+        if r.kind == "montagem" and not allow_mnt:
+            continue
+        key = r.production_date.isoformat() if r.production_date else ""
+        if key not in days:
+            days[key] = {
+                "date": key,
+                "fabricacao": [],
+                "montagem": [],
+                "fabricacao_total": 0.0,
+                "montagem_total": 0.0,
+                "emergency_total": 0.0,
+            }
+        item = {
+            "id": r.id,
+            "model": r.model,
+            "quantity": float(r.quantity or 0),
+            "emergency_altered": float(r.emergency_altered or 0),
+            "user_id": r.user_id,
+            "notes": r.notes,
+        }
+        if r.kind == "fabricacao":
+            days[key]["fabricacao"].append(item)
+            days[key]["fabricacao_total"] += item["quantity"]
+        else:
+            days[key]["montagem"].append(item)
+            days[key]["montagem_total"] += item["quantity"]
+            days[key]["emergency_total"] += item["emergency_altered"]
+
+    return sorted(days.values(), key=lambda x: x["date"], reverse=True)
 
 
 class Movement(BaseModel):
@@ -330,7 +304,7 @@ def user_is_blocked(u: User, db: Session) -> bool:
             if until.tzinfo is None:
                 until = until.replace(tzinfo=timezone.utc)
             if now >= until:
-                clear_block(u)
+                
                 db.commit()
                 # Auto-libera o usuário
                 return False
@@ -340,11 +314,7 @@ def user_is_blocked(u: User, db: Session) -> bool:
     return False
 
 
-def clear_block(u: User):
-    u.active = True
-    u.block_type = None
-    u.blocked_until = None
-    u.block_reason = None
+
 
 
 def serialize(o):
@@ -640,12 +610,6 @@ def block_user(
         raise HTTPException(400, "Não é possível bloquear o Administrador Principal")
 
     mode = (body.mode or "").lower().strip()
-
-    if mode == "unblock":
-        clear_block(u)
-        audit(db, admin, "DESBLOQUEIO_USUARIO", "users", u.id, request)
-        db.commit()
-        return serialize_user(u)
 
     if mode not in ("manual", "scheduled", "permanent"):
         raise HTTPException(400, "mode inválido")
