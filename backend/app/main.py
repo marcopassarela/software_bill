@@ -192,9 +192,9 @@ def serialize(o):
 def serialize_user(o):
     d = serialize(o)
     d.pop("password_hash", None)
+    # avatar pode ser grande; front usa avatar_data se existir
     d["is_main_admin"] = o.id == 1
-    d["avatar_data"] = getattr(o, "avatar_data", None)
-    d["has_avatar"] = bool(d.get("avatar_data"))
+    d["has_avatar"] = bool(getattr(o, "avatar_data", None))
     return d
 
 
@@ -340,6 +340,20 @@ def change_password(
     db.commit()
     return {"ok": True}
 
+
+@app.patch("/auth/profile")
+def update_profile(
+    body: ProfileUpdate,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    user.name = body.name
+    audit(db, user, "ALTERAÇÃO_DE_PERFIL", "auth", user.id, request)
+    db.commit()
+    return serialize_user(user)
+
+
 class AvatarBody(BaseModel):
     avatar_data: str  # data:image/jpeg;base64,...
 
@@ -354,6 +368,7 @@ def upload_avatar(
     raw = (body.avatar_data or "").strip()
     if not raw.startswith("data:image/"):
         raise HTTPException(400, "Envie uma imagem (JPEG ou PNG)")
+    # ~150 KB em base64
     if len(raw) > 200_000:
         raise HTTPException(400, "Imagem muito grande. Use uma foto leve (até ~150 KB).")
     u = db.get(User, user.id)
@@ -378,18 +393,6 @@ def delete_avatar(
     audit(db, u, "AVATAR_REMOVE", "auth", u.id, request)
     db.commit()
     return serialize_user(u)
-
-@app.patch("/auth/profile")
-def update_profile(
-    body: ProfileUpdate,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    user.name = body.name
-    audit(db, user, "ALTERAÇÃO_DE_PERFIL", "auth", user.id, request)
-    db.commit()
-    return serialize_user(user)
 
 
 @app.get("/users")
