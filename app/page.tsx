@@ -42,6 +42,15 @@ export default function Home() {
     reason?: string | null;
   } | null>(null);
   const [, setTick] = useState(0);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotUser, setForgotUser] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState('');
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [resetPass, setResetPass] = useState('');
+  const [resetPass2, setResetPass2] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
 
 
   useEffect(() => {
@@ -75,6 +84,15 @@ export default function Home() {
         }
         setUser(undefined);
       });
+
+        useEffect(() => {
+        try {
+          const t = new URLSearchParams(window.location.search).get('reset_token');
+          if (t) setResetToken(t);
+        } catch {
+          /* ignore */
+        }
+      }, []);
 
     return () => {
       window.removeEventListener('session-expired', handleSessionExpired);
@@ -269,6 +287,104 @@ export default function Home() {
     );
   }
 
+    async function submitForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotBusy(true);
+    setForgotMsg('');
+    setError('');
+    try {
+      const res = await request('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: forgotUser,
+          email: forgotEmail,
+        }),
+      });
+      setForgotMsg(
+        res.detail ||
+          'Se os dados estiverem corretos, você receberá um e-mail com o link.'
+      );
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setForgotBusy(false);
+    }
+  }
+
+  async function submitReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (resetPass !== resetPass2) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    if (resetPass.length < 3) {
+      setError('Senha mínima de 3 caracteres.');
+      return;
+    }
+    setResetBusy(true);
+    setError('');
+    try {
+      await request('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          token: resetToken,
+          new_password: resetPass,
+        }),
+      });
+      setResetToken(null);
+      setResetPass('');
+      setResetPass2('');
+      window.history.replaceState({}, '', '/');
+      setForgotMsg('Senha alterada. Faça login com a nova senha.');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+    if (resetToken) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-100 p-4">
+        <form
+          onSubmit={submitReset}
+          className="w-full max-w-md rounded-xl bg-white p-7 shadow"
+          autoComplete="off"
+        >
+          <h1 className="text-xl font-bold">Nova senha</h1>
+          <p className="my-3 text-sm text-slate-600">
+            Defina uma nova senha para continuar.
+          </p>
+          {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+          <label className="text-sm">Nova senha</label>
+          <input
+            type="password"
+            value={resetPass}
+            onChange={(e) => setResetPass(e.target.value)}
+            required
+            minLength={3}
+            className="w-full rounded-lg border p-2"
+          />
+          <label className="mt-3 block text-sm">Confirmar senha</label>
+          <input
+            type="password"
+            value={resetPass2}
+            onChange={(e) => setResetPass2(e.target.value)}
+            required
+            minLength={3}
+            className="w-full rounded-lg border p-2"
+          />
+          <button
+            disabled={resetBusy}
+            className="mt-5 w-full rounded-lg bg-brand p-2.5 font-medium text-white disabled:opacity-60"
+          >
+            {resetBusy ? 'Salvando…' : 'Salvar nova senha'}
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   if (user?.must_change_password) {
     const strength = passwordStrength(newPassword);
     return (
@@ -390,13 +506,69 @@ export default function Home() {
             className="w-full rounded-lg border p-2"
           />
           <button
-            disabled={busy}
-            className="mt-5 w-full rounded-lg bg-brand p-2.5 font-medium text-white disabled:opacity-50"
-          >
-            {busy ? 'Entrando…' : 'Entrar'}
+             type="button"
+             onClick={() => {
+               setForgotOpen(true);
+               setForgotMsg('');
+               setError('');
+             }}
+             className="mt-3 w-full text-center text-sm text-slate-500 hover:text-brand hover:underline"
+              >
+              Esqueci minha senha
           </button>
         </form>
       </div>
+            {forgotOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Esqueci minha senha</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Informe o usuário e o e-mail cadastrados na conta.
+            </p>
+            <form onSubmit={submitForgot} className="mt-4 space-y-3">
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">Usuário *</span>
+                <input
+                  value={forgotUser}
+                  onChange={(e) => setForgotUser(e.target.value)}
+                  required
+                  className="w-full rounded-lg border p-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">E-mail cadastrado *</span>
+                <input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  required
+                  className="w-full rounded-lg border p-2"
+                />
+              </label>
+              {forgotMsg && (
+                <p className="text-sm text-emerald-700">{forgotMsg}</p>
+              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setForgotOpen(false)}
+                  className="rounded-lg bg-slate-100 px-4 py-2 text-sm"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotBusy}
+                  className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {forgotBusy ? 'Enviando…' : 'Enviar link'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

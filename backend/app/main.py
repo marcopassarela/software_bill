@@ -27,6 +27,11 @@ from .security import (
     block_detail,
     clear_block,
 )
+import hashlib
+import os
+import secrets
+import smtplib
+from email.message import EmailMessage
 
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
@@ -2013,3 +2018,138 @@ def purge_production(
     )
     db.commit()
     return {"ok": True, "deleted": n}
+
+# ============================================================
+# ESQUECI MINHA SENHA
+# ============================================================
+
+class ForgotPasswordBody(BaseModel):
+    username: str = Field(min_length=1, max_length=60)
+    email: str = Field(min_length=5, max_length=160)
+
+
+class ResetPasswordBody(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    new_password: str = Field(min_length=3, max_length=200)
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _send_reset_email(to_email: str, reset_link: str) -> bool:
+    host = os.environ.get("SMTP_HOST")
+    user = os.environ.get("SMTP_USER")
+    password = os.environ.get("SMTP_PASSWORD")
+    port = int(os.environ.get("SMTP_PORT") or 587)
+    from_addr = os.environ.get("SMTP_FROM") or user
+    if not host or not user or not password or not from_addr:
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = "Logísticas Bill — redefinir senha"
+    msg["From"] = from_addr
+    msg["To"] = to_email
+    msg.set_content(
+        "Você pediu para redefinir a senha do sistema Logísticas Bill.\n\n"
+        f"Abra o link (válido por 1 hora):\n{reset_link}\n\n"
+        "Se não foi você, ignore este e-mail.\n"
+    )
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.starttls()
+            s.login(user, password)
+            s.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
+@app.post("/auth/forgot-password")
+@limiter.limit("5/minute")
+def forgot_password(
+    body: ForgotPasswordBody,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    username = body.username.strip()
+    email = body.email.strip().lower()
+    u = db.scalar(select(User).where(User.username == username))
+
+    # Só gera token se usuário + e-mail cadastrado baterem
+    if u and (u.email or "").strip().lower() == email and u.active:
+        for old in db.scalars(
+            select(PasswordResetToken).where(
+                PasswordResetToken.user_id == u.id,
+                PasswordResetToken.used_at.is_(None),
+            )
+        ).all():
+            old.used_at = datetime.now(timezone.utc)
+
+        raw = secrets.token_urlsafe(32)
+        db.add(
+            PasswordResetToken(
+                user_id=u.id,
+                token_hash=_hash_token(raw),
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        front = (os.environ.get("FRONTEND_URL") or "https://logisticasbill.vercel.app").rstrip("/")
+        link = f"{front}/?reset_token={raw}"
+        sent = _send_reset_email(email, link)
+        audit(
+            db,
+            u,
+            "FORGOT_PASSWORD",
+            "auth",
+            request=request,
+            details="E-mail enviado" if sent else "Token gerado (SMTP ausente ou falhou)",
+        )
+        db.commit()
+    else:
+        audit(
+            db,
+            None,
+            "FORGOT_PASSWORD_FAIL",
+            "auth",
+            request=request,
+            details="Usuário/e-mail não conferem",
+            username_attempted=username[:120],
+        )
+        db.commit()
+
+    return {
+        "ok": True,
+        "detail": "Se os dados estiverem corretos, você receberá um e-mail com o link em alguns minutos.",
+    }
+
+
+@app.post("/auth/reset-password")
+@limiter.limit("10/minute")
+def reset_password(
+    body: ResetPasswordBody,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    th = _hash_token(body.token.strip())
+    row = db.scalar(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == th)
+    )
+    if not row or row.used_at is not None:
+        raise HTTPException(400, "Link inválido ou já usado")
+    exp = row.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > exp:
+        raise HTTPException(400, "Link expirado. Solicite um novo.")
+
+    u = db.get(User, row.user_id)
+    if not u or not u.active:
+        raise HTTPException(400, "Usuário indisponível")
+
+    u.password_hash = hash_password(body.new_password)
+    u.must_change_password = False
+    u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
+    row.used_at = datetime.now(timezone.utc)
+    audit(db, u, "RESET_PASSWORD", "auth", request=request)
+    db.commit()
+    return {"ok": True, "detail": "Senha alterada. Faça login."}
