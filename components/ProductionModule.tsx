@@ -504,7 +504,7 @@ export default function ProductionModule({ user }: { user: any }) {
                   type="date"
                   value={filterFrom}
                   onChange={(e) => setFilterFrom(e.target.value)}
-                  className="w-40 rounded-lg border p-2"
+                  className="w-48 rounded-lg border p-2"
                 />
               </label>
 
@@ -514,7 +514,7 @@ export default function ProductionModule({ user }: { user: any }) {
                   type="date"
                   value={filterTo}
                   onChange={(e) => setFilterTo(e.target.value)}
-                  className="w-40 rounded-lg border p-2"
+                  className="w-48 rounded-lg border p-2"
                 />
               </label>
             </div>
