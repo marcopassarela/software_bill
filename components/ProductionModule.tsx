@@ -503,7 +503,7 @@ export default function ProductionModule({ user }: { user: any }) {
                 type="date"
                 value={filterFrom}
                 onChange={(e) => setFilterFrom(e.target.value)}
-                className="rounded-lg border p-2 gap-8"
+                className="rounded-lg border p-2"
               />
             </label>
             <label className="text-sm">
