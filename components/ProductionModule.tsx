@@ -509,43 +509,41 @@ export default function ProductionModule({ user }: { user: any }) {
         <section className="rounded-xl bg-white p-5 shadow-sm">
           {/* Filtros + ações */}
           <div className="mb-5 flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-              <div className="grid grid-cols-2 gap-3 sm:contents">
-                <label className="text-sm">
-                  <span className="mb-1 flex items-center gap-1 text-slate-600">
-                    <Calendar size={14} className="text-slate-400" />
-                    De
-                  </span>
-                  <input
-                    type="date"
-                    value={filterFrom}
-                    onChange={(e) => setFilterFrom(e.target.value)}
-                    className="w-full rounded-lg border p-2 sm:w-auto"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="mb-1 flex items-center gap-1 text-slate-600">
-                    <Calendar size={14} className="text-slate-400" />
-                    Até
-                  </span>
-                  <input
-                    type="date"
-                    value={filterTo}
-                    onChange={(e) => setFilterTo(e.target.value)}
-                    className="w-full rounded-lg border p-2 sm:w-auto"
-                  />
-                </label>
-              </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1 text-slate-600">
+                  <Calendar size={14} className="text-slate-400" />
+                  De
+                </span>
+                <input
+                  type="date"
+                  value={filterFrom}
+                  onChange={(e) => setFilterFrom(e.target.value)}
+                  className="rounded-lg border p-2"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1 text-slate-600">
+                  <Calendar size={14} className="text-slate-400" />
+                  Até
+                </span>
+                <input
+                  type="date"
+                  value={filterTo}
+                  onChange={(e) => setFilterTo(e.target.value)}
+                  className="rounded-lg border p-2"
+                />
+              </label>
               <button
                 type="button"
                 onClick={loadDays}
-                className="w-full rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 sm:w-auto"
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
               >
                 Filtrar
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -553,7 +551,7 @@ export default function ProductionModule({ user }: { user: any }) {
                   setPrintScope('all');
                   setShowPrintDay(true);
                 }}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto sm:justify-start"
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 <Printer size={15} />
                 Imprimir dia (PDF)
@@ -561,7 +559,7 @@ export default function ProductionModule({ user }: { user: any }) {
               <button
                 type="button"
                 onClick={backupExcel}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-600 px-3.5 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 sm:w-auto sm:justify-start"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 px-3.5 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
               >
                 <FileSpreadsheet size={15} />
                 Backup Excel
@@ -569,7 +567,7 @@ export default function ProductionModule({ user }: { user: any }) {
               <button
                 type="button"
                 onClick={backupPdfPeriodo}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto sm:justify-start"
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 <FileDown size={15} />
                 Backup PDF (período)
