@@ -58,6 +58,8 @@ const items = [
   ['maintenance', 'Manutenção', Wrench],
   ['fuel', 'Combustível', Fuel],
   ['production', 'Produção', Factory],
+  ['orders', 'Pedidos', ClipboardList],
+  ['stock', 'Estoque', Boxes],
   ['stock', 'Estoque', Boxes],
   ['entry', 'Entradas', PackagePlus],
   ['output', 'Saídas', PackageMinus],
