@@ -16,7 +16,7 @@ MODULES = {
     Role.ADMIN: {"*"},
     Role.MANAGER: {
         "dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel",
-        "stock", "customers", "reports", "schedule", "commercial", "production", "assembly",
+        "stock", "customers", "reports", "schedule", "commercial", "production", "assembly", "orders",
     },
     Role.LOGISTICS: {"dashboard", "routes", "vehicles", "drivers", "fuel", "customers", "commercial"},
     Role.STOCK: {"dashboard", "stock", "commercial"},

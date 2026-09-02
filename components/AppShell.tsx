@@ -5,6 +5,8 @@ import { StockMovementForm, printProductLabels } from './QrTools';
 import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
+import OrdersModule from '@/components/OrdersModule';
+import { ClipboardList } from 'lucide-react'; // ou Package se preferir
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -77,14 +79,14 @@ const resource: any = {
 
 const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
-  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial', 'production'],
+  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial', 'production', 'orders'],
   LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel', 'commercial'],
   ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'],
   ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'], // se ainda existir
   MOTORISTA: [],
   VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
-  MONTAGEM: ['production'],
+  MONTAGEM: ['production', 'orders'],
 };
 
 export const PRODUCTION_MODELS = [
@@ -139,6 +141,7 @@ const MODULE_OPTIONS = [
   { value: 'commercial', label: 'Comercial' },
   { value: 'production', label: 'Produção (fábrica)' },
   { value: 'assembly', label: 'Montagem (padrões)' },
+  { value: 'orders', label: 'Pedidos' },
 ];
 
 function expandPermissions(keys: string[]): string[] {
@@ -1057,6 +1060,8 @@ export default function AppShell({
           <ScheduleModule user={user} lookups={lookups} />
         ) : page === 'commercial' ? (
           <CommercialModule user={user} />
+        ) : page === 'orders' ? (
+          <OrdersModule user={user} askPassword={askPassword} />
         ) : page === 'production' ? (
           <ProductionModule user={user} />
         ) : page === 'settings' ? (

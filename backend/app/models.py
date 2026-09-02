@@ -376,3 +376,28 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+class Order(Base):
+    """Pedido filial → matriz."""
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model: Mapped[str] = mapped_column(String(120))
+    quality: Mapped[str | None] = mapped_column(String(80))
+    cabling: Mapped[str | None] = mapped_column(String(120))  # cabeamento
+    breaker: Mapped[str | None] = mapped_column(String(80))   # disjuntor
+    height: Mapped[str | None] = mapped_column(String(40))    # altura
+    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=1)
+    order_date: Mapped[date] = mapped_column(Date, index=True)
+    ship_date: Mapped[date | None] = mapped_column(Date, index=True)  # data de saída
+    status: Mapped[str] = mapped_column(String(20), default="pendente", index=True)
+    # pendente | atrasado | entregue
+    branch: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

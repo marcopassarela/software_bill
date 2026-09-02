@@ -973,6 +973,130 @@ def delete_commercial_product(
     return {"ok": True}
 
 
+# ============================================================
+# PEDIDOS (filial → matriz)
+# ============================================================
+
+class OrderBody(BaseModel):
+    model: str = Field(min_length=1, max_length=120)
+    quality: str | None = None
+    cabling: str | None = None
+    breaker: str | None = None
+    height: str | None = None
+    quantity: float = Field(default=1, gt=0)
+    order_date: date
+    ship_date: date | None = None
+    status: str = "pendente"
+    branch: str | None = None
+    notes: str | None = None
+
+
+class OrderDeleteBody(BaseModel):
+    password: str
+
+
+def _norm_order_status(s: str) -> str:
+    s = (s or "pendente").strip().lower()
+    if s not in ("pendente", "atrasado", "entregue"):
+        raise HTTPException(422, "Status inválido: use pendente, atrasado ou entregue")
+    return s
+
+
+@app.get("/orders")
+def list_orders(
+    status: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("orders")(user)
+    q = select(Order).order_by(Order.order_date.desc(), Order.id.desc())
+    if status:
+        q = q.where(Order.status == _norm_order_status(status))
+    if date_from:
+        q = q.where(Order.order_date >= date_from)
+    if date_to:
+        q = q.where(Order.order_date <= date_to)
+    return [serialize(x) for x in db.scalars(q).all()]
+
+
+@app.post("/orders")
+def create_order(
+    body: OrderBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("orders")(user)
+    o = Order(
+        model=body.model.strip(),
+        quality=(body.quality or "").strip() or None,
+        cabling=(body.cabling or "").strip() or None,
+        breaker=(body.breaker or "").strip() or None,
+        height=(body.height or "").strip() or None,
+        quantity=body.quantity,
+        order_date=body.order_date,
+        ship_date=body.ship_date,
+        status=_norm_order_status(body.status),
+        branch=(body.branch or "").strip() or None,
+        notes=(body.notes or "").strip() or None,
+        created_by=user.id,
+    )
+    db.add(o)
+    db.flush()
+    audit(db, user, "CADASTRO", "orders", o.id, request)
+    db.commit()
+    return serialize(o)
+
+
+@app.patch("/orders/{order_id}")
+def update_order(
+    order_id: int,
+    body: OrderBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("orders")(user)
+    o = db.get(Order, order_id)
+    if not o:
+        raise HTTPException(404, "Pedido não encontrado")
+    o.model = body.model.strip()
+    o.quality = (body.quality or "").strip() or None
+    o.cabling = (body.cabling or "").strip() or None
+    o.breaker = (body.breaker or "").strip() or None
+    o.height = (body.height or "").strip() or None
+    o.quantity = body.quantity
+    o.order_date = body.order_date
+    o.ship_date = body.ship_date
+    o.status = _norm_order_status(body.status)
+    o.branch = (body.branch or "").strip() or None
+    o.notes = (body.notes or "").strip() or None
+    audit(db, user, "ALTERAÇÃO", "orders", order_id, request)
+    db.commit()
+    return serialize(o)
+
+
+@app.post("/orders/{order_id}/delete")
+def delete_order(
+    order_id: int,
+    body: OrderDeleteBody,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require("orders")(user)
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Senha incorreta")
+    o = db.get(Order, order_id)
+    if not o:
+        raise HTTPException(404, "Pedido não encontrado")
+    db.delete(o)
+    audit(db, user, "EXCLUSÃO", "orders", order_id, request)
+    db.commit()
+    return {"ok": True}
+
 
 @app.get("/{resource}")
 def list_resource(
