@@ -979,7 +979,6 @@ def delete_commercial_product(
 
 class OrderBody(BaseModel):
     model: str = Field(min_length=1, max_length=120)
-    quality: str | None = None
     cabling: str | None = None
     breaker: str | None = None
     height: str | None = None
@@ -1031,7 +1030,6 @@ def create_order(
     require("orders")(user)
     o = Order(
         model=body.model.strip(),
-        quality=(body.quality or "").strip() or None,
         cabling=(body.cabling or "").strip() or None,
         breaker=(body.breaker or "").strip() or None,
         height=(body.height or "").strip() or None,
@@ -1063,7 +1061,6 @@ def update_order(
     if not o:
         raise HTTPException(404, "Pedido não encontrado")
     o.model = body.model.strip()
-    o.quality = (body.quality or "").strip() or None
     o.cabling = (body.cabling or "").strip() or None
     o.breaker = (body.breaker or "").strip() or None
     o.height = (body.height or "").strip() or None

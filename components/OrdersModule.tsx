@@ -24,7 +24,6 @@ function todayISO() {
 
 const emptyForm = () => ({
   model: '',
-  quality: '',
   cabling: '',
   breaker: '',
   height: '',
@@ -110,7 +109,6 @@ export default function OrdersModule({
     setEditing(r);
     setForm({
       model: r.model || '',
-      quality: r.quality || '',
       cabling: r.cabling || '',
       breaker: r.breaker || '',
       height: r.height || '',
@@ -139,7 +137,6 @@ export default function OrdersModule({
     setOkMsg('');
     const body = {
       model: form.model.trim(),
-      quality: form.quality || null,
       cabling: form.cabling || null,
       breaker: form.breaker || null,
       height: form.height || null,
@@ -214,7 +211,6 @@ export default function OrdersModule({
           'Status',
           'Modelo',
           'Qtd',
-          'Qualidade',
           'Cabeamento',
           'Disjuntor',
           'Altura',
@@ -227,7 +223,6 @@ export default function OrdersModule({
         STATUSES.find((s) => s.value === r.status)?.label || r.status,
         r.model,
         r.quantity,
-        r.quality || '—',
         r.cabling || '—',
         r.breaker || '—',
         r.height || '—',
@@ -275,8 +270,7 @@ export default function OrdersModule({
         )}
       </div>
         <p className="mt-1 text-sm text-slate-500">
-          Pedidos da filial para a matriz — modelo, qualidade, cabeamento, disjuntor, altura e
-          datas.
+            Solicitações da Filial à Matriz
         </p>
       </div>
 
@@ -315,14 +309,6 @@ export default function OrdersModule({
                 required
                 value={form.quantity}
                 onChange={(e) => setField('quantity', e.target.value)}
-                className="w-full rounded-lg border border-slate-200 p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Qualidade</span>
-              <input
-                value={form.quality}
-                onChange={(e) => setField('quality', e.target.value)}
                 className="w-full rounded-lg border border-slate-200 p-2"
               />
             </label>
@@ -480,7 +466,6 @@ export default function OrdersModule({
                 <th className="px-3 py-2 text-left">Status</th>
                 <th className="px-3 py-2 text-left">Modelo</th>
                 <th className="px-3 py-2 text-left">Qtd</th>
-                <th className="px-3 py-2 text-left">Qualidade</th>
                 <th className="px-3 py-2 text-left">Cabeamento</th>
                 <th className="px-3 py-2 text-left">Disjuntor</th>
                 <th className="px-3 py-2 text-left">Altura</th>
@@ -504,7 +489,6 @@ export default function OrdersModule({
                   </td>
                   <td className="px-3 py-2 font-medium">{r.model}</td>
                   <td className="px-3 py-2 tabular-nums">{r.quantity}</td>
-                  <td className="px-3 py-2">{r.quality || '—'}</td>
                   <td className="px-3 py-2">{r.cabling || '—'}</td>
                   <td className="px-3 py-2">{r.breaker || '—'}</td>
                   <td className="px-3 py-2">{r.height || '—'}</td>
