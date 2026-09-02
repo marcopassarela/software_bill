@@ -884,8 +884,7 @@ export default function AppShell({
       'Excluir movimentação',
       'Confirme sua senha. O estoque será ajustado de volta.',
       async (password) => {
-        await request('/stock/movements/' + id, {
-          method: 'DELETE',
+        await request('/stock/movements/' + id, {method: 'DELETE',
           body: JSON.stringify({ password }),
         });
         load();
