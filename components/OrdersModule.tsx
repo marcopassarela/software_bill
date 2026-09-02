@@ -224,7 +224,7 @@ export default function OrdersModule({
         ],
       ],
       body: rows.map((r) => [
-        r.status,
+        STATUSES.find((s) => s.value === r.status)?.label || r.status,
         r.model,
         r.quantity,
         r.quality || '—',
@@ -499,7 +499,7 @@ export default function OrdersModule({
                         r.status
                       )}`}
                     >
-                      {r.status}
+                      {STATUSES.find((s) => s.value === r.status)?.label || r.status}
                     </span>
                   </td>
                   <td className="px-3 py-2 font-medium">{r.model}</td>
