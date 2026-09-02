@@ -497,24 +497,27 @@ export default function ProductionModule({ user }: { user: any }) {
       {tab === 'dia' && (
         <section className="rounded-xl bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-wrap items-end gap-3">
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">De</span>
-              <input
-                type="date"
-                value={filterFrom}
-                onChange={(e) => setFilterFrom(e.target.value)}
-                className="rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Até</span>
-              <input
-                type="date"
-                value={filterTo}
-                onChange={(e) => setFilterTo(e.target.value)}
-                className="rounded-lg border p-2"
-              />
-            </label>
+            <div className="flex justify-center gap-4">
+              <label className="text-sm">
+                <span className="mb-1 block text-center text-slate-600">De</span>
+                <input
+                  type="date"
+                  value={filterFrom}
+                  onChange={(e) => setFilterFrom(e.target.value)}
+                  className="w-40 rounded-lg border p-2"
+                />
+              </label>
+
+              <label className="text-sm">
+                <span className="mb-1 block text-center text-slate-600">Até</span>
+                <input
+                  type="date"
+                  value={filterTo}
+                  onChange={(e) => setFilterTo(e.target.value)}
+                  className="w-40 rounded-lg border p-2"
+                />
+              </label>
+            </div>
             <button
               type="button"
               onClick={loadDays}
