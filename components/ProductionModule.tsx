@@ -520,7 +520,7 @@ export default function ProductionModule({ user }: { user: any }) {
                     type="date"
                     value={filterFrom}
                     onChange={(e) => setFilterFrom(e.target.value)}
-                    className="w-full rounded-lg border p-2 sm:w-auto"
+                    className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 sm:w-40"
                   />
                 </label>
                 <label className="text-sm">
@@ -532,7 +532,7 @@ export default function ProductionModule({ user }: { user: any }) {
                     type="date"
                     value={filterTo}
                     onChange={(e) => setFilterTo(e.target.value)}
-                    className="w-full rounded-lg border p-2 sm:w-auto"
+                    className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 sm:w-40"
                   />
                 </label>
               </div>
