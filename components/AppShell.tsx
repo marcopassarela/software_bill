@@ -894,21 +894,6 @@ export default function AppShell({
     }
   }
 
-  async function deleteMovement(id: number) {
-    askPassword(
-      'Excluir movimentação',
-      'Confirme sua senha. O estoque será ajustado de volta.',
-      async (pwd: string) => {
-        await request('/stock/movements/' + id + '/delete', {
-          method: 'POST',
-          body: JSON.stringify({ password: pwd }),
-        });
-        setEditingMovement(null);
-        load();
-      }
-    );
-  }
-
   async function logout() {
     await request('/auth/logout', { method: 'POST' }).catch(() => {});
     onLogout();
