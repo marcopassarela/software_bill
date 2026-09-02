@@ -844,10 +844,10 @@ export default function AppShell({
   async function updateMovement(id: number, data: any) {
     setError('');
     try {
-      await request('/stock/movements/' + id, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      });
+        await request('/stock/movements/' + id + '/delete', {
+          method: 'POST',
+          body: JSON.stringify({ password }),
+        });
       setEditingMovement(null);
       load();
     } catch (e: any) {
