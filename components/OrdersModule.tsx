@@ -31,7 +31,7 @@ const emptyForm = () => ({
   quantity: '1',
   order_date: todayISO(),
   ship_date: '',
-  status: 'Pendente',
+  status: 'pendente',
   branch: '',
   notes: '',
 });
@@ -49,11 +49,25 @@ export default function OrdersModule({
 }) {
   const isMainAdmin = !!user?.is_main_admin;
   const perms = (user?.permissions || '').split(',').filter(Boolean);
-  const canWrite =
+    const isBoss =
     isMainAdmin ||
     user?.role === 'ADMINISTRADOR' ||
-    user?.role === 'GERENTE' ||
-    perms.includes('orders');
+    user?.role === 'GERENTE';
+
+  // Sub-aba Cadastrar
+  const canCreate =
+    isBoss || perms.includes('orders_create') || perms.includes('orders');
+
+  // Sub-aba Lista
+  const canList =
+    isBoss || perms.includes('orders_list') || perms.includes('orders');
+
+  type Tab = 'cadastro' | 'lista';
+  const [tab, setTab] = useState<Tab>(() => {
+    if (canCreate) return 'cadastro';
+    if (canList) return 'lista';
+    return 'cadastro';
+  });
 
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,7 +117,7 @@ export default function OrdersModule({
       quantity: String(r.quantity ?? 1),
       order_date: r.order_date || todayISO(),
       ship_date: r.ship_date || '',
-      status: r.status || 'Pendente',
+      status: r.status || 'pendente',
       branch: r.branch || '',
       notes: r.notes || '',
     });
@@ -233,6 +247,33 @@ export default function OrdersModule({
     <div className="space-y-5">
       <div className="rounded-xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Pedidos</h2>
+        <div className="flex flex-wrap gap-2">
+        {canCreate && (
+          <button
+            type="button"
+            onClick={() => setTab('cadastro')}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+              tab === 'cadastro' ? 'border-brand bg-brand text-white' : 'bg-white'
+            }`}
+          >
+            Cadastrar
+          </button>
+        )}
+        {canList && (
+          <button
+            type="button"
+            onClick={() => {
+              setTab('lista');
+              load();
+            }}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+              tab === 'lista' ? 'border-brand bg-brand text-white' : 'bg-white'
+            }`}
+          >
+            Lista de pedidos
+          </button>
+        )}
+      </div>
         <p className="mt-1 text-sm text-slate-500">
           Pedidos da filial para a matriz — modelo, qualidade, cabeamento, disjuntor, altura e
           datas.
@@ -250,7 +291,7 @@ export default function OrdersModule({
         </div>
       )}
 
-      {canWrite && (
+      {canCreate && tab === 'cadastro' && (
         <section className="rounded-xl bg-white p-5 shadow-sm">
           <h3 className="font-semibold text-slate-800">
             {editing ? `Editar pedido #${editing.id}` : 'Novo pedido'}
@@ -380,6 +421,7 @@ export default function OrdersModule({
         </section>
       )}
 
+    {canList && tab === 'lista' && (
       <section className="rounded-xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <label className="text-sm">
@@ -431,7 +473,7 @@ export default function OrdersModule({
           </button>
         </div>
 
-        <div className="overflow-x-auto">
+                <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
@@ -445,7 +487,7 @@ export default function OrdersModule({
                 <th className="px-3 py-2 text-left">Pedido</th>
                 <th className="px-3 py-2 text-left">Saída</th>
                 <th className="px-3 py-2 text-left">Filial</th>
-                {canWrite && <th className="px-3 py-2 text-left">Ações</th>}
+                {canCreate && <th className="px-3 py-2 text-left">Ações</th>}
               </tr>
             </thead>
             <tbody>
@@ -473,11 +515,14 @@ export default function OrdersModule({
                     {r.ship_date ? r.ship_date.split('-').reverse().join('/') : '—'}
                   </td>
                   <td className="px-3 py-2">{r.branch || '—'}</td>
-                  {canWrite && (
+                  {canCreate && (
                     <td className="whitespace-nowrap px-3 py-2">
                       <button
                         type="button"
-                        onClick={() => openEdit(r)}
+                        onClick={() => {
+                          openEdit(r);
+                          setTab('cadastro');
+                        }}
                         className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
                       >
                         Editar
@@ -504,6 +549,7 @@ export default function OrdersModule({
           </table>
         </div>
       </section>
+      )}
     </div>
   );
 }

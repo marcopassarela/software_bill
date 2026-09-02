@@ -142,7 +142,9 @@ const MODULE_OPTIONS = [
   { value: 'commercial', label: 'Comercial' },
   { value: 'production', label: 'Produção (fábrica)' },
   { value: 'assembly', label: 'Montagem (padrões)' },
-  { value: 'orders', label: 'Pedidos' },
+  { value: 'orders', label: 'Pedidos (menu)' },
+  { value: 'orders_create', label: 'Pedidos → Cadastrar' },
+  { value: 'orders_list', label: 'Pedidos → Lista de pedidos' },
 ];
 
 function expandPermissions(keys: string[]): string[] {
@@ -535,8 +537,13 @@ export default function AppShell({
       : null;
     if (perms) {
       if (perms.includes(key)) return true;
-      // Montagem: vê o menu Produção se tiver só assembly
       if (key === 'production' && perms.includes('assembly')) return true;
+      // Pedidos: menu se tiver qualquer permissão fina
+      if (
+        key === 'orders' &&
+        (perms.includes('orders_create') || perms.includes('orders_list'))
+      )
+        return true;
       return false;
     }
     const roleMods = moduleAccess[user.role] || [];
