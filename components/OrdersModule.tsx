@@ -48,16 +48,14 @@ export default function OrdersModule({
 }) {
   const isMainAdmin = !!user?.is_main_admin;
   const perms = (user?.permissions || '').split(',').filter(Boolean);
-    const isBoss =
+  const isBoss =
     isMainAdmin ||
     user?.role === 'ADMINISTRADOR' ||
     user?.role === 'GERENTE';
 
-  // Sub-aba Cadastrar
   const canCreate =
     isBoss || perms.includes('orders_create') || perms.includes('orders');
 
-  // Sub-aba Lista
   const canList =
     isBoss || perms.includes('orders_list') || perms.includes('orders');
 
@@ -79,9 +77,9 @@ export default function OrdersModule({
   const [editing, setEditing] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    if (!opts?.silent) setError('');
     try {
       const qs = new URLSearchParams();
       if (filterStatus) qs.set('status', filterStatus);
@@ -90,16 +88,39 @@ export default function OrdersModule({
       const data = await request(`/orders?${qs.toString()}`);
       setRows(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setError(e.message);
-      setRows([]);
+      if (!opts?.silent) {
+        setError(e.message);
+        setRows([]);
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [filterStatus, filterFrom, filterTo]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Sync matriz ↔ filial a cada 10s na Lista
+  useEffect(() => {
+    if (tab !== 'lista') return;
+
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      load({ silent: true });
+    };
+
+    const id = setInterval(tick, 10000);
+    const onFocus = () => load({ silent: true });
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [tab, load]);
 
   function setField(k: string, v: string) {
     setForm((s) => ({ ...s, [k]: v }));
@@ -162,6 +183,7 @@ export default function OrdersModule({
         setOkMsg('Pedido cadastrado.');
       }
       cancelEdit();
+      if (canList) setTab('lista');
       load();
     } catch (err: any) {
       setError(err.message);
@@ -182,7 +204,6 @@ export default function OrdersModule({
     if (askPassword) {
       askPassword('Excluir pedido', 'Confirme sua senha de administrador.', run);
     } else if (confirm('Excluir este pedido?')) {
-      // fallback sem modal
       const pwd = window.prompt('Senha:') || '';
       run(pwd).catch((e) => setError(e.message));
     }
@@ -194,10 +215,8 @@ export default function OrdersModule({
       return;
     }
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.text('LOGÍSTICAS BILL — Pedidos (backup)', 12, 12);
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(
       `Filtro: ${filterFrom || '…'} → ${filterTo || '…'} · ${rows.length} pedido(s)`,
@@ -242,36 +261,34 @@ export default function OrdersModule({
     <div className="space-y-5">
       <div className="rounded-xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Pedidos</h2>
-        <div className="flex flex-wrap gap-2">
-        {canCreate && (
-          <button
-            type="button"
-            onClick={() => setTab('cadastro')}
-            className={`rounded-lg border px-3 py-2 text-sm font-medium ${
-              tab === 'cadastro' ? 'border-brand bg-brand text-white' : 'bg-white'
-            }`}
-          >
-            Cadastrar
-          </button>
-        )}
-        {canList && (
-          <button
-            type="button"
-            onClick={() => {
-              setTab('lista');
-              load();
-            }}
-            className={`rounded-lg border px-3 py-2 text-sm font-medium ${
-              tab === 'lista' ? 'border-brand bg-brand text-white' : 'bg-white'
-            }`}
-          >
-            Lista de pedidos
-          </button>
-        )}
-      </div>
-        <p className="mt-1 text-sm text-slate-500">
-            Solicitações da Filial à Matriz
-        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => setTab('cadastro')}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                tab === 'cadastro' ? 'border-brand bg-brand text-white' : 'bg-white'
+              }`}
+            >
+              Cadastrar
+            </button>
+          )}
+          {canList && (
+            <button
+              type="button"
+              onClick={() => {
+                setTab('lista');
+                load();
+              }}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                tab === 'lista' ? 'border-brand bg-brand text-white' : 'bg-white'
+              }`}
+            >
+              Lista de pedidos
+            </button>
+          )}
+        </div>
+        <p className="mt-2 text-sm text-slate-500">Solicitações da Filial à Matriz</p>
       </div>
 
       {error && (
@@ -407,132 +424,132 @@ export default function OrdersModule({
         </section>
       )}
 
-    {canList && tab === 'lista' && (
-      <section className="rounded-xl bg-white p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Status</span>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded-lg border border-slate-200 p-2"
+      {canList && tab === 'lista' && (
+        <section className="rounded-xl bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-slate-600">Status</span>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="rounded-lg border border-slate-200 p-2"
+              >
+                <option value="">Todos</option>
+                {STATUSES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-slate-600">De</span>
+              <input
+                type="date"
+                value={filterFrom}
+                onChange={(e) => setFilterFrom(e.target.value)}
+                className="box-border max-w-[11.5rem] rounded-lg border border-slate-200 p-2"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-slate-600">Até</span>
+              <input
+                type="date"
+                value={filterTo}
+                onChange={(e) => setFilterTo(e.target.value)}
+                className="box-border max-w-[11.5rem] rounded-lg border border-slate-200 p-2"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => load()}
+              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
             >
-              <option value="">Todos</option>
-              {STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">De</span>
-            <input
-              type="date"
-              value={filterFrom}
-              onChange={(e) => setFilterFrom(e.target.value)}
-              className="box-border max-w-[11.5rem] rounded-lg border border-slate-200 p-2"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-slate-600">Até</span>
-            <input
-              type="date"
-              value={filterTo}
-              onChange={(e) => setFilterTo(e.target.value)}
-              className="box-border max-w-[11.5rem] rounded-lg border border-slate-200 p-2"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={load}
-            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
-          >
-            Filtrar
-          </button>
-          <button
-            type="button"
-            onClick={backupWeekPdf}
-            className="rounded-lg border px-4 py-2 text-sm font-medium"
-          >
-            Backup PDF (filtro)
-          </button>
-        </div>
+              Filtrar
+            </button>
+            <button
+              type="button"
+              onClick={backupWeekPdf}
+              className="rounded-lg border px-4 py-2 text-sm font-medium"
+            >
+              Backup PDF (filtro)
+            </button>
+          </div>
 
-                <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Modelo</th>
-                <th className="px-3 py-2 text-left">Qtd</th>
-                <th className="px-3 py-2 text-left">Cabeamento</th>
-                <th className="px-3 py-2 text-left">Disjuntor</th>
-                <th className="px-3 py-2 text-left">Altura</th>
-                <th className="px-3 py-2 text-left">Pedido</th>
-                <th className="px-3 py-2 text-left">Saída</th>
-                <th className="px-3 py-2 text-left">Filial</th>
-                {canCreate && <th className="px-3 py-2 text-left">Ações</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="px-3 py-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(
-                        r.status
-                      )}`}
-                    >
-                      {STATUSES.find((s) => s.value === r.status)?.label || r.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 font-medium">{r.model}</td>
-                  <td className="px-3 py-2 tabular-nums">{r.quantity}</td>
-                  <td className="px-3 py-2">{r.cabling || '—'}</td>
-                  <td className="px-3 py-2">{r.breaker || '—'}</td>
-                  <td className="px-3 py-2">{r.height || '—'}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {r.order_date?.split('-').reverse().join('/') || '—'}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {r.ship_date ? r.ship_date.split('-').reverse().join('/') : '—'}
-                  </td>
-                  <td className="px-3 py-2">{r.branch || '—'}</td>
-                  {canCreate && (
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openEdit(r);
-                          setTab('cadastro');
-                        }}
-                        className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => doDelete(r)}
-                        className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700"
-                      >
-                        Excluir
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {!loading && !rows.length && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-slate-400">
-                    Nenhum pedido no período.
-                  </td>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Modelo</th>
+                  <th className="px-3 py-2 text-left">Qtd</th>
+                  <th className="px-3 py-2 text-left">Cabeamento</th>
+                  <th className="px-3 py-2 text-left">Disjuntor</th>
+                  <th className="px-3 py-2 text-left">Altura</th>
+                  <th className="px-3 py-2 text-left">Pedido</th>
+                  <th className="px-3 py-2 text-left">Saída</th>
+                  <th className="px-3 py-2 text-left">Filial</th>
+                  {canCreate && <th className="px-3 py-2 text-left">Ações</th>}
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} className="border-t">
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(
+                          r.status
+                        )}`}
+                      >
+                        {STATUSES.find((s) => s.value === r.status)?.label || r.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-medium">{r.model}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.quantity}</td>
+                    <td className="px-3 py-2">{r.cabling || '—'}</td>
+                    <td className="px-3 py-2">{r.breaker || '—'}</td>
+                    <td className="px-3 py-2">{r.height || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.order_date?.split('-').reverse().join('/') || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.ship_date ? r.ship_date.split('-').reverse().join('/') : '—'}
+                    </td>
+                    <td className="px-3 py-2">{r.branch || '—'}</td>
+                    {canCreate && (
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openEdit(r);
+                            setTab('cadastro');
+                          }}
+                          className="mr-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => doDelete(r)}
+                          className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700"
+                        >
+                          Excluir
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {!loading && !rows.length && (
+                  <tr>
+                    <td colSpan={11} className="px-3 py-8 text-center text-slate-400">
+                      Nenhum pedido no período.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
     </div>
   );
