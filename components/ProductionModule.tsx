@@ -353,7 +353,7 @@ export default function ProductionModule({ user }: { user: any }) {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-lg border p-2"
+              className="w-40 rounded-lg border p-2"
             />
           </label>
         </div>
