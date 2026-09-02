@@ -883,10 +883,10 @@ export default function AppShell({
     askPassword(
       'Excluir movimentação',
       'Confirme sua senha. O estoque será ajustado de volta.',
-      async (password: string) => {
+      async (pwd: string) => {
         await request('/stock/movements/' + id + '/delete', {
           method: 'POST',
-          body: JSON.stringify({ password }),
+          body: JSON.stringify({ password: pwd }),
         });
         setEditingMovement(null);
         load();
