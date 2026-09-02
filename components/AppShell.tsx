@@ -60,7 +60,6 @@ const items = [
   ['production', 'Produção', Factory],
   ['orders', 'Pedidos', ClipboardPen],
   ['stock', 'Estoque', Boxes],
-  ['stock', 'Estoque', Boxes],
   ['entry', 'Entradas', PackagePlus],
   ['output', 'Saídas', PackageMinus],
   ['movements', 'Movimentações', ArrowLeftRight],
