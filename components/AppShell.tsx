@@ -1411,7 +1411,7 @@ function AccountPanel({
             </button>
           )}
         </div>
-        <p className="text-[10px] text-slate-400">JPEG/PNG leve (redimensionada automaticamente).</p>
+        <p className="text-[10px] text-slate-400"></p>
       </div>
 
       <form onSubmit={submitName} className="space-y-2" autoComplete="off">
