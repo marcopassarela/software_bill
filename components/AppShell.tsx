@@ -844,10 +844,10 @@ export default function AppShell({
   async function updateMovement(id: number, data: any) {
     setError('');
     try {
-        await request('/stock/movements/' + id + '/delete', {
-          method: 'POST',
-          body: JSON.stringify({ password }),
-        });
+      await request('/stock/movements/' + id, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
       setEditingMovement(null);
       load();
     } catch (e: any) {
@@ -855,7 +855,22 @@ export default function AppShell({
     }
   }
 
-    function askPassword(
+  async function deleteMovement(id: number) {
+    askPassword(
+      'Excluir movimentação',
+      'Confirme sua senha. O estoque será ajustado de volta.',
+      async (pwd: string) => {
+        await request('/stock/movements/' + id + '/delete', {
+          method: 'POST',
+          body: JSON.stringify({ password: pwd }),
+        });
+        setEditingMovement(null);
+        load();
+      }
+    );
+  }
+
+  function askPassword(
     title: string,
     message: string,
     onConfirm: (password: string) => Promise<void>
