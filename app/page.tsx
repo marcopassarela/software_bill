@@ -55,11 +55,11 @@ export default function Home() {
   useEffect(() => {
     function handleSessionExpired() {
       setUser(undefined);
-      setUsername('');
       setPassword('');
       setNewPassword('');
       setError('');
       setBusy(false);
+      // NÃO zere setUsername('')
     }
     function onBlocked(e: any) {
       setUser(undefined);
@@ -129,6 +129,7 @@ export default function Home() {
     const id = setInterval(goLogin, 1000);
     return () => clearInterval(id);
   }, [blockedInfo]);
+
 
   function passwordStrength(pwd: string): {
     score: number;
@@ -478,20 +479,22 @@ export default function Home() {
           />
           <label className="text-sm">Usuário</label>
           <input
+            name="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
-            autoComplete="off"
-            className="w-full rounded-lg border p-2"
+            autoComplete="username"
+            className="..."
           />
           <label className="mt-4 block text-sm">Senha</label>
           <input
             type="password"
+            name="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            autoComplete="off"
-            className="w-full rounded-lg border p-2"
+            autoComplete="current-password"
+            className="..."
           />
           <button
             type="submit"
