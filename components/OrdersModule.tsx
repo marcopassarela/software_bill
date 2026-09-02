@@ -6,7 +6,7 @@ import { autoTable } from 'jspdf-autotable';
 import { request } from '@/lib/api';
 
 const STATUSES = [
-  { value: 'pendente', label: 'Pendente', className: 'bg-amber-100 text-amber-800' },
+  { value: 'Pendente', label: 'Pendente', className: 'bg-amber-100 text-amber-800' },
   { value: 'atrasado', label: 'Atrasado', className: 'bg-red-100 text-red-800' },
   { value: 'entregue', label: 'Entregue', className: 'bg-emerald-100 text-emerald-800' },
 ] as const;
@@ -31,7 +31,7 @@ const emptyForm = () => ({
   quantity: '1',
   order_date: todayISO(),
   ship_date: '',
-  status: 'pendente',
+  status: 'Pendente',
   branch: '',
   notes: '',
 });
@@ -103,7 +103,7 @@ export default function OrdersModule({
       quantity: String(r.quantity ?? 1),
       order_date: r.order_date || todayISO(),
       ship_date: r.ship_date || '',
-      status: r.status || 'pendente',
+      status: r.status || 'Pendente',
       branch: r.branch || '',
       notes: r.notes || '',
     });
