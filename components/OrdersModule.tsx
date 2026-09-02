@@ -6,7 +6,7 @@ import { autoTable } from 'jspdf-autotable';
 import { request } from '@/lib/api';
 
 const STATUSES = [
-  { value: 'Pendente', label: 'Pendente', className: 'bg-amber-100 text-amber-800' },
+  { value: 'pendente', label: 'Pendente', className: 'bg-amber-100 text-amber-800' },
   { value: 'atrasado', label: 'Atrasado', className: 'bg-red-100 text-red-800' },
   { value: 'entregue', label: 'Entregue', className: 'bg-emerald-100 text-emerald-800' },
 ] as const;
