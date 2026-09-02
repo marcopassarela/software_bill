@@ -841,6 +841,16 @@ def delete_movement(
     db.commit()
     return {"ok": True}
 
+@app.post("/stock/movements/{movement_id}/delete")
+def delete_movement_post(
+    movement_id: int,
+    body: MovementDelete,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return delete_movement(movement_id, body, request, user, db)
+
 
 @app.patch("/settings/{key}")
 def edit_setting(
@@ -1056,6 +1066,15 @@ def delete_resource(
     x = db.get(model, record_id)
     if not x:
         raise HTTPException(404)
+
+    if resource == "products":
+        movs = db.scalars(
+            select(StockMovement).where(StockMovement.product_id == record_id)
+        ).all()
+        for m in movs:
+            db.delete(m)
+        db.flush()
+
     try:
         db.delete(x)
         db.flush()
