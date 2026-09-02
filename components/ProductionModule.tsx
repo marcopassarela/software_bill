@@ -510,7 +510,7 @@ export default function ProductionModule({ user }: { user: any }) {
           {/* Filtros + ações */}
           <div className="mb-5 flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-              <div className="flex flex-col gap-3 sm:contents">
+              <div className="flex flex-wrap items-end gap-3">
                 <label className="block w-full max-w-[11.5rem] text-sm">
                   <span className="mb-1 flex items-center gap-1 text-slate-600">
                     <Calendar size={14} className="text-slate-400" />
