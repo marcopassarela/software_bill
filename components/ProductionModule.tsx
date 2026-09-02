@@ -5,6 +5,17 @@ import { autoTable } from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { request } from '@/lib/api';
+import {
+  Calendar,
+  Printer,
+  FileSpreadsheet,
+  FileDown,
+  Trash2,
+  Factory,
+  Wrench,
+  AlertTriangle,
+  Inbox,
+} from 'lucide-react';
 
 const PRODUCTION_MODELS = [
   'MONO - 7MTs',
@@ -353,7 +364,7 @@ export default function ProductionModule({ user }: { user: any }) {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-40 rounded-lg border p-2"
+              className="w-full rounded-lg border p-2"
             />
           </label>
         </div>
@@ -496,57 +507,72 @@ export default function ProductionModule({ user }: { user: any }) {
 
       {tab === 'dia' && (
         <section className="rounded-xl bg-white p-5 shadow-sm">
-          <div className="mb-4 flex flex-wrap items-end gap-3">
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">De</span>
-              <input
-                type="date"
-                value={filterFrom}
-                onChange={(e) => setFilterFrom(e.target.value)}
-                className="rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Até</span>
-              <input
-                type="date"
-                value={filterTo}
-                onChange={(e) => setFilterTo(e.target.value)}
-                className="rounded-lg border p-2"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={loadDays}
-              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white"
-            >
-              Filtrar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPrintDate(days[0]?.date || filterFrom || '');
-                setPrintScope('all');
-                setShowPrintDay(true);
-              }}
-              className="rounded-lg border px-4 py-2 text-sm font-medium"
-            >
-              Imprimir dia (PDF)
-            </button>
-            <button
-              type="button"
-              onClick={backupExcel}
-              className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700"
-            >
-              Backup Excel
-            </button>
-            <button
-              type="button"
-              onClick={backupPdfPeriodo}
-              className="rounded-lg border px-4 py-2 text-sm font-medium"
-            >
-              Backup PDF (período)
-            </button>
+          {/* Filtros + ações */}
+          <div className="mb-5 flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1 text-slate-600">
+                  <Calendar size={14} className="text-slate-400" />
+                  De
+                </span>
+                <input
+                  type="date"
+                  value={filterFrom}
+                  onChange={(e) => setFilterFrom(e.target.value)}
+                  className="rounded-lg border p-2"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 flex items-center gap-1 text-slate-600">
+                  <Calendar size={14} className="text-slate-400" />
+                  Até
+                </span>
+                <input
+                  type="date"
+                  value={filterTo}
+                  onChange={(e) => setFilterTo(e.target.value)}
+                  className="rounded-lg border p-2"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={loadDays}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              >
+                Filtrar
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintDate(days[0]?.date || filterFrom || '');
+                  setPrintScope('all');
+                  setShowPrintDay(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Printer size={15} />
+                Imprimir dia (PDF)
+              </button>
+              <button
+                type="button"
+                onClick={backupExcel}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 px-3.5 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+              >
+                <FileSpreadsheet size={15} />
+                Backup Excel
+              </button>
+              <button
+                type="button"
+                onClick={backupPdfPeriodo}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <FileDown size={15} />
+                Backup PDF (período)
+              </button>
+            </div>
           </div>
 
           {loadingDays ? (
@@ -554,64 +580,86 @@ export default function ProductionModule({ user }: { user: any }) {
           ) : (
             <div className="space-y-4">
               {days.map((d) => (
-                <div key={d.date} className="rounded-xl border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-semibold text-slate-900">
+                <div key={d.date} className="overflow-hidden rounded-xl border">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-4 py-3">
+                    <h3 className="flex items-center gap-2 font-semibold text-slate-900">
+                      <Calendar size={16} className="text-slate-400" />
                       {formatDayLabel(d.date)}
                     </h3>
                     <button
                       type="button"
                       onClick={() => openPurgeDay(d.date)}
-                      className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
                     >
+                      <Trash2 size={13} />
                       Apagar este dia
                     </button>
                   </div>
-                  <div className="mt-3 grid gap-4 lg:grid-cols-2">
+
+                  <div className="grid gap-4 p-4 lg:grid-cols-2">
                     {canFab && (
-                      <div>
-                        <p className="text-xs font-semibold uppercase text-slate-500">
-                          Fabricação — total {d.fabricacao_total}
-                        </p>
-                        <ul className="mt-2 space-y-1 text-sm">
+                      <div className="rounded-lg bg-slate-50/60 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <Factory size={13} />
+                            Fabricação
+                          </p>
+                          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-semibold tabular-nums text-white">
+                            {d.fabricacao_total}
+                          </span>
+                        </div>
+                        <ul className="divide-y divide-slate-200/70 text-sm">
                           {(d.fabricacao || []).map((x: any) => (
-                            <li key={x.id} className="flex justify-between gap-2">
-                              <span>{x.model}</span>
-                              <span className="font-medium tabular-nums">{x.quantity}</span>
+                            <li key={x.id} className="flex items-center justify-between gap-2 py-1.5">
+                              <span className="text-slate-700">{x.model}</span>
+                              <span className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm">
+                                {x.quantity}
+                              </span>
                             </li>
                           ))}
                           {!d.fabricacao?.length && (
-                            <li className="text-slate-400">Sem lançamento</li>
+                            <li className="py-1.5 text-slate-400">Sem lançamento</li>
                           )}
                         </ul>
                       </div>
                     )}
                     {canAsm && (
-                      <div>
-                        <p className="text-xs font-semibold uppercase text-slate-500">
-                          Montagem — total {d.montagem_total}
-                          {d.emergency_total > 0 && (
-                            <span className="ml-2 text-amber-700">
-                              · Emergência {d.emergency_total}
+                      <div className="rounded-lg bg-slate-50/60 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+                          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <Wrench size={13} />
+                            Montagem
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-semibold tabular-nums text-white">
+                              {d.montagem_total}
                             </span>
-                          )}
-                        </p>
-                        <ul className="mt-2 space-y-1 text-sm">
+                            {d.emergency_total > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                                <AlertTriangle size={11} />
+                                {d.emergency_total}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ul className="divide-y divide-slate-200/70 text-sm">
                           {(d.montagem || []).map((x: any) => (
-                            <li key={x.id} className="flex justify-between gap-2">
-                              <span>
+                            <li key={x.id} className="flex items-center justify-between gap-2 py-1.5">
+                              <span className="text-slate-700">
                                 {x.model}
                                 {x.emergency_altered > 0 && (
-                                  <span className="ml-1 text-xs text-amber-700">
+                                  <span className="ml-1.5 text-xs text-amber-700">
                                     (+{x.emergency_altered} alt.)
                                   </span>
                                 )}
                               </span>
-                              <span className="font-medium tabular-nums">{x.quantity}</span>
+                              <span className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm">
+                                {x.quantity}
+                              </span>
                             </li>
                           ))}
                           {!d.montagem?.length && (
-                            <li className="text-slate-400">Sem lançamento</li>
+                            <li className="py-1.5 text-slate-400">Sem lançamento</li>
                           )}
                         </ul>
                       </div>
@@ -620,7 +668,10 @@ export default function ProductionModule({ user }: { user: any }) {
                 </div>
               ))}
               {!days.length && (
-                <p className="text-sm text-slate-400">Nenhum registro no período.</p>
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-10 text-slate-400">
+                  <Inbox size={28} />
+                  <p className="text-sm">Nenhum registro no período.</p>
+                </div>
               )}
             </div>
           )}
