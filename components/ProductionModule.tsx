@@ -511,7 +511,7 @@ export default function ProductionModule({ user }: { user: any }) {
           <div className="mb-5 flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <div className="flex flex-col gap-3 sm:contents">
-                <label className="text-sm">
+                <label className="block w-full max-w-[11.5rem] text-sm">
                   <span className="mb-1 flex items-center gap-1 text-slate-600">
                     <Calendar size={14} className="text-slate-400" />
                     De
@@ -520,10 +520,10 @@ export default function ProductionModule({ user }: { user: any }) {
                     type="date"
                     value={filterFrom}
                     onChange={(e) => setFilterFrom(e.target.value)}
-                    className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 sm:w-40"
+                    className="box-border w-full max-w-[11.5rem] rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm"
                   />
                 </label>
-                <label className="text-sm">
+                <label className="block w-full max-w-[11.5rem] text-sm">
                   <span className="mb-1 flex items-center gap-1 text-slate-600">
                     <Calendar size={14} className="text-slate-400" />
                     Até
@@ -532,7 +532,7 @@ export default function ProductionModule({ user }: { user: any }) {
                     type="date"
                     value={filterTo}
                     onChange={(e) => setFilterTo(e.target.value)}
-                    className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 sm:w-40"
+                    className="box-border w-full max-w-[11.5rem] rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm"
                   />
                 </label>
               </div>
