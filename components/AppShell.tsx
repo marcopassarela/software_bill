@@ -837,7 +837,7 @@ export default function AppShell({
       await request('/' + resource[page] + '/' + id, { method: 'DELETE' });
       load();
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || 'Não foi possível excluir');
     }
   }
 
@@ -883,8 +883,10 @@ export default function AppShell({
     askPassword(
       'Excluir movimentação',
       'Confirme sua senha. O estoque será ajustado de volta.',
-      await request('/stock/movements/' + id + '/delete', {method: 'POST',
-        body: JSON.stringify({ password }),
+      async (password) => {
+        await request('/stock/movements/' + id + '/delete', {
+          method: 'POST',
+          body: JSON.stringify({ password }),
         });
         load();
       }
