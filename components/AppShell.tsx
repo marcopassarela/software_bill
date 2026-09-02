@@ -6,7 +6,7 @@ import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import OrdersModule from '@/components/OrdersModule';
-import { ClipboardList } from 'lucide-react'; // ou Package se preferir
+import { ClipboardPen } from 'lucide-react'; // ou Package se preferir
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -58,7 +58,7 @@ const items = [
   ['maintenance', 'Manutenção', Wrench],
   ['fuel', 'Combustível', Fuel],
   ['production', 'Produção', Factory],
-  ['orders', 'Pedidos', ClipboardList],
+  ['orders', 'Pedidos', ClipboardPen],
   ['stock', 'Estoque', Boxes],
   ['stock', 'Estoque', Boxes],
   ['entry', 'Entradas', PackagePlus],
