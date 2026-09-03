@@ -475,7 +475,7 @@ export default function OrdersModule({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left">Status</th>
@@ -487,6 +487,7 @@ export default function OrdersModule({
                   <th className="px-3 py-2 text-left">Pedido</th>
                   <th className="px-3 py-2 text-left">Saída</th>
                   <th className="px-3 py-2 text-left">Filial</th>
+                  <th className="min-w-[280px] px-3 py-2 text-left">Observação</th>
                   {canCreate && <th className="px-3 py-2 text-left">Ações</th>}
                 </tr>
               </thead>
@@ -514,8 +515,15 @@ export default function OrdersModule({
                       {r.ship_date ? r.ship_date.split('-').reverse().join('/') : '—'}
                     </td>
                     <td className="px-3 py-2">{r.branch || '—'}</td>
+                    <td
+                      className="min-w-[280px] max-w-[380px] whitespace-normal break-words px-3 py-2 align-top"
+                      title={r.notes || r.observation || ''}
+                    >
+                      {r.notes || r.observation || '—'}
+                    </td>
                     {canCreate && (
                       <td className="whitespace-nowrap px-3 py-2">
+                    
                         <button
                           type="button"
                           onClick={() => {
