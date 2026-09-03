@@ -87,7 +87,7 @@ const moduleAccess: any = {
   MOTORISTA: [],
   VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
-  MONTAGEM: ['production', 'orders'],
+  MONTAGEM: ['production'],
 };
 
 export const PRODUCTION_MODELS = [
@@ -124,15 +124,17 @@ function titleFor(k: string) {
       output: 'Saídas',
       movements: 'Movimentações',
       production: 'Produção',
+      orders: 'Pedidos',
       reports: 'Relatórios',
       users: 'Usuários',
+      critical: 'Configurações críticas',
     } as any)[k] || k
   );
 }
 
 const MODULE_OPTIONS = [
   ...items
-    .filter(([k]) => k !== 'users')
+    .filter(([k]) => k !== 'users' && k !== 'orders' && k !== 'critical')
     .map(([k, label]) => ({ value: k as string, label: label as string })),
   // Permissões finas do Agendamento
   { value: 'schedule_edit', label: 'Agendamento → Editar / Adicionar' },
@@ -142,7 +144,6 @@ const MODULE_OPTIONS = [
   { value: 'commercial', label: 'Comercial' },
   { value: 'production', label: 'Produção (fábrica)' },
   { value: 'assembly', label: 'Montagem (padrões)' },
-  { value: 'orders', label: 'Pedidos (menu)' },
   { value: 'orders_create', label: 'Pedidos → Cadastrar' },
   { value: 'orders_list', label: 'Pedidos → Lista de pedidos' },
 ];
@@ -354,7 +355,7 @@ const USER_EDIT_FIELDS: FieldDef[] = [
     key: 'role',
     label: 'Perfil',
     type: 'select',
-    options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR'],
+    options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR', 'MONTAGEM'],
     required: true,
   },
   { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
@@ -538,7 +539,6 @@ export default function AppShell({
     if (perms) {
       if (perms.includes(key)) return true;
       if (key === 'production' && perms.includes('assembly')) return true;
-      // Pedidos: menu se tiver qualquer permissão fina
       if (
         key === 'orders' &&
         (perms.includes('orders_create') || perms.includes('orders_list'))
@@ -555,10 +555,24 @@ export default function AppShell({
   // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
   // já entra direto na primeira aba que ele efetivamente pode ver.
   const [page, setPage] = useState<string>(() => {
-    if (allowed('dashboard')) return 'dashboard';
-    const first = items.find(([k]) => allowed(k));
-    return first ? first[0] : 'dashboard';
+    const first = items.find(([k]) => {
+      if (k === 'critical') return isMainAdmin;
+      return allowed(k);
+    });
+    return first ? first[0] : '';
   });
+
+  useEffect(() => {
+    if (isMainAdmin) return;
+    const ok = page && (page === 'critical' ? isMainAdmin : allowed(page));
+    if (ok) return;
+    const first = items.find(([k]) => {
+      if (k === 'critical') return false;
+      return allowed(k);
+    });
+    setPage(first ? first[0] : '');
+  }, [user, page]);
+
   const [rows, setRows] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<any>();
   const [error, setError] = useState('');
@@ -1024,7 +1038,7 @@ export default function AppShell({
         <header className="mb-7 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">
-              {page === 'critical' ? 'Configurações críticas' : titleFor(page)}
+              {page ? titleFor(page) : 'Sem acesso'}
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -1064,7 +1078,14 @@ export default function AppShell({
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>
         )}
 
-        {page === 'schedule' ? (
+        {!page ? (
+          <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+            <p className="text-sm text-slate-600">
+              Seu usuário não tem permissão para nenhum módulo. Solicite liberação ao
+              administrador.
+            </p>
+          </div>
+        ) : page === 'schedule' ? (
           <ScheduleModule user={user} lookups={lookups} />
         ) : page === 'commercial' ? (
           <CommercialModule user={user} />
@@ -3096,8 +3117,9 @@ function ResourceForm({
     <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
       {fields.map((f) => {
         const isLookup = ['vehicle', 'driver', 'product'].includes(f.type);
+        const Wrapper: any = f.type === 'modules' ? 'div' : 'label';
         return (
-          <label
+          <Wrapper
             key={f.key}
             className={`text-sm ${
               f.type === 'textarea' || f.type === 'modules' ? 'sm:col-span-2' : ''
@@ -3111,7 +3133,7 @@ function ResourceForm({
               <PermissionsField
                 value={values[f.key]}
                 onChange={(v) => set(f.key, v)}
-                startOpen={!!(initial && initial[f.key])}
+                startOpen={!!values[f.key]}
               />
             ) : f.type === 'textarea' ? (
               <textarea
@@ -3166,7 +3188,7 @@ function ResourceForm({
                 className="w-full rounded-lg border p-2"
               />
             )}
-          </label>
+          </Wrapper>
         );
       })}
       <div className="sm:col-span-2">
@@ -3228,8 +3250,10 @@ function EditUserForm({
 
   return (
     <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" autoComplete="off">
-      {USER_EDIT_FIELDS.map((f) => (
-        <label
+      {USER_EDIT_FIELDS.map((f) => {
+        const Wrapper: any = f.type === 'modules' ? 'div' : 'label';
+        return (
+        <Wrapper
           key={f.key}
           className={`text-sm ${f.type === 'modules' ? 'sm:col-span-2' : ''}`}
         >
@@ -3267,8 +3291,9 @@ function EditUserForm({
               className="w-full rounded-lg border p-2"
             />
           )}
-        </label>
-      ))}
+        </Wrapper>
+        );
+      })}
       <div className="sm:col-span-2">
         <button
           disabled={saving}

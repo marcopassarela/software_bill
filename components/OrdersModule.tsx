@@ -53,17 +53,15 @@ export default function OrdersModule({
     user?.role === 'ADMINISTRADOR' ||
     user?.role === 'GERENTE';
 
-  const canCreate =
-    isBoss || perms.includes('orders_create') || perms.includes('orders');
-
-  const canList =
-    isBoss || perms.includes('orders_list') || perms.includes('orders');
+  const canCreate = isBoss || perms.includes('orders_create');
+  const canList = isBoss || perms.includes('orders_list');
 
   type Tab = 'cadastro' | 'lista';
   const [tab, setTab] = useState<Tab>(() => {
+    if (canList && !canCreate) return 'lista';
     if (canCreate) return 'cadastro';
     if (canList) return 'lista';
-    return 'cadastro';
+    return 'lista';
   });
 
   const [rows, setRows] = useState<any[]>([]);
