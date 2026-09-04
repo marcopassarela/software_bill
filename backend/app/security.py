@@ -20,6 +20,7 @@ MODULES = {
     },
     Role.LOGISTICS: {"dashboard", "routes", "vehicles", "drivers", "fuel", "customers", "commercial"},
     Role.STOCK: {"dashboard", "stock", "commercial"},
+    Role.ALMOXARIFADO: {"dashboard", "stock", "commercial"},
     Role.DRIVER: {"routes", "commercial"},
     Role.VIEWER: {
         "dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel",
