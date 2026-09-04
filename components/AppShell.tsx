@@ -3033,10 +3033,9 @@ function ModuleCheckboxes({
   }
 
   return (
-    <div className="max-h-80 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3">
+    <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-2">
       {PERMISSION_GROUPS.map((g) => {
         const modOn = list.includes(g.module);
-        // Pedidos: menu se tiver create ou list
         const showChildren =
           modOn ||
           (g.module === 'orders' &&
@@ -3047,11 +3046,16 @@ function ModuleCheckboxes({
             ['stock', 'entry', 'output', 'movements'].some((k) => list.includes(k)));
 
         return (
-          <div key={g.module} className="rounded-lg bg-slate-50 p-3">
+          <div
+            key={g.module}
+            className={`rounded-lg border border-slate-100 bg-slate-50 p-3 ${
+              g.children ? 'md:col-span-1' : ''
+            }`}
+          >
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <input
                 type="checkbox"
-                className="h-4 w-4"
+                className="h-4 w-4 shrink-0"
                 checked={
                   modOn ||
                   (g.module === 'orders' &&
@@ -3059,11 +3063,10 @@ function ModuleCheckboxes({
                 }
                 onChange={(e) => {
                   if (g.module === 'orders') {
-                    // marcar aba pedidos = pelo menos lista
-                    toggle('orders', e.target.checked, e.target.checked ? ['orders_list'] : ['orders_create', 'orders_list']);
-                    if (!e.target.checked) {
-                      toggle('orders_create', false);
-                      toggle('orders_list', false);
+                    if (e.target.checked) {
+                      toggle('orders', true, ['orders_list']);
+                    } else {
+                      toggle('orders', false, ['orders_create', 'orders_list']);
                     }
                     return;
                   }
@@ -3077,29 +3080,28 @@ function ModuleCheckboxes({
               {g.label}
             </label>
 
-            {g.children && (modOn || showChildren) && (
-              <div className="mt-2 ml-6 grid gap-1.5 border-l-2 border-slate-200 pl-3 sm:grid-cols-2">
+            {g.children && showChildren && (
+              <div className="mt-2 grid grid-cols-1 gap-1.5 border-t border-slate-200/80 pt-2 sm:grid-cols-2">
                 {g.children.map((c) => (
                   <label
                     key={c.value}
-                    className="flex items-center gap-2 text-xs text-slate-600"
+                    className="flex items-start gap-2 text-xs text-slate-600"
                   >
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5"
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
                       checked={list.includes(c.value)}
                       onChange={(e) => {
-                        // ao marcar filho, garante a aba pai (menu)
-                        if (e.target.checked && g.module !== 'production' && g.module !== 'stock') {
-                          toggle(g.module, true);
-                        }
-                        if (e.target.checked && g.module === 'orders') {
-                          toggle('orders', true);
+                        if (e.target.checked) {
+                          if (g.module === 'orders') toggle('orders', true);
+                          else if (g.module !== 'production' && g.module !== 'stock') {
+                            toggle(g.module, true);
+                          }
                         }
                         toggle(c.value, e.target.checked);
                       }}
                     />
-                    {c.label}
+                    <span className="leading-snug">{c.label}</span>
                   </label>
                 ))}
               </div>
