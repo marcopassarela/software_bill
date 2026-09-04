@@ -510,6 +510,17 @@ def block_user(
 
     mode = (body.mode or "").lower().strip()
 
+    # ---- DESBLOQUEAR ----
+    if mode == "unblock":
+        u.active = True
+        u.block_type = None
+        u.blocked_until = None
+        u.block_reason = None
+        u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
+        audit(db, admin, "DESBLOQUEIO", "users", u.id, request)
+        db.commit()
+        return serialize_user(u)
+
     if mode not in ("manual", "scheduled", "permanent"):
         raise HTTPException(400, "mode inválido")
 
@@ -526,7 +537,7 @@ def block_user(
     u.active = False
     u.block_type = mode
     u.block_reason = (body.reason or "").strip() or None
-    u.token_version = int(getattr(u, "token_version", 0) or 0) + 1  # derruba sessão
+    u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
 
     audit(db, admin, f"BLOQUEIO_{mode.upper()}", "users", u.id, request)
     db.commit()
@@ -1904,8 +1915,9 @@ def critical_revoke_sessions(
     # Encerra as sessões de todos os usuários,
     # EXCETO o administrador que executou a ação.
     for u in db.scalars(select(User)).all():
-        if u.id != user.id:
-            u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
+        if u.id == 1:
+            continue
+        u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
 
     audit(
         db,

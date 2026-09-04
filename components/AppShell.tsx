@@ -835,7 +835,7 @@ export default function AppShell({
         method: 'POST',
         body: JSON.stringify({ mode: 'unblock' }),
       });
-      load();
+      await load('users');
     } catch (e: any) {
       setError(e.message);
     }
