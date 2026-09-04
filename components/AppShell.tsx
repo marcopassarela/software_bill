@@ -3016,99 +3016,118 @@ function ModuleCheckboxes({
   onChange: (v: string) => void;
 }) {
   const list = value ? value.split(',').filter(Boolean) : [];
+  const [focus, setFocus] = useState<string | null>('schedule');
 
-  function toggle(key: string, on: boolean, also?: string[]) {
-    let next = new Set(list);
-    if (on) {
-      next.add(key);
-      (also || []).forEach((k) => next.add(k));
-    } else {
+  function toggle(key: string, on: boolean, alsoRemove?: string[]) {
+    const next = new Set(list);
+    if (on) next.add(key);
+    else {
       next.delete(key);
-      (also || []).forEach((k) => next.delete(k));
-      // se desmarcar a aba, tira os filhos
-      const group = PERMISSION_GROUPS.find((g) => g.module === key);
-      group?.children?.forEach((c) => next.delete(c.value));
+      (alsoRemove || []).forEach((k) => next.delete(k));
     }
     onChange(Array.from(next).join(','));
   }
 
-  return (
-    <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-2">
-      {PERMISSION_GROUPS.map((g) => {
-        const modOn = list.includes(g.module);
-        const showChildren =
-          modOn ||
-          (g.module === 'orders' &&
-            (list.includes('orders_create') || list.includes('orders_list'))) ||
-          (g.module === 'production' &&
-            (list.includes('production') || list.includes('assembly'))) ||
-          (g.module === 'stock' &&
-            ['stock', 'entry', 'output', 'movements'].some((k) => list.includes(k)));
+  const group = PERMISSION_GROUPS.find((g) => g.module === focus) || PERMISSION_GROUPS[0];
 
-        return (
-          <div
-            key={g.module}
-            className={`rounded-lg border border-slate-100 bg-slate-50 p-3 ${
-              g.children ? 'md:col-span-1' : ''
-            }`}
-          >
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+  return (
+    <div className="grid gap-3 rounded-lg border border-slate-200 p-3 lg:grid-cols-5">
+      {/* Coluna esquerda: só as abas */}
+      <div className="flex flex-col gap-1 lg:col-span-2">
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Módulos
+        </p>
+        {PERMISSION_GROUPS.map((g) => {
+          const on =
+            list.includes(g.module) ||
+            (g.module === 'orders' &&
+              (list.includes('orders_create') || list.includes('orders_list'))) ||
+            (g.module === 'production' &&
+              (list.includes('production') || list.includes('assembly')));
+          const selected = focus === g.module;
+          return (
+            <button
+              key={g.module}
+              type="button"
+              onClick={() => setFocus(g.module)}
+              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${
+                selected ? 'bg-brand/10 ring-1 ring-brand/30' : 'hover:bg-slate-50'
+              }`}
+            >
               <input
                 type="checkbox"
                 className="h-4 w-4 shrink-0"
-                checked={
-                  modOn ||
-                  (g.module === 'orders' &&
-                    (list.includes('orders_create') || list.includes('orders_list')))
-                }
+                checked={on}
+                onClick={(e) => e.stopPropagation()}
                 onChange={(e) => {
+                  setFocus(g.module);
                   if (g.module === 'orders') {
                     if (e.target.checked) {
-                      toggle('orders', true, ['orders_list']);
+                      toggle('orders', true);
+                      if (!list.includes('orders_list') && !list.includes('orders_create')) {
+                        toggle('orders_list', true);
+                      }
                     } else {
                       toggle('orders', false, ['orders_create', 'orders_list']);
                     }
                     return;
                   }
-                  toggle(
-                    g.module,
-                    e.target.checked,
-                    e.target.checked ? undefined : g.children?.map((c) => c.value)
-                  );
+                  if (!e.target.checked && g.children?.length) {
+                    toggle(
+                      g.module,
+                      false,
+                      g.children.map((c) => c.value)
+                    );
+                  } else {
+                    toggle(g.module, e.target.checked);
+                  }
                 }}
               />
-              {g.label}
-            </label>
+              <span className={`leading-tight ${on ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
+                {g.label}
+              </span>
+              {g.children?.length ? (
+                <span className="ml-auto text-[10px] text-slate-400">▸</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
 
-            {g.children && showChildren && (
-              <div className="mt-2 grid grid-cols-1 gap-1.5 border-t border-slate-200/80 pt-2 sm:grid-cols-2">
-                {g.children.map((c) => (
-                  <label
-                    key={c.value}
-                    className="flex items-start gap-2 text-xs text-slate-600"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                      checked={list.includes(c.value)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          if (g.module === 'orders') toggle('orders', true);
-                          else if (g.module !== 'production' && g.module !== 'stock') {
-                            toggle(g.module, true);
-                          }
-                        }
-                        toggle(c.value, e.target.checked);
-                      }}
-                    />
-                    <span className="leading-snug">{c.label}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+      {/* Coluna direita: opções da aba selecionada */}
+      <div className="rounded-lg bg-slate-50 p-3 lg:col-span-3">
+        <p className="mb-2 text-sm font-semibold text-slate-800">{group.label}</p>
+        {!group.children?.length ? (
+          <p className="text-xs text-slate-500">
+            Sem opções extras. Marque o módulo à esquerda para liberar a aba inteira.
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {group.children.map((c) => (
+              <label
+                key={c.value}
+                className="flex items-start gap-2 rounded-md border border-slate-200/80 bg-white px-2.5 py-2 text-xs text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  checked={list.includes(c.value)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      if (group.module === 'orders') toggle('orders', true);
+                      else if (group.module !== 'production' && group.module !== 'stock') {
+                        toggle(group.module, true);
+                      }
+                    }
+                    toggle(c.value, e.target.checked);
+                  }}
+                />
+                <span className="leading-snug">{c.label}</span>
+              </label>
+            ))}
           </div>
-        );
-      })}
+        )}
+      </div>
     </div>
   );
 }
