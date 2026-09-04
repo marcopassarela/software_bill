@@ -136,12 +136,11 @@ const MODULE_OPTIONS = [
   ...items
     .filter(([k]) => k !== 'users' && k !== 'orders' && k !== 'critical')
     .map(([k, label]) => ({ value: k as string, label: label as string })),
-  // Permissões finas do Agendamento
+  // finas do Agendamento
   { value: 'schedule_edit', label: 'Agendamento → Editar / Adicionar' },
   { value: 'schedule_delete', label: 'Agendamento → Excluir' },
   { value: 'schedule_export', label: 'Agendamento → Exportar TXT/PDF' },
   { value: 'schedule_archive', label: 'Agendamento → Arquivar semana (backup)' },
-  { value: 'commercial', label: 'Comercial' },
   { value: 'production', label: 'Produção (fábrica)' },
   { value: 'assembly', label: 'Montagem (padrões)' },
   { value: 'orders_create', label: 'Pedidos → Cadastrar' },
