@@ -132,20 +132,67 @@ function titleFor(k: string) {
   );
 }
 
-const MODULE_OPTIONS = [
-  ...items
-    .filter(([k]) => k !== 'users' && k !== 'orders' && k !== 'critical')
-    .map(([k, label]) => ({ value: k as string, label: label as string })),
-  // finas do Agendamento
-  { value: 'schedule_edit', label: 'Agendamento → Editar / Adicionar' },
-  { value: 'schedule_delete', label: 'Agendamento → Excluir' },
-  { value: 'schedule_export', label: 'Agendamento → Exportar TXT/PDF' },
-  { value: 'schedule_archive', label: 'Agendamento → Arquivar semana (backup)' },
-  { value: 'production', label: 'Produção (fábrica)' },
-  { value: 'assembly', label: 'Montagem (padrões)' },
-  { value: 'orders_create', label: 'Pedidos → Cadastrar' },
-  { value: 'orders_list', label: 'Pedidos → Lista de pedidos' },
+/** Grupos de permissão: aba → opções internas (botões / sub-abas) */
+const PERMISSION_GROUPS: {
+  module: string;
+  label: string;
+  children?: { value: string; label: string }[];
+}[] = [
+  { module: 'dashboard', label: 'Dashboard' },
+  {
+    module: 'schedule',
+    label: 'Agendamento',
+    children: [
+      { value: 'schedule_edit', label: 'Editar / adicionar clientes na rota' },
+      { value: 'schedule_week', label: 'Nova semana' },
+      { value: 'schedule_route', label: 'Nova rota' },
+      { value: 'schedule_print', label: 'Imprimir rota do dia' },
+      { value: 'schedule_export', label: 'Exportar TXT / PDF da rota' },
+      { value: 'schedule_delete', label: 'Excluir cliente / rota / semana' },
+      { value: 'schedule_archive', label: 'Arquivar semana (backup)' },
+    ],
+  },
+  {
+    module: 'orders',
+    label: 'Pedidos',
+    children: [
+      { value: 'orders_create', label: 'Cadastrar / editar / excluir' },
+      { value: 'orders_list', label: 'Lista de pedidos' },
+    ],
+  },
+  {
+    module: 'production',
+    label: 'Produção',
+    children: [
+      { value: 'production', label: 'Lançar produção (fábrica)' },
+      { value: 'assembly', label: 'Lançar montagem' },
+    ],
+  },
+  { module: 'commercial', label: 'Comercial' },
+  { module: 'vehicles', label: 'Veículos' },
+  { module: 'drivers', label: 'Motoristas' },
+  { module: 'maintenance', label: 'Manutenção' },
+  { module: 'fuel', label: 'Combustível' },
+  {
+    module: 'stock',
+    label: 'Estoque / movimentações',
+    children: [
+      { value: 'stock', label: 'Estoque (produtos)' },
+      { value: 'entry', label: 'Entradas' },
+      { value: 'output', label: 'Saídas' },
+      { value: 'movements', label: 'Movimentações' },
+    ],
+  },
+  { module: 'reports', label: 'Relatórios' },
+  { module: 'settings', label: 'Configurações' },
+  { module: 'users', label: 'Usuários' },
 ];
+
+/** Lista plana (compatível com expandPermissions / backend) */
+const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
+  { value: g.module, label: g.label },
+  ...(g.children || []),
+]);
 
 function expandPermissions(keys: string[]): string[] {
   const s = new Set(keys);
@@ -2969,25 +3016,95 @@ function ModuleCheckboxes({
   onChange: (v: string) => void;
 }) {
   const list = value ? value.split(',').filter(Boolean) : [];
+
+  function toggle(key: string, on: boolean, also?: string[]) {
+    let next = new Set(list);
+    if (on) {
+      next.add(key);
+      (also || []).forEach((k) => next.add(k));
+    } else {
+      next.delete(key);
+      (also || []).forEach((k) => next.delete(k));
+      // se desmarcar a aba, tira os filhos
+      const group = PERMISSION_GROUPS.find((g) => g.module === key);
+      group?.children?.forEach((c) => next.delete(c.value));
+    }
+    onChange(Array.from(next).join(','));
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-2 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3">
-      {MODULE_OPTIONS.map((m) => {
-        const checked = list.includes(m.value);
+    <div className="max-h-80 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3">
+      {PERMISSION_GROUPS.map((g) => {
+        const modOn = list.includes(g.module);
+        // Pedidos: menu se tiver create ou list
+        const showChildren =
+          modOn ||
+          (g.module === 'orders' &&
+            (list.includes('orders_create') || list.includes('orders_list'))) ||
+          (g.module === 'production' &&
+            (list.includes('production') || list.includes('assembly'))) ||
+          (g.module === 'stock' &&
+            ['stock', 'entry', 'output', 'movements'].some((k) => list.includes(k)));
+
         return (
-          <label key={m.value} className="flex items-center gap-2 text-xs text-slate-600">
-            <input
-              type="checkbox"
-              checked={checked}
-              className="h-4 w-4 shrink-0"
-              onChange={(e) => {
-                const next = e.target.checked
-                  ? [...list, m.value]
-                  : list.filter((x) => x !== m.value);
-                onChange(next.join(','));
-              }}
-            />
-            <span className="leading-none">{m.label}</span>
-          </label>
+          <div key={g.module} className="rounded-lg bg-slate-50 p-3">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={
+                  modOn ||
+                  (g.module === 'orders' &&
+                    (list.includes('orders_create') || list.includes('orders_list')))
+                }
+                onChange={(e) => {
+                  if (g.module === 'orders') {
+                    // marcar aba pedidos = pelo menos lista
+                    toggle('orders', e.target.checked, e.target.checked ? ['orders_list'] : ['orders_create', 'orders_list']);
+                    if (!e.target.checked) {
+                      toggle('orders_create', false);
+                      toggle('orders_list', false);
+                    }
+                    return;
+                  }
+                  toggle(
+                    g.module,
+                    e.target.checked,
+                    e.target.checked ? undefined : g.children?.map((c) => c.value)
+                  );
+                }}
+              />
+              {g.label}
+            </label>
+
+            {g.children && (modOn || showChildren) && (
+              <div className="mt-2 ml-6 grid gap-1.5 border-l-2 border-slate-200 pl-3 sm:grid-cols-2">
+                {g.children.map((c) => (
+                  <label
+                    key={c.value}
+                    className="flex items-center gap-2 text-xs text-slate-600"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={list.includes(c.value)}
+                      onChange={(e) => {
+                        // ao marcar filho, garante a aba pai (menu)
+                        if (e.target.checked && g.module !== 'production' && g.module !== 'stock') {
+                          toggle(g.module, true);
+                        }
+                        if (e.target.checked && g.module === 'orders') {
+                          toggle('orders', true);
+                        }
+                        toggle(c.value, e.target.checked);
+                      }}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
@@ -3518,12 +3635,21 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   // depende exclusivamente das permissões específicas marcadas no cadastro
   // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
   // schedule_archive).
-  const canView = isMainAdmin || perms.includes('schedule');
-  const canEdit = isMainAdmin || perms.includes('schedule_edit');
-  const canArchive = isMainAdmin || perms.includes('schedule_archive');
-  const canDelete = isMainAdmin || perms.includes('schedule_delete');
-  const canExport = isMainAdmin || perms.includes('schedule_export');
+  const canEdit =
+    isMainAdmin || perms.includes('schedule_edit') || perms.includes('schedule');
   const canWrite = canEdit;
+  const canNewWeek =
+    isMainAdmin || perms.includes('schedule_week') || perms.includes('schedule_edit');
+  const canNewRoute =
+    isMainAdmin || perms.includes('schedule_route') || perms.includes('schedule_edit');
+  const canPrint =
+    isMainAdmin || perms.includes('schedule_print') || perms.includes('schedule_export');
+  const canDelete =
+    isMainAdmin || perms.includes('schedule_delete');
+  const canArchive =
+    isMainAdmin || perms.includes('schedule_archive');
+  const canExport =
+    isMainAdmin || perms.includes('schedule_export');
 
     async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
