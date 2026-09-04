@@ -131,19 +131,48 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
 def require(module: str, write: bool = False):
     def check(user: User = Depends(current_user)):
         has_custom_permissions = bool(user.permissions)
-        grants = set((user.permissions or "").split(",")) if has_custom_permissions else MODULES[user.role]
-        if "*" not in grants and module not in grants:
+        if has_custom_permissions:
+            grants = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
+        else:
+            grants = set(MODULES.get(user.role, set()))
+
+        # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders"
+        if module == "orders":
+            if "*" in grants or "orders" in grants:
+                pass
+            elif write:
+                if "orders_create" not in grants:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Sem permissão para este módulo",
+                    )
+            else:
+                # leitura (lista)
+                if "orders_list" not in grants and "orders_create" not in grants:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Sem permissão para este módulo",
+                    )
+        elif "*" not in grants and module not in grants:
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
+
         if (
             write
             and not has_custom_permissions
             and module in WRITE_ONLY_ROLES
             and user.role not in WRITE_ONLY_ROLES[module]
         ):
-            raise HTTPException(status_code=403, detail="Você só pode consultar este módulo, não editar")
+            raise HTTPException(
+                status_code=403,
+                detail="Você só pode consultar este módulo, não editar",
+            )
         if user.must_change_password and module != "auth":
-            raise HTTPException(status_code=403, detail="Altere a senha temporária antes de continuar")
+            raise HTTPException(
+                status_code=403,
+                detail="Altere a senha temporária antes de continuar",
+            )
         return user
+
     return check
 
 
