@@ -69,6 +69,23 @@ const items = [
   ['critical', 'Configurações críticas', ShieldAlert],
 ] as const;
 
+const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
+  { id: 'main', label: 'Principal', keys: ['dashboard', 'schedule', 'orders'] },
+  { id: 'ops', label: 'Operação', keys: ['production', 'commercial'] },
+  {
+    id: 'fleet',
+    label: 'Frota',
+    keys: ['vehicles', 'drivers', 'maintenance', 'fuel'],
+  },
+  {
+    id: 'warehouse',
+    label: 'Almoxarifado',
+    keys: ['stock', 'entry', 'output', 'movements'],
+  },
+  { id: 'data', label: 'Dados', keys: ['reports', 'users'] },
+  { id: 'system', label: 'Sistema', keys: ['settings', 'critical'] },
+];
+
 const resource: any = {
   vehicles: 'vehicles',
   drivers: 'drivers',
@@ -635,6 +652,24 @@ export default function AppShell({
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    main: true,
+    ops: true,
+    fleet: false,
+    warehouse: false,
+    data: false,
+    system: false,
+  });
+
+  function toggleGroup(id: string) {
+    setOpenGroups((s) => ({ ...s, [id]: !s[id] }));
+  }
+
+  useEffect(() => {
+    const g = NAV_GROUPS.find((x) => x.keys.includes(page));
+    if (g) setOpenGroups((s) => ({ ...s, [g.id]: true }));
+  }, [page]);
+
   const [deletePasswordModal, setDeletePasswordModal] = useState<{
   open: boolean;
   title: string;
@@ -1026,31 +1061,63 @@ export default function AppShell({
           </button>
         </div>
 
-        <nav className="px-2 pb-3">
-          {items
-            .filter(([k]) => {
+        <nav className="flex h-[calc(100%-8rem)] flex-col gap-1 overflow-y-auto px-2 pb-3">
+          {NAV_GROUPS.map((group) => {
+            const visibleItems = items.filter(([k]) => {
+              if (!group.keys.includes(k)) return false;
               if (k === 'critical') return isMainAdmin;
               return allowed(k);
-            })
-            .map(([k, label, Icon]) => (
-              <button
-                key={k}
-                onClick={() => goTo(k)}
-                title={label}
-                className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm ${
-                  page === k ? 'bg-cyan-700 text-white' : 'hover:bg-slate-700'
-                } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
-              >
-                <Icon size={18} className="shrink-0" />
-                <span
-                  className={`whitespace-nowrap transition-opacity duration-200 ${
-                    sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+            });
+            if (!visibleItems.length) return null;
+
+            const isOpen = sidebarCollapsed || !!openGroups[group.id];
+
+            return (
+              <div key={group.id} className="mb-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!sidebarCollapsed) toggleGroup(group.id);
+                  }}
+                  className={`mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${
+                    sidebarCollapsed ? 'md:hidden' : 'hover:text-slate-300'
                   }`}
                 >
-                  {label}
-                </span>
-              </button>
-            ))}
+                  <span>{group.label}</span>
+                  {!sidebarCollapsed && (
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    />
+                  )}
+                </button>
+
+                {isOpen &&
+                  visibleItems.map(([k, label, Icon]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => goTo(k)}
+                      title={label}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+                        page === k
+                          ? 'bg-cyan-700 text-white'
+                          : 'text-slate-300 hover:bg-slate-700/80 hover:text-white'
+                      } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
+                    >
+                      <Icon size={18} className="shrink-0 opacity-90" />
+                      <span
+                        className={`truncate transition-opacity duration-200 ${
+                          sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+                        }`}
+                      >
+                        {label}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
         </nav>
 
         
