@@ -3685,6 +3685,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const [deletingWeek, setDeletingWeek] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
+  const [filterName, setFilterName] = useState('');
+  const [filterPhone, setFilterPhone] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterComanda, setFilterComanda] = useState('');
+
   const [showNewWeek, setShowNewWeek] = useState(false);
   const [showNewSlot, setShowNewSlot] = useState(false);
   const [editingSlot, setEditingSlot] = useState<any>(null);
@@ -3819,6 +3824,49 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   });
 
   const dates = Object.keys(slotsByDate).sort();
+
+  function entryMatches(e: any) {
+    const name = filterName.trim().toLowerCase();
+    const phone = filterPhone.trim().replace(/\D/g, '');
+    const comanda = filterComanda.trim().toLowerCase();
+    const st = filterStatus.trim();
+    if (name && !(e.client_name || '').toLowerCase().includes(name)) return false;
+    if (phone) {
+      const p = String(e.phone || '').replace(/\D/g, '');
+      if (!p.includes(phone)) return false;
+    }
+    if (st && String(e.status || '') !== st) return false;
+    if (comanda) {
+      const c = String(e.comanda || '').toLowerCase();
+      const sem = e.no_comanda ? 'sem comanda' : '';
+      if (!c.includes(comanda) && !sem.includes(comanda)) return false;
+    }
+    return true;
+  }
+
+  const hasAgendaFilter = !!(
+    filterName.trim() ||
+    filterPhone.trim() ||
+    filterStatus ||
+    filterComanda.trim()
+  );
+
+  const filteredSlotsByDate: Record<string, any[]> = {};
+  if (selectedWeek) {
+    Object.keys(slotsByDate).forEach((date) => {
+      const slots = slotsByDate[date]
+        .map((slot: any) => {
+          if (!hasAgendaFilter) return slot;
+          const entries = (slot.entries || []).filter(entryMatches);
+          if (!entries.length) return null;
+          return { ...slot, entries };
+        })
+        .filter(Boolean) as any[];
+      if (slots.length) filteredSlotsByDate[date] = slots;
+    });
+  }
+  const filteredDates = Object.keys(filteredSlotsByDate).sort();
+
 
   async function createWeek(data: { start_date: string; label?: string }) {
     try {
@@ -4509,6 +4557,80 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
       {selectedWeek ? (
         <div className="space-y-6">
+          {selectedWeek && (
+            <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
+              <p className="mb-3 text-sm font-medium text-slate-700">Buscar na agenda</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Nome</span>
+                  <input
+                    value={filterName}
+                    onChange={(e) => setFilterName(e.target.value)}
+                    placeholder="Cliente"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Telefone</span>
+                  <input
+                    value={filterPhone}
+                    onChange={(e) => setFilterPhone(e.target.value)}
+                    placeholder="Somente numeros"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Situacao</span>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  >
+                    <option value="">Todas</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Reagendamento">Reagendamento</option>
+                    <option value="Pendente">Pendente</option>
+                    <option value="Fechado">Fechado</option>
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Comanda</span>
+                  <input
+                    value={filterComanda}
+                    onChange={(e) => setFilterComanda(e.target.value)}
+                    placeholder="No ou sem comanda"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterName('');
+                      setFilterPhone('');
+                      setFilterStatus('');
+                      setFilterComanda('');
+                    }}
+                    className="w-full rounded-lg border px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
+              </div>
+              {hasAgendaFilter && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Mostrando apenas clientes que batem com o filtro nesta semana.
+                </p>
+              )}
+            </div>
+          )}
+
+          {hasAgendaFilter && filteredDates.length === 0 && dates.length > 0 && (
+            <p className="mb-4 rounded-xl bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+              Nenhum cliente encontrado com esse filtro.
+            </p>
+          )}
+
           {dates.length === 0 ? (
             <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm">
               Nenhuma rota cadastrada nesta semana.
@@ -4521,7 +4643,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               )}
             </div>
           ) : (
-              dates.map((date, dayIndex) => (
+              filteredDates.map((date, dayIndex) => (
               <div key={date}>
                 {dayIndex > 0 && (
                   <div className="my-6 flex items-center gap-3">
@@ -4551,7 +4673,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                     </div>
                   </div>
                   <div className="divide-y">
-                    {slotsByDate[date].map((slot: any) => (
+                    {filteredSlotsByDate[date].map((slot: any) => (
                       <RouteSlotCard
                         key={slot.id}
                         slot={slot}
