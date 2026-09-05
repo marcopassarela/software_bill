@@ -1417,6 +1417,7 @@ function AccountPanel({
   onLogout: () => void;
 }) {
   const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email || '');
   const [nameMsg, setNameMsg] = useState('');
   const [nameErr, setNameErr] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -1436,10 +1437,13 @@ function AccountPanel({
     try {
       const updated = await request('/auth/profile', {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+        }),
       });
       onUserUpdate(updated);
-      setNameMsg('Nome atualizado.');
+      setNameMsg('Dados atualizados.');
     } catch (e: any) {
       setNameErr(e.message);
     } finally {
@@ -1563,22 +1567,35 @@ function AccountPanel({
       </div>
 
       <form onSubmit={submitName} className="space-y-2" autoComplete="off">
-        <p className="text-xs font-medium text-slate-500">Nome</p>
+        <p className="text-xs font-medium text-slate-500">Dados da conta</p>
         {nameErr && <p className="text-xs text-red-600">{nameErr}</p>}
         {nameMsg && <p className="text-xs text-green-600">{nameMsg}</p>}
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          className="w-full rounded-lg border p-2 text-sm"
-        />
+        <label className="block text-xs text-slate-600">
+          Nome
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+        </label>
+        <label className="block text-xs text-slate-600">
+          E-mail
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+        </label>
         <button
           type="submit"
           disabled={savingName}
           className="w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
         >
-          {savingName ? 'Salvando…' : 'Salvar nome'}
+          {savingName ? 'Salvando…' : 'Salvar dados'}
         </button>
       </form>
 

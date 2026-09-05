@@ -94,6 +94,7 @@ class PasswordChange(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    email: str | None = Field(default=None, max_length=160)
 
 class UserCreate(BaseModel):
     name: str
@@ -348,7 +349,19 @@ def update_profile(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    user.name = body.name
+    user.name = body.name.strip()
+
+    if body.email is not None:
+        email = body.email.strip().lower()
+        if not email or "@" not in email:
+            raise HTTPException(400, "E-mail inválido")
+        other = db.scalar(
+            select(User).where(User.email == email, User.id != user.id)
+        )
+        if other:
+            raise HTTPException(400, "Este e-mail já está em uso")
+        user.email = email
+
     audit(db, user, "ALTERAÇÃO_DE_PERFIL", "auth", user.id, request)
     db.commit()
     return serialize_user(user)
