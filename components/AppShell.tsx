@@ -4573,14 +4573,19 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 <label className="text-sm">
                   <span className="mb-1 block text-slate-600">Telefone</span>
                   <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
                     value={filterPhone}
-                    onChange={(e) => setFilterPhone(e.target.value)}
+                    onChange={(e) =>
+                      setFilterPhone(e.target.value.replace(/\D/g, ''))
+                    }
                     placeholder="Somente numeros"
                     className="w-full rounded-lg border border-slate-200 p-2"
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-slate-600">Situacao</span>
+                  <span className="mb-1 block text-slate-600">Situação</span>
                   <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
