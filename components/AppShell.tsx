@@ -4599,11 +4599,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                   </select>
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-slate-600">Comanda</span>
+                  <span className="mb-1 block text-slate-600">Número da comanda</span>
                   <input
                     value={filterComanda}
                     onChange={(e) => setFilterComanda(e.target.value)}
-                    placeholder="No ou sem comanda"
+                    placeholder="Sem comanda"
                     className="w-full rounded-lg border border-slate-200 p-2"
                   />
                 </label>
