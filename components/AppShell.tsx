@@ -654,7 +654,7 @@ export default function AppShell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     main: true,
-    ops: true,
+    ops: false,
     fleet: false,
     warehouse: false,
     data: false,
