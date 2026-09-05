@@ -213,16 +213,46 @@ export default function OrdersModule({
       return;
     }
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    const fmt = (iso: string) => {
+      if (!iso) return '';
+      const [y, m, d] = iso.split('-');
+      if (!y || !m || !d) return iso;
+      return `${d}/${m}/${y}`;
+    };
+
+    let periodo = 'Periodo: todos os pedidos listados';
+    if (filterFrom && filterTo) {
+      periodo = `Periodo: ${fmt(filterFrom)} a ${fmt(filterTo)}`;
+    } else if (filterFrom) {
+      periodo = `Periodo: a partir de ${fmt(filterFrom)}`;
+    } else if (filterTo) {
+      periodo = `Periodo: ate ${fmt(filterTo)}`;
+    }
+
+    const statusLabel = filterStatus
+      ? STATUSES.find((s) => s.value === filterStatus)?.label || filterStatus
+      : 'Todos';
+
+    const geradoEm = new Date().toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOGÍSTICAS BILL — Pedidos (backup)', 12, 12);
+    doc.text('LOGISTICAS BILL - Relatorio de Pedidos', 12, 12);
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
+    doc.text(periodo, 12, 18);
     doc.text(
-      `Filtro: ${filterFrom || '…'} → ${filterTo || '…'} · ${rows.length} pedido(s)`,
+      `Status: ${statusLabel}  |  Total: ${rows.length} pedido(s)  |  Gerado em: ${geradoEm}`,
       12,
-      18
+      23
     );
     autoTable(doc, {
-      startY: 22,
+      startY: 28,
       head: [
         [
           'Status',
@@ -251,7 +281,9 @@ export default function OrdersModule({
       headStyles: { fillColor: [15, 40, 70], textColor: 255 },
       margin: { left: 10, right: 10 },
     });
-    doc.save(`pedidos_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`);
+    const nomeDe = filterFrom ? fmt(filterFrom).replace(/\//g, '-') : 'inicio';
+    const nomeAte = filterTo ? fmt(filterTo).replace(/\//g, '-') : 'fim';
+    doc.save(`pedidos_${nomeDe}_${nomeAte}.pdf`);
     setOkMsg('PDF gerado.');
   }
 
