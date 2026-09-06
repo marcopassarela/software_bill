@@ -208,6 +208,13 @@ def serialize_user(o, unit: str | None = None):
     d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
     return d
 
+def require_matriz(user: User):
+    if session_unit(user) != "matriz":
+        raise HTTPException(
+            403,
+            "O módulo Produção está disponível apenas na Matriz.",
+        )
+
 
 def _parse_units_access(raw) -> str:
     if raw is None:

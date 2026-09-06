@@ -594,7 +594,13 @@ export default function AppShell({
 }) {
   const isMainAdmin = !!user.is_main_admin;
 
-  const allowed = (key: string) => {
+    const allowed = (key: string) => {
+    if (
+      (key === 'production' || key === 'assembly') &&
+      user?.current_unit === 'filial'
+    ) {
+      return false;
+    }
     if (isMainAdmin) return true;
     const perms = user.permissions
       ? user.permissions.split(',').filter(Boolean)
@@ -615,8 +621,6 @@ export default function AppShell({
     return false;
   };
 
-  // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
-  // já entra direto na primeira aba que ele efetivamente pode ver.
   const [page, setPage] = useState<string>(() => {
     const first = items.find(([k]) => {
       if (k === 'critical') return isMainAdmin;
@@ -625,6 +629,18 @@ export default function AppShell({
     return first ? first[0] : '';
   });
 
+  // Filial não pode ficar em Produção
+  useEffect(() => {
+    if (user?.current_unit === 'filial' && page === 'production') {
+      const first = items.find(([k]) => {
+        if (k === 'critical') return isMainAdmin;
+        return allowed(k);
+      });
+      setPage(first ? first[0] : '');
+    }
+  }, [user?.current_unit, page]);
+
+  // Se não tem acesso à página atual, vai para a primeira liberada
   useEffect(() => {
     if (isMainAdmin) return;
     const ok = page && (page === 'critical' ? isMainAdmin : allowed(page));
