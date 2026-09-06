@@ -84,6 +84,18 @@ def seed():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         update_maintenance_status(db)
+        deleted = purge_old_audit_logs(db)
+        if deleted:
+            print(f"[purge] {deleted} audit logs antigos removidos")
+
+@app.post("/admin/purge-audit")
+def admin_purge_audit(
+    days: int = 90,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    deleted = purge_old_audit_logs(db, days=days)
+    return {"deleted": deleted, "retention_days": days}
 
 
 class Login(BaseModel):
@@ -771,45 +783,65 @@ def logs(
 @app.get("/dashboard")
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
     require("dashboard")(user)
-    update_maintenance_status(db)
-    today = datetime.now().date()
     unit = session_unit(user)
-    count = lambda q: db.scalar(q) or 0
+    today = date.today()
 
-    vehicles_in_maintenance = count(
+    # Atualiza status só se necessário (evita UPDATE a cada hit)
+    # Você pode mover isso para um job diário se quiser
+    update_maintenance_status(db)
+
+    # Uma única query agregada para manutenção
+    maint = db.execute(
+        select(
+            func.count().filter(Maintenance.status == "Em andamento").label("in_progress"),
+            func.count().filter(
+                func.date(Maintenance.date) == today,
+                Maintenance.status.in_(["Agendado", "Em andamento"])
+            ).label("today"),
+            func.count().filter(
+                func.date(Maintenance.date) < today,
+                Maintenance.status.notin_(["Concluído"])
+            ).label("overdue"),
+            func.count().filter(Maintenance.status == "Concluído").label("completed"),
+        )
+        .where(Maintenance.org_unit == unit)
+    ).one()
+
+    vehicles_in_maintenance = db.scalar(
         select(func.count(func.distinct(Maintenance.vehicle_id)))
-        .select_from(Maintenance)
         .where(
             Maintenance.status == "Em andamento",
             Maintenance.org_unit == unit,
         )
-    )
-    maintenance_today = count(
+    ) or 0
+
+    routes_today = db.scalar(
         select(func.count())
-        .select_from(Maintenance)
-        .where(
-            func.date(Maintenance.date) == today,
-            Maintenance.status.in_(["Agendado", "Em andamento"]),
-            Maintenance.org_unit == unit,
+        .select_from(RouteSlot)
+        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+        .where(RouteSlot.date == today, ScheduleWeek.unit == unit)
+    ) or 0
+
+    products_stats = db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(Product.quantity <= Product.minimum_stock).label("low"),
         )
+        .where(Product.org_unit == unit)
+    ).one()
+
+    fuel_cost = float(
+        db.scalar(
+            select(func.coalesce(func.sum(FuelRecord.total_value), 0))
+            .where(FuelRecord.org_unit == unit)
+        ) or 0
     )
-    maintenance_overdue = count(
+
+    available = db.scalar(
         select(func.count())
-        .select_from(Maintenance)
-        .where(
-            func.date(Maintenance.date) < today,
-            Maintenance.status.notin_(["Concluído"]),
-            Maintenance.org_unit == unit,
-        )
-    )
-    maintenance_completed = count(
-        select(func.count())
-        .select_from(Maintenance)
-        .where(
-            Maintenance.status == "Concluído",
-            Maintenance.org_unit == unit,
-        )
-    )
+        .where(Vehicle.status == "Disponível", Vehicle.org_unit == unit)
+    ) or 0
+
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
@@ -819,20 +851,23 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
                 Maintenance.org_unit == unit,
             )
             .order_by(Maintenance.date)
-            .limit(20)
+            .limit(10)          # reduzi de 20 → 10
         ).all()
     ]
 
-    # rotas do dia na agenda (schedule) desta unidade
-    routes_today = count(
-        select(func.count())
-        .select_from(RouteSlot)
-        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
-        .where(
-            RouteSlot.date == today,
-            ScheduleWeek.unit == unit,
-        )
-    )
+    return {
+        "unit": unit,
+        "available": available,
+        "maintenance": vehicles_in_maintenance,
+        "maintenance_completed": maint.completed,
+        "maintenance_today": maint.today,
+        "maintenance_overdue": maint.overdue,
+        "routes_today": routes_today,
+        "products": products_stats.total,
+        "low_stock": products_stats.low,
+        "fuel_cost": fuel_cost,
+        "maintenance_alerts": maintenance_alerts,
+    }
 
     return {
         "unit": unit,
@@ -870,17 +905,22 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 
 @app.get("/stock/movements")
-def movements(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def movements(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require("stock")(user)
-    return [
-        serialize(x)
-        for x in db.scalars(
-            select(StockMovement)
-            .where(StockMovement.org_unit == session_unit(user))
-            .order_by(StockMovement.occurred_at.desc())
-            .limit(500)
-        ).all()
-    ]
+    unit = session_unit(user)
+    rows = db.scalars(
+        select(StockMovement)
+        .where(StockMovement.org_unit == unit)
+        .order_by(StockMovement.occurred_at.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [serialize(x) for x in rows]
 
 
 @app.post("/stock/{kind}")
