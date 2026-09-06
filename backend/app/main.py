@@ -740,102 +740,102 @@ def logs(
 @app.get("/dashboard")
 def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
     require("dashboard")(user)
-
-    # Atualiza automaticamente as manutenções que já chegaram à data
     update_maintenance_status(db)
-
     today = datetime.now().date()
-
+    unit = session_unit(user)
     count = lambda q: db.scalar(q) or 0
-
-    # ============================================================
-    # MANUTENÇÕES
-    # ============================================================
 
     vehicles_in_maintenance = count(
         select(func.count(func.distinct(Maintenance.vehicle_id)))
         .select_from(Maintenance)
-        .where(Maintenance.status == "Em andamento")
+        .where(
+            Maintenance.status == "Em andamento",
+            Maintenance.org_unit == unit,
+        )
     )
-
     maintenance_today = count(
         select(func.count())
         .select_from(Maintenance)
         .where(
             func.date(Maintenance.date) == today,
             Maintenance.status.in_(["Agendado", "Em andamento"]),
+            Maintenance.org_unit == unit,
         )
     )
-
     maintenance_overdue = count(
         select(func.count())
         .select_from(Maintenance)
         .where(
             func.date(Maintenance.date) < today,
             Maintenance.status.notin_(["Concluído"]),
+            Maintenance.org_unit == unit,
         )
     )
-
     maintenance_completed = count(
         select(func.count())
         .select_from(Maintenance)
-        .where(Maintenance.status == "Concluído")
+        .where(
+            Maintenance.status == "Concluído",
+            Maintenance.org_unit == unit,
+        )
     )
-
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
             select(Maintenance)
-            .where(Maintenance.status == "Em andamento")
+            .where(
+                Maintenance.status == "Em andamento",
+                Maintenance.org_unit == unit,
+            )
             .order_by(Maintenance.date)
             .limit(20)
         ).all()
     ]
 
-    # ============================================================
-    # DASHBOARD
-    # ============================================================
+    # rotas do dia na agenda (schedule) desta unidade
+    routes_today = count(
+        select(func.count())
+        .select_from(RouteSlot)
+        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+        .where(
+            RouteSlot.date == today,
+            ScheduleWeek.unit == unit,
+        )
+    )
 
     return {
-    "available": count(
-        select(func.count())
-        .select_from(Vehicle)
-        .where(Vehicle.status == "Disponível")
-    ),
-
-    "maintenance": vehicles_in_maintenance,
-
-    "maintenance_completed": maintenance_completed,
-
-    "routes_today": count(
-        select(func.count())
-        .select_from(Route)
-        .where(func.date(Route.scheduled_at) == today)
-    ),
-
-    "products": count(
-        select(func.count()).select_from(Product)
-    ),
-
-    "low_stock": count(
-        select(func.count())
-        .select_from(Product)
-        .where(Product.quantity <= Product.minimum_stock)
-    ),
-
-    "fuel_cost": float(
-        count(
-            select(
-                func.coalesce(
-                    func.sum(FuelRecord.total_value),
-                    0
+        "unit": unit,
+        "available": count(
+            select(func.count())
+            .select_from(Vehicle)
+            .where(Vehicle.status == "Disponível", Vehicle.org_unit == unit)
+        ),
+        "maintenance": vehicles_in_maintenance,
+        "maintenance_completed": maintenance_completed,
+        "maintenance_today": maintenance_today,
+        "maintenance_overdue": maintenance_overdue,
+        "routes_today": routes_today,
+        "products": count(
+            select(func.count()).select_from(Product).where(Product.org_unit == unit)
+        ),
+        "low_stock": count(
+            select(func.count())
+            .select_from(Product)
+            .where(
+                Product.org_unit == unit,
+                Product.quantity <= Product.minimum_stock,
+            )
+        ),
+        "fuel_cost": float(
+            db.scalar(
+                select(func.coalesce(func.sum(FuelRecord.total_value), 0)).where(
+                    FuelRecord.org_unit == unit
                 )
             )
-        )
-    ),
-
-    "maintenance_alerts": maintenance_alerts,
-}
+            or 0
+        ),
+        "maintenance_alerts": maintenance_alerts,
+    }
 
 
 @app.get("/stock/movements")
@@ -844,7 +844,10 @@ def movements(user: User = Depends(current_user), db: Session = Depends(get_db))
     return [
         serialize(x)
         for x in db.scalars(
-            select(StockMovement).order_by(StockMovement.occurred_at.desc()).limit(500)
+            select(StockMovement)
+            .where(StockMovement.org_unit == session_unit(user))
+            .order_by(StockMovement.occurred_at.desc())
+            .limit(500)
         ).all()
     ]
 
@@ -865,6 +868,8 @@ def stock(
     )
     if not product:
         raise HTTPException(404, "Produto não encontrado")
+    if (getattr(product, "org_unit", None) or "matriz") != session_unit(user):
+        raise HTTPException(404, "Produto não encontrado")
     current_qty = float(product.quantity)
     if kind == "output" and current_qty < body.quantity:
         raise HTTPException(409, "Estoque insuficiente")
@@ -884,6 +889,7 @@ def stock(
         observation=body.observation,
         invoice=body.invoice,
         unit_value=body.unit_value,
+        org_unit=session_unit(user),
     )
     db.add(m)
     db.flush()
@@ -1037,7 +1043,9 @@ def list_commercial_products(
 ):
     require("commercial")(user)
     rows = db.scalars(
-        select(CommercialProduct).order_by(
+        select(CommercialProduct)
+        .where(CommercialProduct.org_unit == session_unit(user))
+        .order_by(
             CommercialProduct.code.asc(),
             CommercialProduct.id.asc(),
         )
@@ -1053,7 +1061,9 @@ def create_commercial_product(
     db: Session = Depends(get_db),
 ):
     require("commercial", write=True)(user)
-    product = CommercialProduct(**body.model_dump())
+    payload = body.model_dump()
+    payload["org_unit"] = session_unit(user)
+    product = CommercialProduct(**payload)
     db.add(product)
     db.flush()
     audit(db, user, "CADASTRO", "commercial", product.id, request)
@@ -1236,7 +1246,11 @@ def list_resource(
     if resource == "maintenance":
         update_maintenance_status(db)
 
-    return [serialize(x) for x in db.scalars(select(model).limit(500)).all()]
+    # settings / customers sem isolamento por unidade
+    q = select(model)
+    if hasattr(model, "org_unit") and resource != "settings":
+        q = q.where(model.org_unit == session_unit(user))
+    return [serialize(x) for x in db.scalars(q.limit(500)).all()]
 
 
 @app.post("/{resource}")
@@ -1260,6 +1274,8 @@ def add_resource(
             cnh = (data.get("cnh") or "").strip()
             data["cnh"] = cnh or None
 
+    if hasattr(model, "org_unit"):
+        data["org_unit"] = session_unit(user)
     x = model(**model_data(model, data))
     db.add(x)
     db.flush()
@@ -1282,6 +1298,10 @@ def edit_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
     x = db.get(model, record_id)
+    if not x:
+        raise HTTPException(404)
+    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
+        raise HTTPException(404)
     if not x:
         raise HTTPException(404)
 
@@ -1314,6 +1334,10 @@ def delete_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
     x = db.get(model, record_id)
+    if not x:
+        raise HTTPException(404)
+    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
+        raise HTTPException(404)
     if not x:
         raise HTTPException(404)
 
@@ -2198,6 +2222,7 @@ def create_production_batch(
         if qty <= 0 and em <= 0:
             continue
         rec = ProductionRecord(
+        org_unit=session_unit(user),
             kind=kind,
             production_date=body.production_date,
             model=line.model.strip(),
@@ -2229,10 +2254,14 @@ def production_by_day(
     if not allow_fab and not allow_mnt:
         raise HTTPException(403, "Sem permissão")
 
-    q = select(ProductionRecord).order_by(
-        ProductionRecord.production_date.desc(),
-        ProductionRecord.kind,
-        ProductionRecord.model,
+    q = (
+        select(ProductionRecord)
+        .where(ProductionRecord.org_unit == session_unit(user))
+        .order_by(
+            ProductionRecord.production_date.desc(),
+            ProductionRecord.kind,
+            ProductionRecord.model,
+        )
     )
     if date_from:
         q = q.where(ProductionRecord.production_date >= date_from)

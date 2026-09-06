@@ -107,6 +107,7 @@ class Vehicle(Base):
     __tablename__ = "vehicles"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     plate: Mapped[str] = mapped_column(String(12), unique=True, index=True)
     brand: Mapped[str] = mapped_column(String(80))
     model: Mapped[str] = mapped_column(String(100))
@@ -124,6 +125,7 @@ class Driver(Base):
     __tablename__ = "drivers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     name: Mapped[str] = mapped_column(String(140))
     cpf: Mapped[str | None] = mapped_column(String(14), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30))
@@ -173,6 +175,7 @@ class Maintenance(Base):
     __tablename__ = "maintenance"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
     type: Mapped[str] = mapped_column(String(30))
     description: Mapped[str] = mapped_column(Text)
@@ -191,6 +194,7 @@ class FuelRecord(Base):
     __tablename__ = "fuel_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     date: Mapped[datetime] = mapped_column(DateTime)
@@ -206,6 +210,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), index=True)
     model: Mapped[str | None] = mapped_column(String(100))
@@ -222,6 +227,7 @@ class CommercialProduct(Base):
     __tablename__ = "commercial_products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     code: Mapped[str | None] = mapped_column(String(60), nullable=True)
     name: Mapped[str] = mapped_column(String(160))
     price: Mapped[float] = mapped_column(Numeric(12, 2))
@@ -241,6 +247,7 @@ class StockMovement(Base):
     __tablename__ = "stock_movements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     type: Mapped[str] = mapped_column(String(12))
     quantity: Mapped[float] = mapped_column(Numeric(12, 2))
@@ -355,6 +362,7 @@ class ProductionRecord(Base):
     __tablename__ = "production_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     # "fabricacao" | "montagem"
     kind: Mapped[str] = mapped_column(String(20), index=True)
     production_date: Mapped[date] = mapped_column(Date, index=True)
