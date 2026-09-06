@@ -194,8 +194,8 @@ def serialize(o):
 
 
 def serialize_user(o, unit: str | None = None):
-    d["permissions_filial"] = getattr(o, "permissions_filial", None) or ""
     d = serialize(o)
+    d["permissions_filial"] = getattr(o, "permissions_filial", None) or ""
     d.pop("password_hash", None)
     # avatar pode ser grande; front usa avatar_data se existir
     d["is_main_admin"] = o.id == 1
