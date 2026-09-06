@@ -4,19 +4,14 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyCookie
 from pwdlib import PasswordHash
-from sqlalchemy.orm import Session, object_session
+from sqlalchemy.orm import Session
 from .config import get_settings
 from .database import get_db
-from .models import User, Role, Company
-from .plans import plan_modules, normalize_plan
-from .tenancy import set_current_company
+from .models import User, Role
 
 password_hash = PasswordHash.recommended()
 cookie = APIKeyCookie(name="gl_session", auto_error=False)
 
-# Módulos que cada perfil (Role) pode acessar. O acesso final de um usuário é
-# a interseção entre (a) os módulos liberados pelo PLANO da empresa e
-# (b) os módulos do perfil ou as permissões customizadas do usuário.
 MODULES = {
     Role.ADMIN: {"*"},
     Role.MANAGER: {
@@ -34,6 +29,11 @@ MODULES = {
     Role.MONTAGEM: {"dashboard", "production", "assembly"},
 }
 
+# Módulos onde view e edição são diferentes: só os perfis listados aqui podem
+# criar/editar/excluir. Quem tem o módulo em MODULES mas não está aqui só
+# consegue ler (GET). Perfis com permissões customizadas (user.permissions
+# preenchido) continuam com acesso total de leitura/escrita aos módulos
+# liberados, como já era antes.
 WRITE_ONLY_ROLES = {
     "schedule": {Role.ADMIN, Role.MANAGER},
 }
@@ -62,48 +62,6 @@ def token_for(user: User, unit: str = "matriz"):
         s.auth_secret,
         algorithm="HS256",
     )
-
-
-def _plan_of(user: User) -> str:
-    """Plano ATIVO da empresa do usuário (fonte de verdade dos limites)."""
-    company = getattr(user, "company", None)
-    if company is not None:
-        return normalize_plan(getattr(company, "plan", None))
-    # fallback: tenta carregar via sessão
-    db = object_session(user)
-    cid = getattr(user, "company_id", None)
-    if db is not None and cid is not None:
-        c = db.get(Company, cid)
-        if c is not None:
-            return normalize_plan(c.plan)
-    return normalize_plan(getattr(user, "plan", None))
-
-
-def plan_of_user(user: User) -> str:
-    return _plan_of(user)
-
-
-def effective_modules(user: User, raw_permissions=None) -> set[str]:
-    """Módulos que o usuário realmente acessa = plano da empresa ∩ (perfil | permissões)."""
-    allowed_by_plan = plan_modules(_plan_of(user))
-
-    if raw_permissions is None:
-        raw_permissions = user.permissions
-
-    if raw_permissions:
-        grants = {p.strip() for p in str(raw_permissions).split(",") if p.strip()}
-    else:
-        grants = set(MODULES.get(user.role, set()))
-
-    if "*" in grants:
-        return set(allowed_by_plan)
-
-    base = {g for g in grants if not g.startswith("schedule_")}
-    result = base & allowed_by_plan
-    if "schedule" in allowed_by_plan:
-        result |= {g for g in grants if g.startswith("schedule_")}
-    return result
-
 
 def clear_block(u: User):
     u.active = True
@@ -150,29 +108,16 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
         raise HTTPException(status_code=401, detail="Não autenticado")
     try:
         data = jwt.decode(token, get_settings().auth_secret, algorithms=["HS256"])
-        # Busca do usuário SEM filtro de tenant (ainda não sabemos a empresa).
         user = db.get(User, int(data["sub"]))
     except Exception:
         raise HTTPException(status_code=401, detail="Sessão inválida")
     if not user:
         raise HTTPException(status_code=401, detail="Usuário indisponível")
 
-    # A partir daqui todas as consultas ficam isoladas na empresa do usuário.
-    set_current_company(db, getattr(user, "company_id", None))
-
-    # Empresa desativada bloqueia o acesso de todos os usuários dela.
-    cid = getattr(user, "company_id", None)
-    if cid is not None:
-        company = db.get(Company, cid)
-        if company is not None and not company.active:
-            raise HTTPException(
-                status_code=403,
-                detail="Assinatura da empresa inativa. Contate o administrador.",
-            )
-
     was_inactive = not user.active
     still_blocked = apply_auto_unblock(user)
     if was_inactive and not still_blocked:
+        # auto-liberou scheduled
         db.commit()
     if still_blocked:
         raise HTTPException(status_code=403, detail=block_detail(user))
@@ -192,59 +137,65 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
         unit = "matriz"
     if unit not in ("matriz", "filial"):
         unit = "matriz"
+    # unidade da sessão (login) — usada em serialize_user / filtros futuros
     user._session_unit = unit
     return user
 
 
 def require(module: str, write: bool = False):
     def check(user: User = Depends(current_user)):
-        raw = user.permissions
+        has_custom_permissions = bool(user.permissions)
+        if has_custom_permissions:
+            grants = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
+        else:
+            grants = set(MODULES.get(user.role, set()))
+        unit = getattr(user, "_session_unit", None) or "matriz"
+        if str(unit).strip().lower() == "filial":
+            raw = getattr(user, "permissions_filial", None) or user.permissions
+        else:
+            raw = user.permissions
+
         has_custom_permissions = bool(raw)
+        if has_custom_permissions:
+            grants = {p.strip() for p in (raw or "").split(",") if p.strip()}
+        else:
+            grants = set(MODULES.get(user.role, set()))
 
-        allowed_by_plan = plan_modules(_plan_of(user))
-        grants = effective_modules(user, raw_permissions=raw)
-
-        # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders".
+        # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders"
         if module == "orders":
-            if "orders" not in allowed_by_plan:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Este módulo não está incluído no plano atual da empresa",
-                )
-            all_grants = (
-                {p.strip() for p in str(raw).split(",") if p.strip()}
-                if has_custom_permissions
-                else set(MODULES.get(user.role, set()))
-            )
-            if "*" in all_grants or "orders" in all_grants:
+            if "*" in grants or "orders" in grants:
                 pass
             elif write:
-                if "orders_create" not in all_grants:
+                if "orders_create" not in grants:
                     raise HTTPException(
                         status_code=403,
                         detail="Sem permissão para este módulo",
                     )
             else:
-                if "orders_list" not in all_grants and "orders_create" not in all_grants:
+                # leitura (lista)
+                if "orders_list" not in grants and "orders_create" not in grants:
                     raise HTTPException(
                         status_code=403,
                         detail="Sem permissão para este módulo",
                     )
         elif (
-            module not in grants
+            "*" not in grants
+            and module not in grants
+            # A interface permite liberar apenas uma ação da Agenda
+            # (schedule_edit, schedule_week etc.). Essas permissões também
+            # precisam liberar a leitura inicial de /schedule/weeks; antes a
+            # API respondia 403 porque exigia literalmente "schedule".
             and not (
                 module == "schedule"
                 and any(p.startswith("schedule_") for p in grants)
             )
         ):
-            # Distingue "não está no plano" de "sem permissão do usuário".
-            if module not in allowed_by_plan:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Este módulo não está incluído no plano atual da empresa",
-                )
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
 
+        # Em permissões customizadas, "schedule" sozinho representa apenas
+        # acesso de consulta à aba. Ações de escrita exigem uma permissão
+        # interna (schedule_edit, schedule_week, etc.). Perfis padrão seguem
+        # a regra de escrita definida em WRITE_ONLY_ROLES.
         if (
             write
             and module == "schedule"
@@ -275,14 +226,12 @@ def require(module: str, write: bool = False):
 
 
 def main_admin(user: User = Depends(current_user)):
-    """Administrador da empresa: o dono (is_owner) ou qualquer usuário ADMIN.
-    Cada empresa tem o seu próprio administrador — o isolamento por tenant
-    garante que ele só enxerga/gerencia usuários da própria empresa."""
-    if not (getattr(user, "is_owner", False) or user.role == Role.ADMIN):
+    if user.id != 1 or user.role not in (Role.ADMIN, Role.MONTAGEM):
         raise HTTPException(
             status_code=403,
-            detail="Apenas o Administrador da empresa pode executar esta ação",
+            detail="Apenas o Administrador Principal pode executar esta ação"
         )
+
     return user
 
 
@@ -302,6 +251,8 @@ def audit(
 
     headers = request.headers if request else {}
 
+    # Usa a localização autorizada pelo navegador quando existir.
+    # Se não existir, utiliza a localização aproximada fornecida pela Vercel.
     client_latitude = (
         str(latitude)
         if latitude is not None
@@ -316,7 +267,6 @@ def audit(
     db.add(
         AuditLog(
             user_id=user.id if user else None,
-            company_id=getattr(user, "company_id", None) if user else None,
             action=action,
             module=module,
             record_id=str(record_id) if record_id else None,

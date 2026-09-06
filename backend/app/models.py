@@ -16,7 +16,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
-from .tenancy import TenantMixin
 
 
 class Role(str, enum.Enum):
@@ -31,31 +30,7 @@ class Role(str, enum.Enum):
     VENDEDOR = "VENDEDOR"
 
 
-class Company(Base):
-    """Empresa assinante. Cada empresa tem seus próprios dados isolados
-    e UM plano de assinatura que define limites e módulos disponíveis."""
-
-    __tablename__ = "companies"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(160), index=True)
-    document: Mapped[str | None] = mapped_column(String(24), index=True)  # CNPJ/CPF
-    email: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    city: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    state: Mapped[str | None] = mapped_column(String(2), nullable=True)
-    zip_code: Mapped[str | None] = mapped_column(String(12), nullable=True)
-    plan: Mapped[str] = mapped_column(
-        String(20), default="essencial", server_default="essencial"
-    )
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class User(Base, TenantMixin):
+class User(Base):
     __tablename__ = "users"
     avatar_data: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -73,10 +48,7 @@ class User(Base, TenantMixin):
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
     permissions_filial: Mapped[str | None] = mapped_column(Text, nullable=True)
     units_access: Mapped[str | None] = mapped_column(String(40), default="matriz,filial")
-    # Coluna legada (o plano agora vive na empresa). Mantida por compatibilidade.
     plan: Mapped[str] = mapped_column(String(20), default="essencial", server_default="essencial")
-    # É o dono/administrador da empresa (criado no cadastro).
-    is_owner: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     token_version: Mapped[int] = mapped_column(
         Integer,
         default=0,
@@ -92,10 +64,10 @@ class User(Base, TenantMixin):
     )
     block_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    company: Mapped["Company | None"] = relationship("Company", lazy="selectin")
 
 
-class AuditLog(Base, TenantMixin):
+
+class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -116,7 +88,7 @@ class AuditLog(Base, TenantMixin):
     )
 
 
-class Customer(Base, TenantMixin):
+class Customer(Base):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -133,10 +105,10 @@ class Customer(Base, TenantMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class Vehicle(Base, TenantMixin):
+class Vehicle(Base):
     __tablename__ = "vehicles"
     __table_args__ = (
-        UniqueConstraint("company_id", "plate", name="uq_vehicles_company_plate"),
+        UniqueConstraint("org_unit", "plate", name="uq_vehicles_org_unit_plate"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -154,16 +126,13 @@ class Vehicle(Base, TenantMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class Driver(Base, TenantMixin):
+class Driver(Base):
     __tablename__ = "drivers"
-    __table_args__ = (
-        UniqueConstraint("company_id", "cpf", name="uq_drivers_company_cpf"),
-    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     name: Mapped[str] = mapped_column(String(140))
-    cpf: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    cpf: Mapped[str | None] = mapped_column(String(14), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30))
     cnh: Mapped[str | None] = mapped_column(String(30), nullable=True)
     category: Mapped[str | None] = mapped_column(String(10))
@@ -173,7 +142,7 @@ class Driver(Base, TenantMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class Route(Base, TenantMixin):
+class Route(Base):
     __tablename__ = "routes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -193,7 +162,7 @@ class Route(Base, TenantMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class RouteStop(Base, TenantMixin):
+class RouteStop(Base):
     __tablename__ = "route_stops"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -207,7 +176,7 @@ class RouteStop(Base, TenantMixin):
     status: Mapped[str] = mapped_column(String(30), default="Planejada")
 
 
-class Maintenance(Base, TenantMixin):
+class Maintenance(Base):
     __tablename__ = "maintenance"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -226,7 +195,7 @@ class Maintenance(Base, TenantMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class FuelRecord(Base, TenantMixin):
+class FuelRecord(Base):
     __tablename__ = "fuel_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -242,15 +211,12 @@ class FuelRecord(Base, TenantMixin):
     fuel_type: Mapped[str | None] = mapped_column(String(40))
 
 
-class Product(Base, TenantMixin):
+class Product(Base):
     __tablename__ = "products"
-    __table_args__ = (
-        UniqueConstraint("company_id", "code", name="uq_products_company_code"),
-    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    code: Mapped[str] = mapped_column(String(60), index=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), index=True)
     model: Mapped[str | None] = mapped_column(String(100))
     category: Mapped[str | None] = mapped_column(String(80))
@@ -262,8 +228,7 @@ class Product(Base, TenantMixin):
     unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
     notes: Mapped[str | None] = mapped_column(Text)
 
-
-class StockMovement(Base, TenantMixin):
+class StockMovement(Base):
     __tablename__ = "stock_movements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -284,14 +249,10 @@ class StockMovement(Base, TenantMixin):
     unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
 
 
-class Setting(Base, TenantMixin):
+class Setting(Base):
     __tablename__ = "settings"
-    __table_args__ = (
-        UniqueConstraint("company_id", "key", name="uq_settings_company_key"),
-    )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    key: Mapped[str] = mapped_column(String(100), index=True)
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text)
 
 
@@ -312,7 +273,7 @@ class EntryStatus(str, enum.Enum):
     PENDENTE = "Pendente"
 
 
-class ScheduleWeek(Base, TenantMixin):
+class ScheduleWeek(Base):
     """Uma das 3 semanas ativas da agenda de instalações. Ao arquivar vira backup consultável."""
     __tablename__ = "schedule_weeks"
 
@@ -328,7 +289,7 @@ class ScheduleWeek(Base, TenantMixin):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class RouteSlot(Base, TenantMixin):
+class RouteSlot(Base):
     __tablename__ = "route_slots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -346,7 +307,7 @@ class RouteSlot(Base, TenantMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class ScheduleEntry(Base, TenantMixin):
+class ScheduleEntry(Base):
     """Um cliente agendado numa vaga da rota — consome 1 ou mais vagas."""
     __tablename__ = "schedule_entries"
 
@@ -370,7 +331,7 @@ class ScheduleEntry(Base, TenantMixin):
     )
 
 
-class ScheduleExtra(Base, TenantMixin):
+class ScheduleExtra(Base):
     """Item adicional dentro do mesmo cliente (ex: cavalete de água).
     NÃO desconta vaga nova — é um sub-item de um ScheduleEntry."""
     __tablename__ = "schedule_extras"
@@ -381,8 +342,7 @@ class ScheduleExtra(Base, TenantMixin):
     observation: Mapped[str | None] = mapped_column(Text)
     status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
 
-
-class ProductionRecord(Base, TenantMixin):
+class ProductionRecord(Base):
     """Lançamento de produção (fábrica) ou montagem (padrões)."""
     __tablename__ = "production_records"
 
@@ -401,7 +361,6 @@ class ProductionRecord(Base, TenantMixin):
         DateTime(timezone=True), server_default=func.now()
     )
 
-
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
 
@@ -414,9 +373,8 @@ class PasswordResetToken(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-
-class Order(Base, TenantMixin):
-    """Pedido interno da empresa."""
+class Order(Base):
+    """Pedido filial → matriz."""
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(primary_key=True)

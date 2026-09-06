@@ -588,22 +588,11 @@ export default function AppShell({
   const isMainAdmin = !!user.is_main_admin;
 
     const allowed = (key: string) => {
-    // Gate por PLANO da empresa: allowed_modules = plano ∩ (perfil|permissões),
-    // calculado no backend. Se a aba não está liberada, ela some — inclusive
-    // para o administrador (o plano limita todo mundo da empresa).
-    const planMods: string[] | null = Array.isArray(user?.allowed_modules)
-      ? user.allowed_modules
-      : null;
-    if (planMods && key !== 'critical') {
-      let inPlan = planMods.includes(key);
-      if (key === 'production' && planMods.includes('assembly')) inPlan = true;
-      if (
-        key === 'orders' &&
-        (planMods.includes('orders_create') || planMods.includes('orders_list'))
-      ) {
-        inPlan = true;
-      }
-      if (!inPlan) return false;
+    if (
+      (key === 'production' || key === 'assembly') &&
+      user?.current_unit === 'filial'
+    ) {
+      return false;
     }
     if (isMainAdmin) return true;
     const rawPerms =
@@ -1179,7 +1168,7 @@ export default function AppShell({
               {page ? titleFor(page) : 'Sem acesso'}
             </h1>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-              {user?.plan_name || 'Plano Essencial'}
+              {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -1433,129 +1422,6 @@ export default function AppShell({
 
 
 
-function CompanyPanel({
-  isAdmin,
-  onUserUpdate,
-}: {
-  isAdmin: boolean;
-  onUserUpdate: (u: any) => void;
-}) {
-  const [info, setInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState('');
-  const [err, setErr] = useState('');
-  const [msg, setMsg] = useState('');
-
-  const load = () => {
-    setLoading(true);
-    request('/company')
-      .then((d) => setInfo(d))
-      .catch((e: any) => setErr(e?.message || 'Erro ao carregar'))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function changePlan(planKey: string) {
-    if (!isAdmin || busy) return;
-    setBusy(planKey);
-    setErr('');
-    setMsg('');
-    try {
-      const d = await request('/company/plan', {
-        method: 'POST',
-        body: JSON.stringify({ plan: planKey }),
-      });
-      setInfo(d);
-      setMsg('Plano atualizado!');
-      // Atualiza o usuário logado para refletir as novas abas liberadas.
-      try {
-        const me = await request('/auth/me');
-        onUserUpdate(me);
-      } catch {
-        /* ignore */
-      }
-    } catch (e: any) {
-      setErr(e?.message || 'Não foi possível trocar o plano');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  if (loading) {
-    return <p className="px-1 py-2 text-xs text-slate-500">Carregando…</p>;
-  }
-
-  return (
-    <div className="space-y-3">
-      {err && <p className="text-xs text-red-600">{err}</p>}
-      {msg && <p className="text-xs text-green-600">{msg}</p>}
-
-      {info?.company && (
-        <div className="rounded-lg bg-slate-50 px-3 py-2">
-          <p className="truncate text-sm font-semibold text-slate-800">
-            {info.company.name}
-          </p>
-          {info.company.document && (
-            <p className="text-[11px] text-slate-500">{info.company.document}</p>
-          )}
-          <p className="mt-1 text-[11px] text-slate-600">
-            Usuários: {info.users_used}/{info.user_limit}
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {(info?.plans || []).map((p: any) => {
-          const isCurrent = p.key === info.plan;
-          return (
-            <div
-              key={p.key}
-              className={`rounded-lg border p-2.5 ${
-                isCurrent ? 'border-brand bg-brand/5' : 'border-slate-200'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-slate-800">{p.name}</p>
-                  <p className="text-[11px] text-slate-500">
-                    R$ {Number(p.price).toFixed(2).replace('.', ',')} / mês · até {p.users}{' '}
-                    usuário(s)
-                  </p>
-                </div>
-                {isCurrent ? (
-                  <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold text-white">
-                    Atual
-                  </span>
-                ) : isAdmin ? (
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={() => changePlan(p.key)}
-                    className="rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-60"
-                  >
-                    {busy === p.key ? '...' : 'Trocar'}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {!isAdmin && (
-        <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-          Apenas o administrador da empresa pode trocar o plano.
-        </p>
-      )}
-    </div>
-  );
-}
-
-
 function AccountPanel({
   user,
   onClose,
@@ -1582,7 +1448,7 @@ function AccountPanel({
   const [unitBusy, setUnitBusy] = useState(false);
   const [unitMsg, setUnitMsg] = useState('');
   const [unitErr, setUnitErr] = useState('');
-  const [tab, setTab] = useState<'conta' | 'empresa' | 'senha' | 'foto'>('conta');
+  const [tab, setTab] = useState<'conta' | 'unidade' | 'senha' | 'foto'>('conta');
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1715,7 +1581,7 @@ function AccountPanel({
           <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
           <p className="truncate text-xs text-slate-500">@{user.username}</p>
           <p className="mt-0.5 text-[11px] font-medium text-slate-600">
-            {user?.plan_name || 'Plano Essencial'}
+            {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
           </p>
         </div>
       </div>
@@ -1724,7 +1590,7 @@ function AccountPanel({
         {(
           [
             ['conta', 'Conta'],
-            ['empresa', 'Empresa'],
+            ['unidade', 'Unidade'],
             ['senha', 'Senha'],
             ['foto', 'Foto'],
           ] as const
@@ -1779,8 +1645,46 @@ function AccountPanel({
           </form>
         )}
 
-        {tab === 'empresa' && (
-          <CompanyPanel isAdmin={!!user.is_main_admin} onUserUpdate={onUserUpdate} />
+        {tab === 'unidade' && (
+          <div className="space-y-2">
+            {unitErr && <p className="text-xs text-red-600">{unitErr}</p>}
+            {unitMsg && <p className="text-xs text-green-600">{unitMsg}</p>}
+            {canSwitch ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={unitBusy || user?.current_unit === 'matriz'}
+                  onClick={() => switchUnit('matriz')}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                    user?.current_unit !== 'filial'
+                      ? 'border-brand bg-brand text-white'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  } disabled:opacity-60`}
+                >
+                  1 — Matriz
+                </button>
+                <button
+                  type="button"
+                  disabled={unitBusy || user?.current_unit === 'filial'}
+                  onClick={() => switchUnit('filial')}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                    user?.current_unit === 'filial'
+                      ? 'border-brand bg-brand text-white'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  } disabled:opacity-60`}
+                >
+                  2 — Filial
+                </button>
+              </div>
+            ) : (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+                <span className="mt-0.5 block text-slate-500">
+                  Seu usuário só tem acesso a esta unidade.
+                </span>
+              </p>
+            )}
+          </div>
         )}
 
         {tab === 'senha' && (
