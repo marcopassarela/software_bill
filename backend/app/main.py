@@ -14,6 +14,7 @@ from slowapi.util import get_remote_address
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
+from .jobs import purge_old_audit_logs
 from .security import (
     audit,
     current_user,

@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete
+from sqlalchemy.orm import Session
+from .models import AuditLog
 
-AUDIT_RETENTION_DAYS = 90   # ajuste conforme necessidade (30, 60, 90...)
+AUDIT_RETENTION_DAYS = 90  # ajuste conforme necessidade (30, 60, 90...)
 
 def purge_old_audit_logs(db: Session, days: int = AUDIT_RETENTION_DAYS) -> int:
     """Remove logs mais antigos que X dias. Retorna quantos registros foram apagados."""
