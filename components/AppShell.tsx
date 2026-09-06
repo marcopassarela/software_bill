@@ -1434,6 +1434,9 @@ function AccountPanel({
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [unitBusy, setUnitBusy] = useState(false);
+  const [unitMsg, setUnitMsg] = useState('');
+  const [unitErr, setUnitErr] = useState('');
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1456,6 +1459,33 @@ function AccountPanel({
       setSavingName(false);
     }
   }
+
+  async function switchUnit(next: 'matriz' | 'filial') {
+    if (user?.current_unit === next) return;
+    setUnitBusy(true);
+    setUnitErr('');
+    setUnitMsg('');
+    try {
+      const updated = await request('/auth/switch-unit', {
+        method: 'POST',
+        body: JSON.stringify({ unit: next }),
+      });
+      onUserUpdate(updated);
+      setUnitMsg(next === 'filial' ? 'Unidade: Filial' : 'Unidade: Matriz');
+    } catch (e: any) {
+      setUnitErr(e.message || 'Não foi possível trocar a unidade');
+    } finally {
+      setUnitBusy(false);
+    }
+  }
+
+  const unitsAccess = String(user?.units_access || 'matriz,filial')
+    .split(',')
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+  const canMatriz = !!user?.is_main_admin || unitsAccess.includes('matriz');
+  const canFilial = !!user?.is_main_admin || unitsAccess.includes('filial');
+  const canSwitch = canMatriz && canFilial;
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -1571,6 +1601,83 @@ function AccountPanel({
         </div>
         <p className="text-[10px] text-slate-400"></p>
       </div>
+
+      <div className="space-y-2 border-b pb-3">
+        <p className="text-xs font-medium text-slate-500">Unidade de trabalho</p>
+        {unitErr && <p className="text-xs text-red-600">{unitErr}</p>}
+        {unitMsg && <p className="text-xs text-green-600">{unitMsg}</p>}
+        {canSwitch ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={unitBusy || user?.current_unit === 'matriz'}
+              onClick={() => switchUnit('matriz')}
+              className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                user?.current_unit !== 'filial'
+                  ? 'border-brand bg-brand text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              } disabled:opacity-60`}
+            >
+              1 — Matriz
+            </button>
+            <button
+              type="button"
+              disabled={unitBusy || user?.current_unit === 'filial'}
+              onClick={() => switchUnit('filial')}
+              className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                user?.current_unit === 'filial'
+                  ? 'border-brand bg-brand text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              } disabled:opacity-60`}
+            >
+              2 — Filial
+            </button>
+          </div>
+        ) : (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+            {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+            <span className="mt-0.5 block font-normal text-slate-500">
+              Seu usuário só tem acesso a esta unidade.
+            </span>
+          </p>
+        )}
+        {unitBusy && (
+          <p className="text-[11px] text-slate-400">Trocando unidade…</p>
+        )}
+      </div>
+
+      <form onSubmit={submitName} className="space-y-2" autoComplete="off">
+        <p className="text-xs font-medium text-slate-500">Dados da conta</p>
+        {nameErr && <p className="text-xs text-red-600">{nameErr}</p>}
+        {nameMsg && <p className="text-xs text-green-600">{nameMsg}</p>}
+        <label className="block text-xs text-slate-600">
+          Nome
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+        </label>
+        <label className="block text-xs text-slate-600">
+          E-mail
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="mt-1 w-full rounded-lg border p-2 text-sm"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={savingName}
+          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+        >
+          {savingName ? 'Salvando…' : 'Salvar dados'}
+        </button>
+      </form>
 
       <form onSubmit={submitName} className="space-y-2" autoComplete="off">
         <p className="text-xs font-medium text-slate-500">Dados da conta</p>
