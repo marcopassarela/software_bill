@@ -56,7 +56,6 @@ function CompanyDataPanel({
     { key: 'vehicles', label: 'Veículos', path: '/vehicles' },
     { key: 'drivers', label: 'Motoristas', path: '/drivers' },
     { key: 'products', label: 'Estoque (produtos)', path: '/products' },
-    { key: 'commercial', label: 'Comercial (produtos)', path: '/commercial/products' },
     { key: 'maintenance', label: 'Manutenção', path: '/maintenance' },
     { key: 'fuel', label: 'Combustível', path: '/fuel' },
     { key: 'movements', label: 'Movimentações', path: '/stock/movements' },
@@ -144,7 +143,6 @@ const AUDIT_MODULE_LABELS: Record<string, string> = {
   maintenance: 'Manutenção',
   fuel: 'Combustível',
   customers: 'Clientes',
-  commercial: 'Comercial',
 };
 
 function auditActionLabel(value: string | undefined) {

@@ -2,7 +2,6 @@
 import ProductionModule from './ProductionModule';
 import AvatarCropper from './AvatarCropper';
 import { StockMovementForm, printProductLabels } from './QrTools';
-import CommercialModule from '@/components/CommercialModule';
 import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import OrdersModule from '@/components/OrdersModule';
@@ -52,7 +51,6 @@ import {
 const items = [
   ['dashboard', 'Dashboard', LayoutDashboard],
   ['schedule', 'Agendamento', CalendarDays],
-  ['commercial', 'Comercial', ShoppingCart],
   ['vehicles', 'Veículos', Truck],
   ['drivers', 'Motoristas', UserRound],
   ['maintenance', 'Manutenção', Wrench],
@@ -71,7 +69,7 @@ const items = [
 
 const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
   { id: 'main', label: 'Principal', keys: ['dashboard', 'schedule', 'orders'] },
-  { id: 'ops', label: 'Operação', keys: ['production', 'commercial'] },
+  { id: 'ops', label: 'Operação', keys: ['production'] },
   {
     id: 'fleet',
     label: 'Frota',
@@ -97,13 +95,13 @@ const resource: any = {
 
 const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
-  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial', 'production', 'orders'],
-  LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel', 'commercial'],
-  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'],
-  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'], // se ainda existir
+  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'production', 'orders'],
+  LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
+  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
+  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
   MOTORISTA: [],
-  VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
-  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
+  VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
+  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
   MONTAGEM: ['production'],
 };
 
@@ -130,7 +128,6 @@ function titleFor(k: string) {
     ({
       dashboard: 'Dashboard',
       schedule: 'Agendamento',
-      commercial: 'Comercial',
       vehicles: 'Veículos',
       drivers: 'Motoristas',
       maintenance: 'Manutenção',
@@ -185,7 +182,6 @@ const PERMISSION_GROUPS: {
       { value: 'assembly', label: 'Lançar montagem' },
     ],
   },
-  { module: 'commercial', label: 'Comercial' },
   { module: 'vehicles', label: 'Veículos' },
   { module: 'drivers', label: 'Motoristas' },
   { module: 'maintenance', label: 'Manutenção' },
@@ -1216,8 +1212,6 @@ export default function AppShell({
           </div>
         ) : page === 'schedule' ? (
           <ScheduleModule user={user} lookups={lookups} />
-        ) : page === 'commercial' ? (
-          <CommercialModule user={user} />
         ) : page === 'orders' ? (
           <OrdersModule user={user} askPassword={askPassword} />
         ) : page === 'production' ? (
@@ -2077,7 +2071,6 @@ const REPORT_SOURCES = [
   { value: 'products', label: 'Estoque', path: '/products' },
   { value: 'movements', label: 'Movimentações de estoque', path: '/stock/movements' },
   { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
-  { value: 'commercial', label: 'Comercial', path: '/commercial/closing-report' },
 ];
 
 function cleanRowForReport(r: any, lookups: any) {
@@ -2314,126 +2307,6 @@ const SCHEDULE_REPORT_FIELDS = [
   { key: 'Vagas', label: 'Vagas' },
 ];
 
-const COMMERCIAL_REPORT_FIELDS = [
-  { key: 'Código', label: 'Código' },
-  { key: 'Produto', label: 'Produto' },
-  { key: 'Qtd', label: 'Quantidade' },
-  { key: 'Preço unit.', label: 'Preço unitário' },
-  { key: 'Total', label: 'Total' },
-  { key: 'Agendamentos', label: 'Nº de agendamentos' },
-];
-
-function ClosingReport() {
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [data, setData] = useState<any>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  async function run(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setErr('');
-    try {
-      const qs = new URLSearchParams();
-      if (dateFrom) qs.set('date_from', dateFrom);
-      if (dateTo) qs.set('date_to', dateTo);
-      setData(await request(`/commercial/closing-report?${qs}`));
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const money = (n: number) =>
-    (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-  return (
-    <div className="mb-8 rounded-xl border bg-white p-5">
-      <h3 className="font-semibold text-slate-800">Fechamento do mês</h3>
-      <p className="mt-1 text-sm text-slate-500">
-        Compara a descrição do serviço agendado com os produtos cadastrados em Comercial.
-      </p>
-      <form onSubmit={run} className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-slate-600">De</span>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border p-2" />
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-slate-600">Até</span>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border p-2" />
-        </label>
-        <button type="submit" disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-          {busy ? 'Gerando…' : 'Gerar fechamento'}
-        </button>
-      </form>
-      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
-
-      {data && (
-        <>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Qtd. total</p>
-              <p className="text-xl font-bold">{data.summary?.quantity_total ?? 0}</p>
-            </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Valor total</p>
-              <p className="text-xl font-bold text-emerald-700">{money(data.summary?.revenue_total)}</p>
-            </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Sem produto correspondente</p>
-              <p className="text-xl font-bold text-amber-700">{data.summary?.entries_unmatched ?? 0}</p>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Produto</th>
-                  <th className="px-3 py-2">Qtd</th>
-                  <th className="px-3 py-2">Preço unit.</th>
-                  <th className="px-3 py-2">Total</th>
-                  <th className="px-3 py-2">Agendamentos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.lines || []).map((l: any) => (
-                  <tr key={l.product_id} className="border-t">
-                    <td className="px-3 py-2">{l.code || '—'}</td>
-                    <td className="px-3 py-2 font-medium">{l.name}</td>
-                    <td className="px-3 py-2">{l.quantity}</td>
-                    <td className="px-3 py-2">{money(l.unit_price)}</td>
-                    <td className="px-3 py-2 font-medium">{money(l.line_total)}</td>
-                    <td className="px-3 py-2">{l.entries}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {!!data.unmatched?.length && (
-            <details className="mt-4 text-sm">
-              <summary className="cursor-pointer text-amber-800">
-                Serviços sem produto cadastrado ({data.unmatched.length})
-              </summary>
-              <ul className="mt-2 max-h-40 overflow-auto text-xs text-slate-600">
-                {data.unmatched.map((u: any, i: number) => (
-                  <li key={i}>
-                    {u.date} — {u.client}: {u.service}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function ReportsExport({ lookups }: { lookups: any }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'pdf'>('xlsx');
@@ -2443,24 +2316,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
   const [preview, setPreview] = useState<{ cfg: any; rows: any[] }[] | null>(null);
   const [scheduleFields, setScheduleFields] = useState<string[]>(SCHEDULE_REPORT_FIELDS.map((f) => f.key)
 );
-  const [commercialFields, setCommercialFields] = useState<string[]>(
-    COMMERCIAL_REPORT_FIELDS.map((f) => f.key)
-  );
-  const [commercialFrom, setCommercialFrom] = useState('');
-  const [commercialTo, setCommercialTo] = useState('');
-
-  function toggleCommercialField(key: string) {
-    setCommercialFields((s) =>
-      s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
-    );
-  }
-  function selectAllCommercialFields() {
-    setCommercialFields(COMMERCIAL_REPORT_FIELDS.map((f) => f.key));
-  }
-  function clearCommercialFields() {
-    setCommercialFields([]);
-  }
-
   function toggleScheduleField(key: string) {
     setScheduleFields((s) =>
       s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
@@ -2524,41 +2379,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
                 });
               });
             });
-            return { cfg, rows: flat };
-          }
-
-          if (v === 'commercial') {
-            if (!commercialFields.length) {
-              throw new Error('Selecione pelo menos um campo do Comercial.');
-            }
-            const qs = new URLSearchParams();
-            if (commercialFrom) qs.set('date_from', commercialFrom);
-            if (commercialTo) qs.set('date_to', commercialTo);
-            const data = await request(`/commercial/closing-report?${qs.toString()}`);
-            const flat = (data.lines || []).map((l: any) => {
-              const full: Record<string, any> = {
-                Código: l.code || '',
-                Produto: l.name || '',
-                Qtd: l.quantity,
-                'Preço unit.': l.unit_price,
-                Total: l.line_total,
-                Agendamentos: l.entries,
-              };
-              const row: Record<string, any> = {};
-              commercialFields.forEach((key) => {
-                if (key in full) row[key] = full[key];
-              });
-              return row;
-            });
-            if (data.summary) {
-              const tot: Record<string, any> = {};
-              if (commercialFields.includes('Produto')) tot['Produto'] = 'TOTAL';
-              if (commercialFields.includes('Qtd')) tot['Qtd'] = data.summary.quantity_total;
-              if (commercialFields.includes('Total')) tot['Total'] = data.summary.revenue_total;
-              if (commercialFields.includes('Agendamentos'))
-                tot['Agendamentos'] = data.summary.entries_matched;
-              flat.push(tot);
-            }
             return { cfg, rows: flat };
           }
 
@@ -2655,69 +2475,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
           ))}
         </div>
       </div>
-      )}
-
-        {selected.includes('commercial') && (
-        <div className="mb-4 rounded-lg border p-3">
-          <p className="mb-2 text-xs font-medium text-slate-700">
-            Comercial — período e campos
-          </p>
-          <div className="mb-3 flex flex-wrap gap-3">
-            <label className="text-xs">
-              <span className="mb-1 block text-slate-600">Data inicial</span>
-              <input
-                type="date"
-                value={commercialFrom}
-                onChange={(e) => setCommercialFrom(e.target.value)}
-                className="rounded-lg border p-2 text-sm"
-              />
-            </label>
-            <label className="text-xs">
-              <span className="mb-1 block text-slate-600">Data final</span>
-              <input
-                type="date"
-                value={commercialTo}
-                onChange={(e) => setCommercialTo(e.target.value)}
-                className="rounded-lg border p-2 text-sm"
-              />
-            </label>
-          </div>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-slate-700">Campos do Comercial</p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={selectAllCommercialFields}
-                className="text-xs text-brand hover:underline"
-              >
-                Marcar todos
-              </button>
-              <button
-                type="button"
-                onClick={clearCommercialFields}
-                className="text-xs text-slate-500 hover:underline"
-              >
-                Limpar
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {COMMERCIAL_REPORT_FIELDS.map((f) => (
-              <label
-                key={f.key}
-                className="flex items-center gap-2 text-xs text-slate-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={commercialFields.includes(f.key)}
-                  onChange={() => toggleCommercialField(f.key)}
-                  className="h-4 w-4"
-                />
-                {f.label}
-              </label>
-            ))}
-          </div>
-        </div>
       )}
 
       <div className="mb-4">

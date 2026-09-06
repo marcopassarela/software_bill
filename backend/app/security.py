@@ -16,15 +16,15 @@ MODULES = {
     Role.ADMIN: {"*"},
     Role.MANAGER: {
         "dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel",
-        "stock", "customers", "reports", "schedule", "commercial", "production", "assembly", "orders",
+        "stock", "customers", "reports", "schedule", "production", "assembly", "orders",
     },
-    Role.LOGISTICS: {"dashboard", "routes", "vehicles", "drivers", "fuel", "customers", "commercial"},
-    Role.STOCK: {"dashboard", "stock", "commercial"},
-    Role.ALMOXARIFADO: {"dashboard", "stock", "commercial"},
-    Role.DRIVER: {"routes", "commercial"},
+    Role.LOGISTICS: {"dashboard", "routes", "vehicles", "drivers", "fuel", "customers"},
+    Role.STOCK: {"dashboard", "stock"},
+    Role.ALMOXARIFADO: {"dashboard", "stock"},
+    Role.DRIVER: {"routes"},
     Role.VIEWER: {
         "dashboard", "routes", "vehicles", "drivers", "maintenance", "fuel",
-        "stock", "customers", "reports", "schedule", "commercial",
+        "stock", "customers", "reports", "schedule",
     },
     Role.MONTAGEM: {"dashboard", "production", "assembly"},
 }
