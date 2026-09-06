@@ -16,6 +16,13 @@ from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
 from .jobs import purge_old_audit_logs
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .security import (
     audit,
     current_user,
@@ -35,10 +42,18 @@ import secrets
 import smtplib
 from email.message import EmailMessage
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
 
-# Rate Limiter
+# ---------- Rate Limit ----------
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["120/minute"],
@@ -47,9 +62,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# Headers de Segurança
-from starlette.middleware.base import BaseHTTPMiddleware
-
+# ---------- Headers de Segurança ----------
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -61,7 +74,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# CORS
+# ---------- CORS ----------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -69,6 +82,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------- Handler de erro seguro ----------
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno do servidor"},
+    )
 
 PLAN_LIMITS = {
     "essencial": {"name": "Plano Essencial", "price": 39.90, "users": 1},
@@ -853,7 +874,7 @@ def logs(
 @app.get("/dashboard")
 @limiter.limit("30/minute")
 def dashboard(
-    request: Request,                          # ← obrigatório
+    request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
