@@ -3942,7 +3942,17 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     extras: true,
   });
 
-  const perms = (user.permissions || '').split(',').filter(Boolean);
+  // As permissões são específicas da unidade ativa. Antes este componente
+  // sempre lia user.permissions (Matriz), fazendo a agenda da Filial aparecer
+  // sem os botões/campos liberados em permissions_filial.
+  const activePermissions =
+    user?.current_unit === 'filial'
+      ? user.permissions_filial || user.permissions
+      : user.permissions;
+  const perms = String(activePermissions || '')
+    .split(',')
+    .map((p: string) => p.trim())
+    .filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
 
   // Apenas o Administrador Principal (id 1) tem acesso total automático ao

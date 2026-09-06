@@ -1601,7 +1601,12 @@ def archive_schedule_week(
     db: Session = Depends(get_db),
 ):
     if user.id != 1:
-        permissions = (user.permissions or "").split(",")
+        raw_permissions = (
+            getattr(user, "permissions_filial", None) or user.permissions
+            if session_unit(user) == "filial"
+            else user.permissions
+        )
+        permissions = [p.strip() for p in (raw_permissions or "").split(",") if p.strip()]
 
         if "schedule_archive" not in permissions:
             raise HTTPException(

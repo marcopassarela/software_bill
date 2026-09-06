@@ -178,7 +178,18 @@ def require(module: str, write: bool = False):
                         status_code=403,
                         detail="Sem permissão para este módulo",
                     )
-        elif "*" not in grants and module not in grants:
+        elif (
+            "*" not in grants
+            and module not in grants
+            # A interface permite liberar apenas uma ação da Agenda
+            # (schedule_edit, schedule_week etc.). Essas permissões também
+            # precisam liberar a leitura inicial de /schedule/weeks; antes a
+            # API respondia 403 porque exigia literalmente "schedule".
+            and not (
+                module == "schedule"
+                and any(p.startswith("schedule_") for p in grants)
+            )
+        ):
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
 
         if (
