@@ -26,7 +26,17 @@ from .security import (
     apply_auto_unblock,
     block_detail,
     clear_block,
+    effective_modules,
+    plan_of_user,
 )
+from .plans import (
+    PLAN_LIMITS,
+    PLAN_MODULES,
+    plan_modules,
+    normalize_plan,
+    plan_user_limit,
+)
+from .tenancy import set_current_company
 import hashlib
 import os
 import secrets
@@ -53,11 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PLAN_LIMITS = {
-    "essencial": {"name": "Plano Essencial", "price": 39.90, "users": 1},
-    "profissional": {"name": "Plano Profissional", "price": 69.90, "users": 3},
-    "empresarial": {"name": "Plano Empresarial", "price": 119.90, "users": 6},
-}
+# PLAN_LIMITS / PLAN_MODULES agora vivem em app/plans.py (fonte única de verdade).
 
 
 @app.exception_handler(Exception)
@@ -66,9 +72,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 def update_maintenance_status(db: Session):
-    """Atualiza automaticamente manutenções cuja data já chegou para 'Em andamento'."""
+    """Atualiza automaticamente manutenções cuja data já chegou para 'Em andamento'.
+    Quando há empresa ativa na sessão, restringe o UPDATE a ela (o filtro global
+    do SQLAlchemy só se aplica a SELECT, então aqui filtramos explicitamente)."""
     today = date.today()
-    db.execute(
+    stmt = (
         update(Maintenance)
         .where(
             Maintenance.status == "Agendado",
@@ -76,6 +84,10 @@ def update_maintenance_status(db: Session):
         )
         .values(status="Em andamento")
     )
+    cid = db.info.get("company_id")
+    if cid is not None:
+        stmt = stmt.where(Maintenance.company_id == cid)
+    db.execute(stmt)
     db.commit()
 
 
@@ -92,6 +104,28 @@ class Login(BaseModel):
     unit: str = "matriz"
     latitude: float | None = None
     longitude: float | None = None
+
+
+class Signup(BaseModel):
+    # Dados da empresa
+    company_name: str = Field(min_length=2, max_length=160)
+    document: str | None = Field(default=None, max_length=24)  # CNPJ/CPF
+    company_email: str | None = Field(default=None, max_length=160)
+    company_phone: str | None = Field(default=None, max_length=30)
+    plan: str = "essencial"
+    # Usuário administrador (dono)
+    admin_name: str = Field(min_length=2, max_length=120)
+    username: str = Field(min_length=3, max_length=60)
+    email: str = Field(min_length=5, max_length=160)
+    password: str = Field(min_length=6, max_length=200)
+
+
+class PlanChange(BaseModel):
+    plan: str
+
+
+class CompanyUpdate(BaseModel):
+    data: dict[str, Any]
 
 
 class PasswordChange(BaseModel):
@@ -205,12 +239,28 @@ def serialize_user(o, unit: str | None = None):
         sess = "matriz"
     d["current_unit"] = sess
     d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
-    plan_key = getattr(o, "plan", None) or "essencial"
-    plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
-    d["plan"] = plan_key if plan_key in PLAN_LIMITS else "essencial"
+
+    # Plano agora vem da EMPRESA (não do usuário).
+    company = getattr(o, "company", None)
+    plan_key = normalize_plan(getattr(company, "plan", None) if company else getattr(o, "plan", None))
+    plan = PLAN_LIMITS[plan_key]
+    d["plan"] = plan_key
     d["plan_name"] = plan["name"]
     d["plan_price"] = plan["price"]
     d["plan_user_limit"] = plan["users"]
+
+    # Empresa (tenant) do usuário.
+    d["company_id"] = getattr(o, "company_id", None)
+    d["company_name"] = getattr(company, "name", None) if company else None
+    d["is_owner"] = bool(getattr(o, "is_owner", False))
+
+    # Abas realmente disponíveis para este usuário = plano ∩ (perfil | permissões).
+    d["allowed_modules"] = sorted(effective_modules(o))
+    # Todas as abas que o PLANO libera (útil para telas de plano/upgrade).
+    d["plan_modules"] = sorted(plan_modules(plan_key))
+
+    # Administrador da empresa (dono ou role ADMIN) tem o painel de gestão.
+    d["is_main_admin"] = bool(getattr(o, "is_owner", False)) or getattr(o, "role", None) == Role.ADMIN
     return d
 
 def require_matriz(user: User):
@@ -330,6 +380,15 @@ def login(
         raise HTTPException(401, "Usuário ou senha inválidos")
 
 
+    # Define o escopo da empresa (isolamento de dados + auditoria correta).
+    set_current_company(db, getattr(u, "company_id", None))
+    if getattr(u, "company_id", None) is not None:
+        _company = db.get(Company, u.company_id)
+        if _company is not None and not _company.active:
+            raise HTTPException(
+                403, "Assinatura da empresa inativa. Contate o administrador."
+            )
+
     still_blocked = apply_auto_unblock(u)
     if still_blocked:
         audit(
@@ -388,6 +447,86 @@ def login(
     u._session_unit = unit
     return {"user": serialize_user(u, unit=unit)}
 
+
+
+@app.post("/auth/signup")
+@limiter.limit("5/minute")
+def signup(
+    body: Signup,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Cadastro público de uma nova empresa + usuário administrador (dono).
+
+    Cria a empresa com o plano escolhido e o primeiro usuário como
+    ADMINISTRADOR/dono. Os dados nascem isolados dessa empresa."""
+    plan_key = normalize_plan(body.plan)
+
+    email = (body.email or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(422, "E-mail do administrador inválido")
+    username = (body.username or "").strip()
+    if not username:
+        raise HTTPException(422, "Nome de usuário inválido")
+
+    # Unicidade GLOBAL (feita antes de definir o escopo da empresa, para não
+    # permitir o mesmo login/e-mail em empresas diferentes).
+    if db.scalar(select(User).where(func.lower(User.username) == username.lower())):
+        raise HTTPException(409, "Este nome de usuário já está em uso")
+    if db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(409, "Este e-mail já está em uso")
+
+    company = Company(
+        name=body.company_name.strip(),
+        document=(body.document or "").strip() or None,
+        email=(body.company_email or "").strip().lower() or None,
+        phone=(body.company_phone or "").strip() or None,
+        plan=plan_key,
+        active=True,
+    )
+    db.add(company)
+    db.flush()  # garante company.id
+
+    # A partir daqui os inserts são carimbados com esta empresa.
+    set_current_company(db, company.id)
+
+    admin = User(
+        name=body.admin_name.strip(),
+        username=username,
+        email=email,
+        password_hash=hash_password(body.password),
+        role=Role.ADMIN,
+        company_id=company.id,
+        is_owner=True,
+        must_change_password=False,
+        active=True,
+        units_access="matriz",
+    )
+    db.add(admin)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Não foi possível criar o usuário (dados duplicados)")
+
+    audit(
+        db, admin, "CADASTRO_EMPRESA", "auth", company.id, request,
+        details=f"Empresa '{company.name}' criada no {PLAN_LIMITS[plan_key]['name']}",
+    )
+    db.commit()
+
+    response.set_cookie(
+        "gl_session",
+        token_for(admin, unit="matriz"),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    admin._session_unit = "matriz"
+    return {"user": serialize_user(admin, unit="matriz")}
 
 
 @app.post("/auth/switch-unit")
@@ -522,6 +661,92 @@ def delete_avatar(
     return serialize_user(u)
 
 
+def _company_payload(db: Session, user: User) -> dict:
+    company = db.get(Company, user.company_id) if user.company_id else None
+    plan_key = normalize_plan(getattr(company, "plan", None) if company else None)
+    users_used = db.scalar(select(func.count()).select_from(User)) or 0
+    catalog = [
+        {
+            "key": k,
+            "name": v["name"],
+            "price": v["price"],
+            "users": v["users"],
+            "modules": sorted(PLAN_MODULES[k]),
+        }
+        for k, v in PLAN_LIMITS.items()
+    ]
+    return {
+        "company": serialize(company) if company else None,
+        "plan": plan_key,
+        "plan_name": PLAN_LIMITS[plan_key]["name"],
+        "plan_price": PLAN_LIMITS[plan_key]["price"],
+        "user_limit": PLAN_LIMITS[plan_key]["users"],
+        "users_used": int(users_used),
+        "plan_modules": sorted(PLAN_MODULES[plan_key]),
+        "plans": catalog,
+    }
+
+
+@app.get("/company")
+def get_company(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Dados da empresa + plano atual + uso de usuários + catálogo de planos."""
+    return _company_payload(db, user)
+
+
+@app.post("/company/plan")
+def change_company_plan(
+    body: PlanChange,
+    request: Request,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    """Troca o plano da empresa. Não permite rebaixar abaixo do nº de usuários atuais."""
+    new_plan = normalize_plan(body.plan)
+    company = db.get(Company, admin.company_id) if admin.company_id else None
+    if not company:
+        raise HTTPException(404, "Empresa não encontrada")
+
+    users_used = db.scalar(select(func.count()).select_from(User)) or 0
+    new_limit = PLAN_LIMITS[new_plan]["users"]
+    if users_used > new_limit:
+        raise HTTPException(
+            409,
+            f"O {PLAN_LIMITS[new_plan]['name']} permite até {new_limit} usuário(s), "
+            f"mas a empresa possui {users_used}. Remova usuários antes de rebaixar o plano.",
+        )
+    old_plan = company.plan
+    company.plan = new_plan
+    audit(
+        db, admin, "TROCA_DE_PLANO", "company", company.id, request,
+        details=f"{normalize_plan(old_plan)} -> {new_plan}",
+    )
+    db.commit()
+    return _company_payload(db, admin)
+
+
+@app.patch("/company")
+def update_company(
+    body: CompanyUpdate,
+    request: Request,
+    admin: User = Depends(main_admin),
+    db: Session = Depends(get_db),
+):
+    """Edita os dados cadastrais da empresa (razão social, CNPJ, contato, endereço)."""
+    company = db.get(Company, admin.company_id) if admin.company_id else None
+    if not company:
+        raise HTTPException(404, "Empresa não encontrada")
+    editable = {
+        "name", "document", "email", "phone",
+        "address", "city", "state", "zip_code",
+    }
+    for k, v in body.data.items():
+        if k in editable:
+            setattr(company, k, (str(v).strip() or None) if v is not None else None)
+    audit(db, admin, "ALTERAÇÃO_EMPRESA", "company", company.id, request)
+    db.commit()
+    return _company_payload(db, admin)
+
+
 @app.get("/users")
 def users(_: User = Depends(main_admin), db: Session = Depends(get_db)):
     return [serialize_user(x) for x in db.scalars(select(User).order_by(User.name)).all()]
@@ -534,8 +759,11 @@ def create_user(
     admin: User = Depends(main_admin),
     db: Session = Depends(get_db),
 ):
-    plan_key = getattr(admin, "plan", None) or "essencial"
-    plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
+    # Plano vem da EMPRESA do administrador; o teto é contado por empresa
+    # (a consulta abaixo já é filtrada automaticamente pelo tenant).
+    company = db.get(Company, admin.company_id) if admin.company_id else None
+    plan_key = normalize_plan(getattr(company, "plan", None) if company else None)
+    plan = PLAN_LIMITS[plan_key]
     current_users = db.scalar(select(func.count()).select_from(User)) or 0
     if current_users >= plan["users"]:
         raise HTTPException(
@@ -556,6 +784,8 @@ def create_user(
         units_access=_parse_units_access(getattr(body, "units_access", None)),
         must_change_password=True,
         permissions_filial=body.permissions_filial,
+        company_id=admin.company_id,
+        is_owner=False,
     )
     db.add(u)
     try:
@@ -621,8 +851,10 @@ def delete_user(
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
-    if u.id == 1:
-        raise HTTPException(400, "Não é possível excluir o Administrador Principal")
+    if getattr(u, "is_owner", False):
+        raise HTTPException(400, "Não é possível excluir o Administrador (dono) da empresa")
+    if u.id == admin.id:
+        raise HTTPException(400, "Você não pode excluir a si mesmo")
     db.execute(update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None))
     try:
         db.delete(u)
@@ -654,8 +886,8 @@ def block_user(
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
-    if u.id == 1:
-        raise HTTPException(400, "Não é possível bloquear o Administrador Principal")
+    if getattr(u, "is_owner", False):
+        raise HTTPException(400, "Não é possível bloquear o Administrador (dono) da empresa")
 
     mode = (body.mode or "").lower().strip()
 
@@ -1027,7 +1259,7 @@ def edit_setting(
     db: Session = Depends(get_db),
 ):
     require("settings")(user)
-    s = db.get(Setting, key)
+    s = db.scalar(select(Setting).where(Setting.key == key))
     if not s:
         s = Setting(key=key)
         db.add(s)
@@ -1046,7 +1278,7 @@ def delete_setting(
     db: Session = Depends(get_db),
 ):
     require("settings")(user)
-    s = db.get(Setting, key)
+    s = db.scalar(select(Setting).where(Setting.key == key))
     if not s:
         raise HTTPException(404)
     db.delete(s)
@@ -1524,7 +1756,7 @@ def delete_schedule_week(
     db: Session = Depends(get_db),
 ):
     """Exclui permanentemente a semana com permissão explícita e senha válida."""
-    if user.id != 1:
+    if not (getattr(user, "is_owner", False) or user.role == Role.ADMIN):
         raw_permissions = (
             getattr(user, "permissions_filial", None) or user.permissions
             if session_unit(user) == "filial"
@@ -1537,10 +1769,10 @@ def delete_schedule_week(
                 "Você não possui permissão para excluir semanas permanentemente",
             )
 
-    admin = db.get(User, 1)
+    owner = db.scalar(select(User).where(User.is_owner == True))  # noqa: E712
     password_ok = verify_password(body.password, user.password_hash)
-    if admin and admin.id != user.id:
-        password_ok = password_ok or verify_password(body.password, admin.password_hash)
+    if owner and owner.id != user.id:
+        password_ok = password_ok or verify_password(body.password, owner.password_hash)
     if not password_ok:
         raise HTTPException(401, "Senha incorreta")
     w = db.get(ScheduleWeek, week_id)
@@ -1560,7 +1792,7 @@ def archive_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    if user.id != 1:
+    if not (getattr(user, "is_owner", False) or user.role == Role.ADMIN):
         raw_permissions = (
             getattr(user, "permissions_filial", None) or user.permissions
             if session_unit(user) == "filial"
@@ -1999,8 +2231,8 @@ def _assert_critical(
     body: CriticalBody,
     expected_confirm: str | None = None,
 ):
-    if user.id != 1 or user.role != Role.ADMIN:
-        raise HTTPException(403, "Apenas o Administrador Principal")
+    if not (getattr(user, "is_owner", False) and user.role == Role.ADMIN):
+        raise HTTPException(403, "Apenas o Administrador (dono) da empresa")
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Senha incorreta")
     if expected_confirm and (body.confirm_text or "").strip() != expected_confirm:
@@ -2059,7 +2291,7 @@ def critical_revoke_sessions(
     # Encerra as sessões de todos os usuários,
     # EXCETO o administrador que executou a ação.
     for u in db.scalars(select(User)).all():
-        if u.id == 1:
+        if u.id == user.id:
             continue
         u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
 
@@ -2088,7 +2320,8 @@ def critical_purge_users(
     db: Session = Depends(get_db),
 ):
     _assert_critical(user, body, "REMOVER USUARIOS")
-    others = db.scalars(select(User).where(User.id != 1)).all()
+    # Escopo por empresa (filtro global) + preserva o dono da empresa.
+    others = db.scalars(select(User).where(User.is_owner == False)).all()  # noqa: E712
     for u in others:
         db.execute(
             update(AuditLog).where(AuditLog.user_id == u.id).values(user_id=None)
@@ -2115,6 +2348,10 @@ def critical_wipe_operational(
     db: Session = Depends(get_db),
 ):
     _assert_critical(user, body, "EXCLUIR DADOS")
+    # IMPORTANTE: delete de tabela (Core) não passa pelo filtro global de SELECT,
+    # então restringimos explicitamente à empresa do usuário para não apagar
+    # dados de outras empresas.
+    cid = user.company_id
     for model in (
         ScheduleExtra,
         ScheduleEntry,
@@ -2124,7 +2361,7 @@ def critical_wipe_operational(
         Maintenance,
         FuelRecord,
     ):
-        db.execute(model.__table__.delete())
+        db.execute(model.__table__.delete().where(model.__table__.c.company_id == cid))
     audit(db, user, "CRITICO_WIPE_OPERATIONAL", "admin", None, request)
     db.commit()
     return {"ok": True, "detail": "Dados operacionais removidos"}
@@ -2166,7 +2403,10 @@ class ProductionBatchIn(BaseModel):
 
 
 def _can_prod(user: User, need: str) -> bool:
-    if user.id == 1:
+    # Gate por PLANO: produção/montagem só existem em planos que liberam o módulo.
+    if need not in plan_modules(plan_of_user(user)):
+        return False
+    if getattr(user, "is_owner", False) or user.role == Role.ADMIN:
         return True
     perms = set((user.permissions or "").split(",")) if user.permissions else set()
     grants = MODULES.get(user.role, set()) if not user.permissions else perms
