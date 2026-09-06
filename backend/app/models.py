@@ -106,10 +106,13 @@ class Customer(Base):
 
 class Vehicle(Base):
     __tablename__ = "vehicles"
+    __table_args__ = (
+        UniqueConstraint("org_unit", "plate", name="uq_vehicles_org_unit_plate"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    plate: Mapped[str] = mapped_column(String(12), unique=True, index=True)
+    plate: Mapped[str] = mapped_column(String(12), index=True)
     brand: Mapped[str] = mapped_column(String(80))
     model: Mapped[str] = mapped_column(String(100))
     year: Mapped[int | None] = mapped_column(Integer)

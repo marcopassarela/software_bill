@@ -1297,7 +1297,16 @@ def add_resource(
         data["org_unit"] = session_unit(user)
     x = model(**model_data(model, data))
     db.add(x)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        if resource == "vehicles" and "plate" in data:
+            raise HTTPException(
+                409,
+                f"A placa {data['plate']} já está cadastrada nesta unidade.",
+            ) from exc
+        raise HTTPException(409, "Já existe um registro com os mesmos dados.") from exc
     audit(db, user, "CADASTRO", module, x.id if hasattr(x, "id") else None, request)
     db.commit()
     return serialize(x)
