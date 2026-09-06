@@ -37,21 +37,31 @@ from email.message import EmailMessage
 
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
+
+# Rate Limiter
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=["120/minute"],   # limite geral de segurança
+    default_limits=["120/minute"],
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-app.add_exception_handler(
-    RateLimitExceeded,
-    lambda r, e: Response(
-        '{"detail":"Muitas tentativas. Aguarde."}',
-        429,
-        media_type="application/json",
-    ),
-)
+
+# Headers de Segurança
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -69,7 +79,11 @@ PLAN_LIMITS = {
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
+    # Nunca mostre o erro real para o usuário em produção
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno do servidor"},
+    )
 
 
 def update_maintenance_status(db: Session):
@@ -168,7 +182,53 @@ class MovementEdit(BaseModel):
 class MovementDelete(BaseModel):
     password: str
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from fastapi import Request, HTTPException
+
+# Configurações de bloqueio
+MAX_FAILED_LOGINS = 8          # tentativas
+BLOCK_WINDOW_MINUTES = 15      # janela de tempo
+BLOCK_DURATION_MINUTES = 30    # tempo de bloqueio
+
+
+def get_client_ip(request: Request) -> str | None:
+    """Pega o IP real (considera proxy da Vercel)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return None
+
+
+def is_ip_blocked(db: Session, ip: str | None) -> bool:
+    """Verifica se o IP está bloqueado por excesso de tentativas."""
+    if not ip:
+        return False
+
+    window_start = datetime.now(timezone.utc) - timedelta(minutes=BLOCK_WINDOW_MINUTES)
+
+    failed_count = db.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(
+            AuditLog.action == "LOGIN_INVÁLIDO",
+            AuditLog.ip == ip,
+            AuditLog.created_at >= window_start,
+        )
+    ) or 0
+
+    return failed_count >= MAX_FAILED_LOGINS
+
+
+def check_ip_block(request: Request, db: Session):
+    """Levanta 429 se o IP estiver bloqueado."""
+    ip = get_client_ip(request)
+    if is_ip_blocked(db, ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Muitas tentativas de login. Tente novamente em {BLOCK_DURATION_MINUTES} minutos.",
+        )
 
 def user_is_blocked(u: User, db: Session) -> bool:
     """True se o usuário não pode usar o sistema agora."""
@@ -317,6 +377,7 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ):
+    check_ip_block(request, db)
     u = db.scalar(select(User).where(User.username == body.username))
     if not u:
         audit(
@@ -799,7 +860,7 @@ def dashboard(
     require("dashboard")(user)
     unit = session_unit(user)
     today = date.today()
-    
+
     update_maintenance_status(db)
 
     # Uma única query agregada para manutenção
