@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from slowapi import Limiter
+from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
@@ -36,8 +37,13 @@ from email.message import EmailMessage
 
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["120/minute"],   # limite geral de segurança
+)
 app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 app.add_exception_handler(
     RateLimitExceeded,
     lambda r, e: Response(
@@ -454,6 +460,7 @@ def me(user: User = Depends(current_user)):
 
 
 @app.post("/auth/change-password")
+@limiter.limit("5/minute")
 def change_password(
     body: PasswordChange,
     request: Request,
@@ -541,6 +548,7 @@ def users(_: User = Depends(main_admin), db: Session = Depends(get_db)):
 
 
 @app.post("/users")
+@limiter.limit("10/minute")
 def create_user(
     body: UserCreate,
     request: Request,
@@ -782,13 +790,16 @@ def logs(
 
 
 @app.get("/dashboard")
-def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def dashboard(
+    request: Request,                          # ← obrigatório
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require("dashboard")(user)
     unit = session_unit(user)
     today = date.today()
-
-    # Atualiza status só se necessário (evita UPDATE a cada hit)
-    # Você pode mover isso para um job diário se quiser
+    
     update_maintenance_status(db)
 
     # Uma única query agregada para manutenção
@@ -925,6 +936,7 @@ def movements(
 
 
 @app.post("/stock/{kind}")
+@limiter.limit("30/minute")
 def stock(
     kind: str,
     body: Movement,
