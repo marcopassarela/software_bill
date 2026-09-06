@@ -192,6 +192,19 @@ def require(module: str, write: bool = False):
         ):
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
 
+        # Em permissões customizadas, "schedule" sozinho representa apenas
+        # acesso de consulta à aba. Ações de escrita exigem uma permissão
+        # interna (schedule_edit, schedule_week, etc.). Perfis padrão seguem
+        # a regra de escrita definida em WRITE_ONLY_ROLES.
+        if (
+            write
+            and module == "schedule"
+            and has_custom_permissions
+            and "schedule" in grants
+            and not any(p.startswith("schedule_") for p in grants)
+        ):
+            raise HTTPException(status_code=403, detail="Sem permissão para editar este módulo")
+
         if (
             write
             and not has_custom_permissions

@@ -212,16 +212,9 @@ const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
 ]);
 
 function expandPermissions(keys: string[]): string[] {
-  const s = new Set(keys);
-  if (s.has('stock')) {
-    s.add('entry');
-    s.add('output');
-    s.add('movements');
-  }
-  if (s.has('entry') || s.has('output') || s.has('movements')) {
-    s.add('stock');
-  }
-  return Array.from(s);
+  // A aba-pai libera somente a visualização da aba. As ações internas são
+  // independentes e não podem ser expandidas automaticamente no salvamento.
+  return Array.from(new Set(keys));
 }
 
 function resourceIdOf(page: string, row: any) {
@@ -3272,17 +3265,6 @@ function ModuleCheckboxes({
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => {
                   setFocus(g.module);
-                  if (g.module === 'orders') {
-                    if (e.target.checked) {
-                      toggle('orders', true);
-                      if (!list.includes('orders_list') && !list.includes('orders_create')) {
-                        toggle('orders_list', true);
-                      }
-                    } else {
-                      toggle('orders', false, ['orders_create', 'orders_list']);
-                    }
-                    return;
-                  }
                   if (!e.target.checked && g.children?.length) {
                     toggle(
                       g.module,
@@ -3324,13 +3306,14 @@ function ModuleCheckboxes({
                   className="mt-0.5 h-3.5 w-3.5 shrink-0"
                   checked={list.includes(c.value)}
                   onChange={(e) => {
+                    const next = new Set(list);
                     if (e.target.checked) {
-                      if (group.module === 'orders') toggle('orders', true);
-                      else if (group.module !== 'production' && group.module !== 'stock') {
-                        toggle(group.module, true);
-                      }
+                      next.add(group.module);
+                      next.add(c.value);
+                    } else {
+                      next.delete(c.value);
                     }
-                    toggle(c.value, e.target.checked);
+                    onChange(Array.from(next).join(','));
                   }}
                 />
                 <span className="leading-snug">{c.label}</span>
@@ -3954,27 +3937,25 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     .map((p: string) => p.trim())
     .filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
-  const hasSchedule = isMainAdmin || perms.includes('schedule');
-
   // Apenas o Administrador Principal (id 1) tem acesso total automático ao
   // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
   // depende exclusivamente das permissões específicas marcadas no cadastro
   // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
   // schedule_archive).
-  const canEdit = hasSchedule || perms.includes('schedule_edit');
+  const canEdit = isMainAdmin || perms.includes('schedule_edit');
   const canWrite = canEdit;
   const canNewWeek =
-    hasSchedule || perms.includes('schedule_week') || perms.includes('schedule_edit');
+    isMainAdmin || perms.includes('schedule_week');
   const canNewRoute =
-    hasSchedule || perms.includes('schedule_route') || perms.includes('schedule_edit');
+    isMainAdmin || perms.includes('schedule_route');
   const canPrint =
-    hasSchedule || perms.includes('schedule_print') || perms.includes('schedule_export');
+    isMainAdmin || perms.includes('schedule_print');
   const canDelete =
-    hasSchedule || perms.includes('schedule_delete');
+    isMainAdmin || perms.includes('schedule_delete');
   const canArchive =
-    hasSchedule || perms.includes('schedule_archive');
+    isMainAdmin || perms.includes('schedule_archive');
   const canExport =
-    hasSchedule || perms.includes('schedule_export');
+    isMainAdmin || perms.includes('schedule_export');
 
     async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
