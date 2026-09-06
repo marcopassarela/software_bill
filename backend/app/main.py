@@ -225,6 +225,30 @@ def _parse_units_access(raw) -> str:
     return ",".join(seen) if seen else "matriz"
 
 
+
+
+def session_unit(user: User) -> str:
+    """Unidade ativa na sessão (JWT)."""
+    u = getattr(user, "_session_unit", None) or "matriz"
+    u = str(u).strip().lower()
+    return u if u in ("matriz", "filial") else "matriz"
+
+
+def assert_week_unit(w: "ScheduleWeek", user: User):
+    """Garante que a semana pertence à unidade logada."""
+    wu = (getattr(w, "unit", None) or "matriz").strip().lower()
+    if wu != session_unit(user):
+        raise HTTPException(404, "Semana não encontrada nesta unidade")
+
+
+def assert_slot_unit(slot: "RouteSlot", user: User, db: Session):
+    w = db.get(ScheduleWeek, slot.week_id)
+    if not w:
+        raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(w, user)
+    return w
+
+
 def model_data(model, data):
     return {
         c.name: v
@@ -1464,14 +1488,20 @@ def serialize_week(x: ScheduleWeek, db: Session):
 
 @app.get("/schedule/weeks")
 def list_schedule_weeks(
-    include_archived: bool = False,
+    status: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     require("schedule")(user)
-    q = select(ScheduleWeek).order_by(ScheduleWeek.start_date)
-    if not include_archived:
+    unit = session_unit(user)
+    q = (
+        select(ScheduleWeek)
+        .where(ScheduleWeek.unit == unit)
+        .order_by(ScheduleWeek.start_date)
+    )
+    if status == "ativa":
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
+    # semanas antigas sem coluna preenchida tratadas como matriz no SQL default
     weeks = db.scalars(q).all()
     return [serialize_week(w, db) for w in weeks]
 
@@ -1484,7 +1514,12 @@ def create_schedule_week(
     db: Session = Depends(get_db),
 ):
     require("schedule", write=True)(user)
-    w = ScheduleWeek(start_date=body.start_date, label=body.label, status=WeekStatus.ATIVA)
+    w = ScheduleWeek(
+        start_date=body.start_date,
+        label=body.label,
+        status=WeekStatus.ATIVA,
+        unit=session_unit(user),
+    )
     db.add(w)
     db.flush()
     audit(db, user, "CRIAÇÃO_SEMANA", "schedule", w.id, request)
@@ -1508,6 +1543,7 @@ def delete_schedule_week(
     w = db.get(ScheduleWeek, week_id)
     if not w:
         raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(w, user)
     db.delete(w)
     audit(db, user, "EXCLUSÃO_SEMANA", "schedule", week_id, request)
     db.commit()
@@ -1534,6 +1570,7 @@ def archive_schedule_week(
 
     if not w:
         raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(w, user)
 
     w.status = WeekStatus.ARQUIVADA
     w.archived_at = func.now()
@@ -1561,6 +1598,7 @@ def create_route_slot(
     week = db.get(ScheduleWeek, body.week_id)
     if not week:
         raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(week, user)
     if week.status != WeekStatus.ATIVA:
         raise HTTPException(409, "Não é possível adicionar rota em semana arquivada")
 
@@ -1594,6 +1632,7 @@ def update_route_slot(
     rs = db.get(RouteSlot, slot_id)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
+    assert_slot_unit(rs, user, db)
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(rs, k, v)
     audit(db, user, "ALTERAÇÃO", "schedule", slot_id, request)
@@ -1610,6 +1649,9 @@ def delete_route_slot(
 ):
     require("schedule", write=True)(user)
     rs = db.get(RouteSlot, slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+    assert_slot_unit(rs, user, db)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
     db.delete(rs)

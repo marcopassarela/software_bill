@@ -288,6 +288,8 @@ class ScheduleWeek(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     start_date: Mapped[date] = mapped_column(Date)
     label: Mapped[str | None] = mapped_column(String(60))
+    # matriz | filial — agenda separada por unidade
+    unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     status: Mapped[WeekStatus] = mapped_column(Enum(WeekStatus), default=WeekStatus.ATIVA)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
