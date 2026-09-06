@@ -53,6 +53,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PLAN_LIMITS = {
+    "essencial": {"name": "Plano Essencial", "price": 39.90, "users": 1},
+    "profissional": {"name": "Plano Profissional", "price": 69.90, "users": 3},
+    "empresarial": {"name": "Plano Empresarial", "price": 119.90, "users": 6},
+}
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -199,6 +205,12 @@ def serialize_user(o, unit: str | None = None):
         sess = "matriz"
     d["current_unit"] = sess
     d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
+    plan_key = getattr(o, "plan", None) or "essencial"
+    plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
+    d["plan"] = plan_key if plan_key in PLAN_LIMITS else "essencial"
+    d["plan_name"] = plan["name"]
+    d["plan_price"] = plan["price"]
+    d["plan_user_limit"] = plan["users"]
     return d
 
 def require_matriz(user: User):
@@ -522,6 +534,15 @@ def create_user(
     admin: User = Depends(main_admin),
     db: Session = Depends(get_db),
 ):
+    plan_key = getattr(admin, "plan", None) or "essencial"
+    plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
+    current_users = db.scalar(select(func.count()).select_from(User)) or 0
+    if current_users >= plan["users"]:
+        raise HTTPException(
+            409,
+            f"O {plan['name']} permite no máximo {plan['users']} usuário(s). "
+            "Faça upgrade do plano para cadastrar outro usuário.",
+        )
     email = (body.email or "").strip().lower()
     if "@" not in email:
         raise HTTPException(422, "E-mail inválido")

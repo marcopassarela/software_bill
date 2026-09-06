@@ -5,6 +5,7 @@ import { StockMovementForm, printProductLabels } from './QrTools';
 import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import OrdersModule from '@/components/OrdersModule';
+import PlansModule from '@/components/PlansModule';
 import { ClipboardPen } from 'lucide-react'; // ou Package se preferir
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from '@/lib/api';
@@ -28,6 +29,7 @@ import {
   Users,
   Settings,
   ShieldAlert,
+  CreditCard,
   LogOut,
   Menu,
   X,
@@ -65,6 +67,7 @@ const items = [
   ['users', 'Usuários', Users],
   ['settings', 'Configurações', Settings],
   ['critical', 'Configurações críticas', ShieldAlert],
+  ['plans', 'Planos', CreditCard],
 ] as const;
 
 const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
@@ -81,7 +84,7 @@ const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
     keys: ['stock', 'entry', 'output', 'movements'],
   },
   { id: 'data', label: 'Dados', keys: ['reports', 'users'] },
-  { id: 'system', label: 'Sistema', keys: ['settings', 'critical'] },
+  { id: 'system', label: 'Sistema', keys: ['settings', 'plans', 'critical'] },
 ];
 
 const resource: any = {
@@ -103,6 +106,7 @@ const moduleAccess: any = {
   VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
   MONTAGEM: ['production'],
+  PLANOS: ['plans'],
 };
 
 export const PRODUCTION_MODELS = [
@@ -142,6 +146,7 @@ function titleFor(k: string) {
       reports: 'Relatórios',
       users: 'Usuários',
       critical: 'Configurações críticas',
+      plans: 'Planos',
     } as any)[k] || k
   );
 }
@@ -1220,6 +1225,8 @@ export default function AppShell({
           <SettingsModule user={user} />
         ) : page === 'critical' ? (
           <CriticalSettingsModule user={user} />
+        ) : page === 'plans' ? (
+          <PlansModule user={user} />
         ) : page === 'dashboard' ? (
           <Dashboard metrics={metrics} onNavigate={setPage} />
         ) : (

@@ -48,6 +48,7 @@ class User(Base):
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
     permissions_filial: Mapped[str | None] = mapped_column(Text, nullable=True)
     units_access: Mapped[str | None] = mapped_column(String(40), default="matriz,filial")
+    plan: Mapped[str] = mapped_column(String(20), default="essencial", server_default="essencial")
     token_version: Mapped[int] = mapped_column(
         Integer,
         default=0,
