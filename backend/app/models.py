@@ -46,6 +46,7 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    units_access: Mapped[str | None] = mapped_column(String(40), default="matriz,filial")
     token_version: Mapped[int] = mapped_column(
         Integer,
         default=0,

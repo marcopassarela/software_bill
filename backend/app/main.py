@@ -83,6 +83,7 @@ def seed():
 class Login(BaseModel):
     username: str
     password: str
+    unit: str = "matriz"
     latitude: float | None = None
     longitude: float | None = None
 
