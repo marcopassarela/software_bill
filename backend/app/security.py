@@ -149,6 +149,17 @@ def require(module: str, write: bool = False):
             grants = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
         else:
             grants = set(MODULES.get(user.role, set()))
+        unit = getattr(user, "_session_unit", None) or "matriz"
+        if str(unit).strip().lower() == "filial":
+            raw = getattr(user, "permissions_filial", None) or user.permissions
+        else:
+            raw = user.permissions
+
+        has_custom_permissions = bool(raw)
+        if has_custom_permissions:
+            grants = {p.strip() for p in (raw or "").split(",") if p.strip()}
+        else:
+            grants = set(MODULES.get(user.role, set()))
 
         # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders"
         if module == "orders":

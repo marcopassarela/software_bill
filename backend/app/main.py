@@ -105,6 +105,7 @@ class UserCreate(BaseModel):
     role: Role
     permissions: str | None = None
     units_access: str | None = "matriz,filial"
+    permissions_filial: str | None = None
 
 
 class Payload(BaseModel):
@@ -193,6 +194,7 @@ def serialize(o):
 
 
 def serialize_user(o, unit: str | None = None):
+    d["permissions_filial"] = getattr(o, "permissions_filial", None) or ""
     d = serialize(o)
     d.pop("password_hash", None)
     # avatar pode ser grande; front usa avatar_data se existir
@@ -541,6 +543,7 @@ def create_user(
         permissions=body.permissions,
         units_access=_parse_units_access(getattr(body, "units_access", None)),
         must_change_password=True,
+        permissions_filial=body.permissions_filial,
     )
     db.add(u)
     try:
@@ -568,7 +571,16 @@ def update_user(
         body.data["email"] = str(body.data["email"]).strip().lower()
     if "units_access" in body.data and body.data["units_access"] is not None:
         body.data["units_access"] = _parse_units_access(body.data["units_access"])
-    for k in ("name", "username", "email", "role", "active", "permissions", "units_access"):
+    for k in (
+        "name",
+        "username",
+        "email",
+        "role",
+        "active",
+        "permissions",
+        "permissions_filial",
+        "units_access",
+    ):
         if k in body.data:
             setattr(u, k, body.data[k])
     if body.data.get("password"):

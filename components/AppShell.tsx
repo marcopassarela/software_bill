@@ -421,7 +421,6 @@ const USER_EDIT_FIELDS: FieldDef[] = [
     options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR', 'MONTAGEM'],
     required: true,
   },
-  { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
   { key: 'active', label: 'Ativo', type: 'select', options: ['Sim', 'Não'], required: true },
   {
     key: 'password',
@@ -602,9 +601,11 @@ export default function AppShell({
       return false;
     }
     if (isMainAdmin) return true;
-    const perms = user.permissions
-      ? user.permissions.split(',').filter(Boolean)
-      : null;
+    const rawPerms =
+      user?.current_unit === 'filial'
+        ? user.permissions_filial || user.permissions
+        : user.permissions;
+    const perms = rawPerms ? String(rawPerms).split(',').filter(Boolean) : null;
     if (perms) {
       if (perms.includes(key)) return true;
       if (key === 'production' && perms.includes('assembly')) return true;
@@ -3563,6 +3564,7 @@ function EditUserForm({
     email: user.email || '',
     role: user.role || '',
     permissions: user.permissions || '',
+    permissions_filial: user.permissions_filial || '',
     active: user.active ? 'Sim' : 'Não',
     password: '',
   });
@@ -3587,9 +3589,14 @@ function EditUserForm({
       email: (values.email || '').trim().toLowerCase(),
       role: values.role,
       permissions: values.permissions
-        ? expandPermissions(String(values.permissions).split(',').filter(Boolean)).join(
-            ','
-          )
+        ? expandPermissions(
+            String(values.permissions).split(',').filter(Boolean)
+          ).join(',')
+        : null,
+      permissions_filial: values.permissions_filial
+        ? expandPermissions(
+            String(values.permissions_filial).split(',').filter(Boolean)
+          ).join(',')
         : null,
       active: values.active === 'Sim',
       units_access: (unitsAccess.length ? unitsAccess : ['matriz']).join(','),
@@ -3678,10 +3685,41 @@ function EditUserForm({
             2 — Filial
           </label>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-500">
           Define em qual unidade este usuário pode entrar no login.
         </p>
       </div>
+
+      <div className="sm:col-span-2 space-y-4">
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="mb-2 text-sm font-semibold text-slate-800">
+            Permissões na Matriz
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            Abas e botões quando o usuário estiver na unidade Matriz.
+          </p>
+          <PermissionsField
+            value={values.permissions}
+            onChange={(v) => set('permissions', v)}
+            startOpen={!!user.permissions}
+          />
+        </div>
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="mb-2 text-sm font-semibold text-slate-800">
+            Permissões na Filial
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            Liberado pela Matriz. Vale quando o usuário estiver na Filial.
+            Produção não se aplica à Filial.
+          </p>
+          <PermissionsField
+            value={values.permissions_filial}
+            onChange={(v) => set('permissions_filial', v)}
+            startOpen={!!user.permissions_filial}
+          />
+        </div>
+      </div>
+
       <div className="sm:col-span-2">
         <button
           disabled={saving}
