@@ -3954,27 +3954,27 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     .map((p: string) => p.trim())
     .filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
+  const hasSchedule = isMainAdmin || perms.includes('schedule');
 
   // Apenas o Administrador Principal (id 1) tem acesso total automático ao
   // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
   // depende exclusivamente das permissões específicas marcadas no cadastro
   // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
   // schedule_archive).
-  const canEdit =
-    isMainAdmin || perms.includes('schedule_edit') || perms.includes('schedule');
+  const canEdit = hasSchedule || perms.includes('schedule_edit');
   const canWrite = canEdit;
   const canNewWeek =
-    isMainAdmin || perms.includes('schedule_week') || perms.includes('schedule_edit');
+    hasSchedule || perms.includes('schedule_week') || perms.includes('schedule_edit');
   const canNewRoute =
-    isMainAdmin || perms.includes('schedule_route') || perms.includes('schedule_edit');
+    hasSchedule || perms.includes('schedule_route') || perms.includes('schedule_edit');
   const canPrint =
-    isMainAdmin || perms.includes('schedule_print') || perms.includes('schedule_export');
+    hasSchedule || perms.includes('schedule_print') || perms.includes('schedule_export');
   const canDelete =
-    isMainAdmin || perms.includes('schedule_delete');
+    hasSchedule || perms.includes('schedule_delete');
   const canArchive =
-    isMainAdmin || perms.includes('schedule_archive');
+    hasSchedule || perms.includes('schedule_archive');
   const canExport =
-    isMainAdmin || perms.includes('schedule_export');
+    hasSchedule || perms.includes('schedule_export');
 
     async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
@@ -4600,19 +4600,23 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             </label>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canWrite && (
+            {(canNewWeek || canNewRoute) && (
               <>
+                {canNewWeek && (
                 <button onClick={() => setShowNewWeek(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
                   + Nova semana
                 </button>
+                )}
                 {selectedWeek && selectedWeek.status === 'Ativa' && (
+                  canNewRoute && (
                   <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90">
                     + Nova rota
                   </button>
+                  )
                 )}
               </>
             )}
-            {selectedWeek && dates.length > 0 && canExport && (
+            {selectedWeek && dates.length > 0 && canPrint && (
               <button
                 type="button"
                 onClick={openPrintDay}
