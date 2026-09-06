@@ -129,6 +129,16 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
             status_code=401,
             detail="Sessão encerrada. Faça login novamente.",
         )
+
+    unit = (data.get("unit") or "matriz")
+    if isinstance(unit, str):
+        unit = unit.strip().lower()
+    else:
+        unit = "matriz"
+    if unit not in ("matriz", "filial"):
+        unit = "matriz"
+    # unidade da sessão (login) — usada em serialize_user / filtros futuros
+    user._session_unit = unit
     return user
 
 

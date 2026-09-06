@@ -843,6 +843,9 @@ export default function AppShell({
   async function create(data: any) {
     setError('');
     try {
+      if (page === 'users' && !data.units_access) {
+        data = { ...data, units_access: 'matriz,filial' };
+      }
       if (page === 'entry' || page === 'output')
         await request('/stock/' + page, { method: 'POST', body: JSON.stringify(data) });
       else
@@ -1153,6 +1156,9 @@ export default function AppShell({
             <h1 className="text-2xl font-bold">
               {page ? titleFor(page) : 'Sem acesso'}
             </h1>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+              {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative" ref={accountMenuRef}>
@@ -3440,6 +3446,12 @@ function EditUserForm({
     active: user.active ? 'Sim' : 'Não',
     password: '',
   });
+  const [unitsAccess, setUnitsAccess] = useState<string[]>(
+    String(user.units_access || 'matriz,filial')
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+  );
   const [saving, setSaving] = useState(false);
 
   function set(key: string, v: string) {
@@ -3460,6 +3472,7 @@ function EditUserForm({
           )
         : null,
       active: values.active === 'Sim',
+      units_access: (unitsAccess.length ? unitsAccess : ['matriz']).join(','),
     };
     if (values.password) data.password = values.password;
     try {
@@ -3515,6 +3528,40 @@ function EditUserForm({
         </Wrapper>
         );
       })}
+      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="mb-2 text-sm font-medium text-slate-700">Acesso às unidades</p>
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={unitsAccess.includes('matriz')}
+              onChange={(e) => {
+                const s = new Set(unitsAccess);
+                if (e.target.checked) s.add('matriz');
+                else s.delete('matriz');
+                setUnitsAccess(Array.from(s));
+              }}
+            />
+            1 — Matriz
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={unitsAccess.includes('filial')}
+              onChange={(e) => {
+                const s = new Set(unitsAccess);
+                if (e.target.checked) s.add('filial');
+                else s.delete('filial');
+                setUnitsAccess(Array.from(s));
+              }}
+            />
+            2 — Filial
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Define em qual unidade este usuário pode entrar no login.
+        </p>
+      </div>
       <div className="sm:col-span-2">
         <button
           disabled={saving}

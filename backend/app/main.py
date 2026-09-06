@@ -104,6 +104,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=1)
     role: Role
     permissions: str | None = None
+    units_access: str | None = "matriz,filial"
 
 
 class Payload(BaseModel):
@@ -191,13 +192,37 @@ def serialize(o):
     }
 
 
-def serialize_user(o):
+def serialize_user(o, unit: str | None = None):
     d = serialize(o)
     d.pop("password_hash", None)
     # avatar pode ser grande; front usa avatar_data se existir
     d["is_main_admin"] = o.id == 1
     d["has_avatar"] = bool(getattr(o, "avatar_data", None))
+    sess = unit if unit is not None else getattr(o, "_session_unit", None)
+    if not sess:
+        sess = "matriz"
+    sess = str(sess).strip().lower()
+    if sess not in ("matriz", "filial"):
+        sess = "matriz"
+    d["current_unit"] = sess
+    d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
     return d
+
+
+def _parse_units_access(raw) -> str:
+    if raw is None:
+        return "matriz,filial"
+    parts = [
+        p.strip().lower()
+        for p in str(raw).split(",")
+        if p.strip().lower() in ("matriz", "filial")
+    ]
+    # unique preserve order
+    seen = []
+    for p in parts:
+        if p not in seen:
+            seen.append(p)
+    return ",".join(seen) if seen else "matriz"
 
 
 def model_data(model, data):
@@ -297,16 +322,68 @@ def login(
         longitude=getattr(body, "longitude", None),
     )
     db.commit()
+    unit = (getattr(body, "unit", None) or "matriz")
+    if isinstance(unit, str):
+        unit = unit.strip().lower()
+    else:
+        unit = "matriz"
+    if unit not in ("matriz", "filial"):
+        raise HTTPException(400, "Unidade inválida")
+
+    access = _parse_units_access(getattr(u, "units_access", None))
+    allowed = {x.strip() for x in access.split(",") if x.strip()}
+    if u.id == 1:
+        allowed = {"matriz", "filial"}
+    if unit not in allowed:
+        raise HTTPException(
+            403,
+            "Seu usuário não tem acesso a esta unidade. Fale com o administrador.",
+        )
+
     response.set_cookie(
         "gl_session",
-        token_for(u),
+        token_for(u, unit=unit),
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
         max_age=settings.access_token_minutes * 60,
         path="/",
     )
-    return {"user": serialize_user(u)}
+    u._session_unit = unit
+    return {"user": serialize_user(u, unit=unit)}
+
+
+
+@app.post("/auth/switch-unit")
+def switch_unit(
+    body: dict,
+    response: Response,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    unit = str((body or {}).get("unit") or "").strip().lower()
+    if unit not in ("matriz", "filial"):
+        raise HTTPException(400, "Unidade inválida")
+    access = _parse_units_access(getattr(user, "units_access", None))
+    allowed = {x.strip() for x in access.split(",") if x.strip()}
+    if user.id == 1:
+        allowed = {"matriz", "filial"}
+    if unit not in allowed:
+        raise HTTPException(403, "Sem permissão para esta unidade")
+    response.set_cookie(
+        "gl_session",
+        token_for(user, unit=unit),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    user._session_unit = unit
+    audit(db, user, "TROCA_UNIDADE", "auth", user.id, request)
+    db.commit()
+    return serialize_user(user, unit=unit)
 
 
 @app.post("/auth/logout")
@@ -431,6 +508,7 @@ def create_user(
         password_hash=hash_password(body.password),
         role=body.role,
         permissions=body.permissions,
+        units_access=_parse_units_access(getattr(body, "units_access", None)),
         must_change_password=True,
     )
     db.add(u)
@@ -457,7 +535,9 @@ def update_user(
         raise HTTPException(404, "Usuário não encontrado")
     if "email" in body.data and body.data["email"] is not None:
         body.data["email"] = str(body.data["email"]).strip().lower()
-    for k in ("name", "username", "email", "role", "active", "permissions"):
+    if "units_access" in body.data and body.data["units_access"] is not None:
+        body.data["units_access"] = _parse_units_access(body.data["units_access"])
+    for k in ("name", "username", "email", "role", "active", "permissions", "units_access"):
         if k in body.data:
             setattr(u, k, body.data[k])
     if body.data.get("password"):
