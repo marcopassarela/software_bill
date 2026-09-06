@@ -4652,7 +4652,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 Baixar PDF da semana
               </button>
             )}
-            {isMainAdmin && (
+            {canDelete && (
               <button
                 type="button"
                 onClick={() => {
@@ -5226,7 +5226,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             </p>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">
-                Senha do Administrador Principal *
+                Senha do usuário ou do Administrador Principal *
               </span>
               <input
                 type="password"
@@ -5234,7 +5234,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 className="w-full rounded-lg border p-2"
-                placeholder="Digite sua senha"
+                placeholder="Digite uma das senhas autorizadas"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') confirmDeleteWeek();

@@ -1587,10 +1587,25 @@ def delete_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Exclui permanentemente a semana. Somente Admin Principal + senha."""
-    if user.id != 1 or user.role != Role.ADMIN:
-        raise HTTPException(403, "Apenas o Administrador Principal pode excluir semanas")
-    if not verify_password(body.password, user.password_hash):
+    """Exclui permanentemente a semana com permissão explícita e senha válida."""
+    if user.id != 1:
+        raw_permissions = (
+            getattr(user, "permissions_filial", None) or user.permissions
+            if session_unit(user) == "filial"
+            else user.permissions
+        )
+        permissions = {p.strip() for p in (raw_permissions or "").split(",") if p.strip()}
+        if "schedule_delete" not in permissions:
+            raise HTTPException(
+                403,
+                "Você não possui permissão para excluir semanas permanentemente",
+            )
+
+    admin = db.get(User, 1)
+    password_ok = verify_password(body.password, user.password_hash)
+    if admin and admin.id != user.id:
+        password_ok = password_ok or verify_password(body.password, admin.password_hash)
+    if not password_ok:
         raise HTTPException(401, "Senha incorreta")
     w = db.get(ScheduleWeek, week_id)
     if not w:
