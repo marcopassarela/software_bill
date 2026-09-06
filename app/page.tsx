@@ -2,8 +2,6 @@
 import { useEffect, useState } from 'react';
 import { request } from '@/lib/api';
 import AppShell from '@/components/AppShell';
-import { CheckoutForm } from '@/components/CheckoutForm';
-import { getPlanByKey } from '@/lib/plans';
 
 function formatRemaining(until: Date): string {
   const ms = until.getTime() - Date.now();
@@ -53,77 +51,7 @@ export default function Home() {
   const [resetPass, setResetPass] = useState('');
   const [resetPass2, setResetPass2] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
-  const [unit] = useState<'matriz' | 'filial'>('matriz');
-
-  // ---- Cadastro de nova empresa ----
-  const [signupOpen, setSignupOpen] = useState(false);
-  const [signupBusy, setSignupBusy] = useState(false);
-  const [signupError, setSignupError] = useState('');
-  const [signupStep, setSignupStep] = useState<'form' | 'payment' | 'success'>('form');
-  const [checkoutSessionId, setCheckoutSessionId] = useState('');
-  const [su, setSu] = useState({
-    company_name: '',
-    document: '',
-    company_phone: '',
-    plan: 'essencial',
-    admin_name: '',
-    username: '',
-    email: '',
-    password: '',
-  });
-
-  const PLAN_CARDS = [
-    { key: 'essencial', name: 'Essencial', price: 'R$ 39,90', users: 1, desc: 'Até 1 usuário' },
-    { key: 'profissional', name: 'Profissional', price: 'R$ 69,90', users: 3, desc: 'Até 3 usuários' },
-    { key: 'empresarial', name: 'Empresarial', price: 'R$ 119,90', users: 6, desc: 'Até 6 usuários' },
-  ];
-
-  async function signup(e: React.FormEvent) {
-    e.preventDefault();
-    setSignupBusy(true);
-    setSignupError('');
-
-    // Validar campos obrigatórios
-    if (!su.company_name || !su.admin_name || !su.username || !su.email || !su.password) {
-      setSignupError('Todos os campos obrigatórios devem ser preenchidos');
-      setSignupBusy(false);
-      return;
-    }
-
-    // Avançar para o checkout
-    setSignupStep('payment');
-    setSignupBusy(false);
-  }
-
-  async function finalizeSignupAfterPayment(sessionId: string) {
-    setSignupBusy(true);
-    setSignupError('');
-    try {
-      // Criar a empresa e usuário no backend após pagamento confirmado
-      const result = await request('/auth/signup', {
-        method: 'POST',
-        body: JSON.stringify({
-          company_name: su.company_name,
-          document: su.document || null,
-          company_phone: su.company_phone || null,
-          plan: su.plan,
-          admin_name: su.admin_name,
-          username: su.username,
-          email: su.email,
-          password: su.password,
-          checkout_session_id: sessionId, // Validação no backend
-        }),
-      });
-      setUser(result.user);
-      setSignupStep('success');
-      setSignupOpen(false);
-    } catch (err: any) {
-      setSignupError(err?.message || 'Erro ao finalizar o cadastro após pagamento');
-      setSignupStep('payment'); // Voltar ao checkout
-    } finally {
-      setSignupBusy(false);
-    }
-  }
+  const [unit, setUnit] = useState<'matriz' | 'filial'>('matriz');
 
   useEffect(() => {
     function handleSessionExpired() {
@@ -516,167 +444,6 @@ export default function Home() {
     );
   }
 
-  if (signupOpen && !user) {
-    if (signupStep === 'payment') {
-      const selectedPlan = getPlanByKey(su.plan as 'essencial' | 'profissional' | 'empresarial');
-      return (
-        <main className="grid min-h-screen place-items-center bg-slate-100 p-4">
-          <section className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-lg sm:p-8">
-            <div className="mb-5">
-              <p className="text-sm font-semibold text-brand">Etapa 2 de 2</p>
-              <h1 className="mt-1 text-2xl font-bold">Pagamento da assinatura</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Escolha cartão de crédito ou Pix. Sua conta será criada somente após a confirmação do pagamento.
-              </p>
-            </div>
-            {signupError && <p className="mb-3 text-sm text-red-600">{signupError}</p>}
-            {selectedPlan && (
-              <CheckoutForm
-                planId={selectedPlan.id}
-                planName={selectedPlan.name}
-                planPrice={selectedPlan.priceFormatted}
-                companyName={su.company_name}
-                email={su.email}
-                onSuccess={finalizeSignupAfterPayment}
-                onCancel={() => setSignupStep('form')}
-              />
-            )}
-            {signupBusy && <p className="mt-3 text-center text-sm text-slate-500">Finalizando cadastro…</p>}
-          </section>
-        </main>
-      );
-    }
-
-    return (
-      <main className="grid min-h-screen place-items-center bg-slate-100 p-4">
-        <form
-          onSubmit={signup}
-          className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-lg"
-          autoComplete="off"
-        >
-          <h1 className="text-2xl font-bold">Criar conta da empresa</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Cadastre sua empresa, escolha um plano e crie o usuário administrador.
-          </p>
-          {signupError && <p className="mt-3 text-sm text-red-600">{signupError}</p>}
-
-          <p className="mt-6 mb-2 text-sm font-semibold text-slate-700">Escolha o plano</p>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {PLAN_CARDS.map((p) => (
-              <button
-                type="button"
-                key={p.key}
-                onClick={() => setSu({ ...su, plan: p.key })}
-                className={`rounded-xl border p-3 text-left ${
-                  su.plan === p.key
-                    ? 'border-brand bg-brand/5 ring-1 ring-brand'
-                    : 'border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <span className="block text-sm font-semibold">{p.name}</span>
-                <span className="block text-lg font-bold text-brand">{p.price}</span>
-                <span className="block text-xs text-slate-500">{p.desc}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm sm:col-span-2">
-              <span className="mb-1 block text-slate-600">Nome da empresa *</span>
-              <input
-                value={su.company_name}
-                onChange={(e) => setSu({ ...su, company_name: e.target.value })}
-                required
-                minLength={2}
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">CNPJ / CPF</span>
-              <input
-                value={su.document}
-                onChange={(e) => setSu({ ...su, document: e.target.value })}
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Telefone</span>
-              <input
-                value={su.company_phone}
-                onChange={(e) => setSu({ ...su, company_phone: e.target.value })}
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-          </div>
-
-          <p className="mt-6 mb-2 text-sm font-semibold text-slate-700">Usuário administrador</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm sm:col-span-2">
-              <span className="mb-1 block text-slate-600">Nome completo *</span>
-              <input
-                value={su.admin_name}
-                onChange={(e) => setSu({ ...su, admin_name: e.target.value })}
-                required
-                minLength={2}
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Usuário (login) *</span>
-              <input
-                value={su.username}
-                onChange={(e) => setSu({ ...su, username: e.target.value })}
-                required
-                minLength={3}
-                autoComplete="off"
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-slate-600">E-mail *</span>
-              <input
-                type="email"
-                value={su.email}
-                onChange={(e) => setSu({ ...su, email: e.target.value })}
-                required
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-            <label className="text-sm sm:col-span-2">
-              <span className="mb-1 block text-slate-600">Senha * (mínimo 6 caracteres)</span>
-              <input
-                type="password"
-                value={su.password}
-                onChange={(e) => setSu({ ...su, password: e.target.value })}
-                required
-                minLength={6}
-                autoComplete="new-password"
-                className="w-full rounded-lg border p-2"
-              />
-            </label>
-          </div>
-
-          <div className="mt-6 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setSignupOpen(false)}
-              className="flex-1 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700"
-            >
-              Voltar
-            </button>
-            <button
-              type="submit"
-              disabled={signupBusy}
-              className="flex-1 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {signupBusy ? 'Criando…' : 'Criar conta'}
-            </button>
-          </div>
-        </form>
-      </main>
-    );
-  }
-
   return (
     <main className="grid min-h-screen md:grid-cols-2">
       <div className="hidden flex-col items-center justify-center bg-navy p-10 text-white md:flex">
@@ -732,23 +499,40 @@ export default function Home() {
             className="..."
           />
       
+          <div className="mt-4">
+            <p className="mb-2 text-sm font-medium text-slate-700">Unidade</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setUnit('matriz')}
+                className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
+                  unit === 'matriz'
+                    ? 'border-brand bg-brand text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                1 — Matriz
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnit('filial')}
+                className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
+                  unit === 'filial'
+                    ? 'border-brand bg-brand text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                2 — Filial
+              </button>
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={busy}
             className="mt-5 w-full rounded-lg bg-brand p-2.5 font-medium text-white disabled:opacity-60"
           >
             {busy ? 'Entrando…' : 'Entrar'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSignupOpen(true);
-              setSignupError('');
-              setError('');
-            }}
-            className="mt-3 w-full rounded-lg border border-brand px-4 py-2.5 text-sm font-semibold text-brand hover:bg-brand/5"
-          >
-            Criar conta da empresa
           </button>
           <button
              type="button"
