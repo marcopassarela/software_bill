@@ -111,13 +111,11 @@ def add_company_id(conn, table_name: str, nullable: bool = False):
             table_name,
             sa.Column(
                 "company_id",
-                sa.Integer(),
+                sa.BigInteger(),
                 nullable=True,
             ),
         )
 
-    # Todos os dados existentes pertencem atualmente
-    # à empresa Logísticas Bill (ID 3).
     conn.execute(
         text(
             f"""
@@ -133,7 +131,7 @@ def add_company_id(conn, table_name: str, nullable: bool = False):
         op.alter_column(
             table_name,
             "company_id",
-            existing_type=sa.Integer(),
+            existing_type=sa.BigInteger(),
             nullable=False,
         )
 
@@ -168,7 +166,7 @@ def upgrade():
     conn = op.get_bind()
 
     # ---------------------------------------------------------
-    # 1. Validar estrutura principal
+    # 1. Validar empresa existente
     # ---------------------------------------------------------
 
     if not table_exists(conn, "companies"):
@@ -195,16 +193,39 @@ def upgrade():
         )
 
     # ---------------------------------------------------------
+    # 1.1. Campos adicionais da Company
+    # ---------------------------------------------------------
+
+    company_columns = [
+        ("legal_name", sa.String(length=180)),
+        ("logo", sa.Text()),
+        ("subscription_status", sa.String(length=30)),
+        ("subscription_id", sa.String(length=120)),
+        ("current_period_start", sa.DateTime(timezone=True)),
+        ("current_period_end", sa.DateTime(timezone=True)),
+    ]
+
+    for column_name, column_type in company_columns:
+        if not column_exists(conn, "companies", column_name):
+            op.add_column(
+                "companies",
+                sa.Column(
+                    column_name,
+                    column_type,
+                    nullable=True,
+                ),
+            )
+
+    # ---------------------------------------------------------
     # 2. Users
     # ---------------------------------------------------------
 
-    # company_id já existe no banco atual.
     if not column_exists(conn, "users", "company_id"):
         op.add_column(
             "users",
             sa.Column(
                 "company_id",
-                sa.Integer(),
+                sa.BigInteger(),
                 nullable=True,
             ),
         )
@@ -239,7 +260,7 @@ def upgrade():
         )
 
     # ---------------------------------------------------------
-    # 3. Todas as tabelas pertencentes à empresa
+    # 3. Tabelas pertencentes à empresa
     # ---------------------------------------------------------
 
     for table_name in TENANT_TABLES:
@@ -262,16 +283,9 @@ def upgrade():
     add_company_index(conn, "audit_logs")
 
     # ---------------------------------------------------------
-    # 5. Drivers - email já existe no banco
+    # 5. Drivers
     # ---------------------------------------------------------
 
-    # company_id já foi adicionado acima.
-    # Mantemos CPF existente para não destruir dados.
-    #
-    # A nova regra de isolamento será feita pelo backend
-    # usando company_id.
-    #
-    # O email pode ser repetido entre empresas.
     if not index_exists(conn, "ix_drivers_company_email"):
         op.create_index(
             "ix_drivers_company_email",
@@ -284,7 +298,6 @@ def upgrade():
     # 6. Vehicles
     # ---------------------------------------------------------
 
-    # Remove eventual UNIQUE global da placa.
     if constraint_exists(conn, "vehicles_plate_key"):
         op.drop_constraint(
             "vehicles_plate_key",
@@ -333,20 +346,10 @@ def upgrade():
 
     # ---------------------------------------------------------
     # 8. Settings
-    #
-    # O modelo novo usa:
-    #
-    # id
-    # company_id
-    # key
-    # value
-    #
-    # com UNIQUE(company_id, key)
     # ---------------------------------------------------------
 
     if table_exists(conn, "settings"):
 
-        # Descobrir se key é atualmente uma PK.
         result = conn.execute(
             text(
                 """
@@ -364,18 +367,14 @@ def upgrade():
         for row in pk_rows:
             pk_name = row[0]
 
-            # Só removemos a PK se ela existir.
             op.drop_constraint(
                 pk_name,
                 "settings",
                 type_="primary",
             )
 
-        # Adicionar id caso ainda não exista.
         if not column_exists(conn, "settings", "id"):
 
-            # Criar sequência para manter comportamento
-            # semelhante às outras tabelas.
             conn.execute(
                 text(
                     """
@@ -405,13 +404,10 @@ def upgrade():
                 )
             )
 
-        # company_id para settings
         add_company_id(conn, "settings", nullable=False)
-
         add_company_fk(conn, "settings")
         add_company_index(conn, "settings")
 
-        # Garantir que todos os IDs existentes foram preenchidos.
         conn.execute(
             text(
                 """
@@ -429,7 +425,6 @@ def upgrade():
             nullable=False,
         )
 
-        # Tornar id a nova PK.
         result = conn.execute(
             text(
                 """
@@ -449,7 +444,6 @@ def upgrade():
                 ["id"],
             )
 
-        # Garantir que key + company_id seja único.
         if not index_exists(conn, "uq_settings_company_key"):
             op.create_index(
                 "uq_settings_company_key",
@@ -459,7 +453,7 @@ def upgrade():
             )
 
     # ---------------------------------------------------------
-    # 9. Remover estruturas antigas de matriz/filial
+    # 9. Remover matriz/filial
     # ---------------------------------------------------------
 
     legacy_columns = {
@@ -496,10 +490,9 @@ def upgrade():
             )
 
     # ---------------------------------------------------------
-    # 11. Índice adicional para consultas por empresa
+    # 11. Índices adicionais
     # ---------------------------------------------------------
 
-    # Audit logs
     if not index_exists(conn, "ix_audit_logs_company_created_at"):
         op.create_index(
             "ix_audit_logs_company_created_at",
@@ -508,7 +501,6 @@ def upgrade():
             unique=False,
         )
 
-    # Orders
     if not index_exists(conn, "ix_orders_company_created_at"):
         op.create_index(
             "ix_orders_company_created_at",
@@ -517,7 +509,6 @@ def upgrade():
             unique=False,
         )
 
-    # Production
     if not index_exists(conn, "ix_production_records_company_date"):
         op.create_index(
             "ix_production_records_company_date",
@@ -526,7 +517,6 @@ def upgrade():
             unique=False,
         )
 
-    # Schedule
     if not index_exists(conn, "ix_schedule_weeks_company_start_date"):
         op.create_index(
             "ix_schedule_weeks_company_start_date",
@@ -536,7 +526,7 @@ def upgrade():
         )
 
     # ---------------------------------------------------------
-    # 12. Corrigir plano da empresa
+    # 12. Plano atual da empresa
     # ---------------------------------------------------------
 
     conn.execute(

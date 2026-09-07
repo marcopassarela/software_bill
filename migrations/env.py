@@ -1,10 +1,13 @@
 import os
 
+from dotenv import load_dotenv
 from alembic import context
 from sqlalchemy import create_engine, pool
 
 from backend.app.database import Base
 from backend.app import models
+
+load_dotenv(override=True)
 
 config = context.config
 
