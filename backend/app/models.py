@@ -1,6 +1,7 @@
 import enum
+
 from datetime import datetime, date
-from datetime import datetime, date as DateOnly
+
 from sqlalchemy import (
     Boolean,
     Date,
@@ -14,8 +15,15 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy.orm import Mapped, mapped_column
+
 from .database import Base
+
+
+# ============================================================
+# ENUMS
+# ============================================================
 
 
 class Role(str, enum.Enum):
@@ -30,343 +38,6 @@ class Role(str, enum.Enum):
     VENDEDOR = "VENDEDOR"
 
 
-class Company(Base):
-    __tablename__ = "companies"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    name: Mapped[str] = mapped_column(
-        String(160),
-        nullable=False,
-        default="Minha empresa"
-    )
-
-    legal_name: Mapped[str | None] = mapped_column(
-        String(180),
-        nullable=True
-    )
-
-    document: Mapped[str | None] = mapped_column(
-        String(24),
-        nullable=True,
-        index=True
-    )
-
-    email: Mapped[str | None] = mapped_column(
-        String(160),
-        nullable=True
-    )
-
-    phone: Mapped[str | None] = mapped_column(
-        String(30),
-        nullable=True
-    )
-
-    address: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True
-    )
-
-    city: Mapped[str | None] = mapped_column(
-        String(80),
-        nullable=True
-    )
-
-    state: Mapped[str | None] = mapped_column(
-        String(2),
-        nullable=True
-    )
-
-    zip_code: Mapped[str | None] = mapped_column(
-        String(12),
-        nullable=True
-    )
-
-    logo: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True
-    )
-
-    # =========================================================
-    # PLANO DA EMPRESA
-    # =========================================================
-
-    # =========================================================
-    # STATUS DA ASSINATURA
-    # =========================================================
-
-    subscription_status: Mapped[str] = mapped_column(
-        String(30),
-        nullable=False,
-        default="active",
-        server_default="active"
-    )
-
-    subscription_id: Mapped[str | None] = mapped_column(
-        String(120),
-        nullable=True,
-        index=True
-    )
-
-    current_period_start: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    current_period_end: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        server_default="true"
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
-
-
-class User(Base):
-    __tablename__ = "users"
-    avatar_data: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    company_id: Mapped[int | None] = mapped_column(
-        ForeignKey("companies.id"), nullable=True, index=True
-    )
-    name: Mapped[str] = mapped_column(String(120))
-    username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
-    email: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[Role] = mapped_column(
-        Enum(Role, name="role"),
-        default=Role.VIEWER,
-    )
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
-    permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    permissions_filial: Mapped[str | None] = mapped_column(Text, nullable=True)
-    units_access: Mapped[str | None] = mapped_column(String(40), default="matriz,filial")
-    plan: Mapped[str] = mapped_column(String(20), default="essencial", server_default="essencial")
-    token_version: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        server_default="0",
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-    )
-    block_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    blocked_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    block_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    login_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    login_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-
-
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    action: Mapped[str] = mapped_column(String(80))
-    module: Mapped[str] = mapped_column(String(80))
-    record_id: Mapped[str | None] = mapped_column(String(80))
-    ip: Mapped[str | None] = mapped_column(String(64))
-    country: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    region: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    city: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    latitude: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    longitude: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    username_attempted: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    details: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class Customer(Base):
-    __tablename__ = "customers"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    company_id: Mapped[int] = mapped_column(
-        ForeignKey("companies.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
-
-    name: Mapped[str] = mapped_column(
-        String(160),
-        index=True
-    )
-
-
-class Vehicle(Base):
-    __tablename__ = "vehicles"
-    __table_args__ = (
-        UniqueConstraint("org_unit", "plate", name="uq_vehicles_org_unit_plate"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    plate: Mapped[str] = mapped_column(String(12), index=True)
-    brand: Mapped[str] = mapped_column(String(80))
-    model: Mapped[str] = mapped_column(String(100))
-    year: Mapped[int | None] = mapped_column(Integer)
-    type: Mapped[str | None] = mapped_column(String(50))
-    capacity: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    average_consumption: Mapped[float | None] = mapped_column(Numeric(8, 2))
-    current_km: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    fuel_type: Mapped[str | None] = mapped_column(String(40))
-    status: Mapped[str] = mapped_column(String(30), default="Disponível")
-    notes: Mapped[str | None] = mapped_column(Text)
-
-
-class Driver(Base):
-    __tablename__ = "drivers"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    name: Mapped[str] = mapped_column(String(140))
-    email: Mapped[str | None] = mapped_column(String(160), unique=True, index=True, nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(30))
-    cnh: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    category: Mapped[str | None] = mapped_column(String(10))
-    cnh_expiry: Mapped[datetime | None] = mapped_column(DateTime)
-    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
-    status: Mapped[str] = mapped_column(String(30), default="Ativo")
-    notes: Mapped[str | None] = mapped_column(Text)
-
-
-class Route(Base):
-    __tablename__ = "routes"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    origin: Mapped[str] = mapped_column(String(180))
-    destination: Mapped[str] = mapped_column(String(180))
-    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime)
-    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
-    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
-    cargo_weight: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    stop_count: Mapped[int] = mapped_column(Integer, default=0)
-    total_km: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    estimated_time: Mapped[str | None] = mapped_column(String(40))
-    estimated_fuel: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    estimated_cost: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    status: Mapped[str] = mapped_column(String(30), default="Planejada")
-    notes: Mapped[str | None] = mapped_column(Text)
-
-
-class RouteStop(Base):
-    __tablename__ = "route_stops"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    route_id: Mapped[int] = mapped_column(ForeignKey("routes.id", ondelete="CASCADE"))
-    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
-    address: Mapped[str] = mapped_column(String(255))
-    latitude: Mapped[str | None] = mapped_column(String(30))
-    longitude: Mapped[str | None] = mapped_column(String(30))
-    maps_url: Mapped[str | None] = mapped_column(String(500))
-    order: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(30), default="Planejada")
-
-
-class Maintenance(Base):
-    __tablename__ = "maintenance"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
-    type: Mapped[str] = mapped_column(String(30))
-    description: Mapped[str] = mapped_column(Text)
-    date: Mapped[datetime] = mapped_column(DateTime)
-    status: Mapped[str] = mapped_column(String(30), default="Agendado")
-    km: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    next_km: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    next_date: Mapped[datetime | None] = mapped_column(DateTime)
-    value: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    workshop: Mapped[str | None] = mapped_column(String(160))
-    responsible: Mapped[str | None] = mapped_column(String(160))
-    notes: Mapped[str | None] = mapped_column(Text)
-
-
-class FuelRecord(Base):
-    __tablename__ = "fuel_records"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
-    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
-    date: Mapped[datetime] = mapped_column(DateTime)
-    km: Mapped[float] = mapped_column(Numeric(12, 2))
-    liters: Mapped[float] = mapped_column(Numeric(10, 3))
-    price_per_liter: Mapped[float] = mapped_column(Numeric(10, 3))
-    total_value: Mapped[float] = mapped_column(Numeric(12, 2))
-    station: Mapped[str | None] = mapped_column(String(160))
-    fuel_type: Mapped[str | None] = mapped_column(String(40))
-
-
-class Product(Base):
-    __tablename__ = "products"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(160), index=True)
-    model: Mapped[str | None] = mapped_column(String(100))
-    category: Mapped[str | None] = mapped_column(String(80))
-    unit: Mapped[str] = mapped_column(String(20), default="UN")
-    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    minimum_stock: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    location: Mapped[str | None] = mapped_column(String(100))
-    supplier: Mapped[str | None] = mapped_column(String(160))
-    unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    notes: Mapped[str | None] = mapped_column(Text)
-
-class StockMovement(Base):
-    __tablename__ = "stock_movements"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
-    type: Mapped[str] = mapped_column(String(12))
-    quantity: Mapped[float] = mapped_column(Numeric(12, 2))
-    occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    responsible: Mapped[str | None] = mapped_column(String(160))
-    recipient: Mapped[str | None] = mapped_column(String(160))
-    sector: Mapped[str | None] = mapped_column(String(100))
-    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
-    observation: Mapped[str | None] = mapped_column(Text)
-    invoice: Mapped[str | None] = mapped_column(String(80))
-    unit_value: Mapped[float | None] = mapped_column(Numeric(12, 2))
-
-
-class Setting(Base):
-    __tablename__ = "settings"
-
-    key: Mapped[str] = mapped_column(String(100), primary_key=True)
-    value: Mapped[str | None] = mapped_column(Text)
-
-
-# ============================================================
-# MÓDULO DE AGENDAMENTO (instalações / postes)
-# ============================================================
-
-
 class WeekStatus(str, enum.Enum):
     ATIVA = "Ativa"
     ARQUIVADA = "Arquivada"
@@ -379,127 +50,1541 @@ class EntryStatus(str, enum.Enum):
     PENDENTE = "Pendente"
 
 
+# ============================================================
+# EMPRESA
+# ============================================================
+
+
+class Company(Base):
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(160),
+        nullable=False,
+        default="Minha empresa",
+    )
+
+    legal_name: Mapped[str | None] = mapped_column(
+        String(180),
+        nullable=True,
+    )
+
+    document: Mapped[str | None] = mapped_column(
+        String(24),
+        nullable=True,
+        index=True,
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    address: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    city: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    state: Mapped[str | None] = mapped_column(
+        String(2),
+        nullable=True,
+    )
+
+    zip_code: Mapped[str | None] = mapped_column(
+        String(12),
+        nullable=True,
+    )
+
+    logo: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # ========================================================
+    # PLANO DA EMPRESA
+    # ========================================================
+
+    plan: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="essencial",
+        server_default="essencial",
+        index=True,
+    )
+
+    # ========================================================
+    # STATUS DA ASSINATURA
+    # ========================================================
+
+    subscription_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="active",
+        server_default="active",
+    )
+
+    subscription_id: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+        index=True,
+    )
+
+    current_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+# ============================================================
+# USUÁRIOS
+# ============================================================
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    avatar_data: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # Empresa à qual o usuário pertence.
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+    )
+
+    username: Mapped[str] = mapped_column(
+        String(60),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+        index=True,
+    )
+
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    role: Mapped[Role] = mapped_column(
+        Enum(Role, name="role"),
+        default=Role.VIEWER,
+        nullable=False,
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    permissions: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    block_type: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
+    blocked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    block_reason: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    login_failures: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+
+    login_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+# ============================================================
+# LOG DE AUDITORIA
+# ============================================================
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    action: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    module: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    record_id: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    ip: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    country: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    region: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    city: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    latitude: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    longitude: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    username_attempted: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    details: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+# ============================================================
+# CLIENTES
+# ============================================================
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(160),
+        index=True,
+        nullable=False,
+    )
+
+
+# ============================================================
+# VEÍCULOS
+# ============================================================
+
+
+class Vehicle(Base):
+    __tablename__ = "vehicles"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "plate",
+            name="uq_vehicles_company_plate",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    plate: Mapped[str] = mapped_column(
+        String(12),
+        index=True,
+        nullable=False,
+    )
+
+    brand: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    model: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    year: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    type: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    capacity: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    average_consumption: Mapped[float | None] = mapped_column(
+        Numeric(8, 2),
+        nullable=True,
+    )
+
+    current_km: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+        nullable=False,
+    )
+
+    fuel_type: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="Disponível",
+        nullable=False,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# MOTORISTAS
+# ============================================================
+
+
+class Driver(Base):
+    __tablename__ = "drivers"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "email",
+            name="uq_drivers_company_email",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(140),
+        nullable=False,
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(160),
+        index=True,
+        nullable=True,
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    cnh: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    category: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True,
+    )
+
+    cnh_expiry: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    vehicle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicles.id"),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="Ativo",
+        nullable=False,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# ROTAS
+# ============================================================
+
+
+class Route(Base):
+    __tablename__ = "routes"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    origin: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    destination: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customers.id"),
+        nullable=True,
+    )
+
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+    )
+
+    driver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("drivers.id"),
+        nullable=True,
+    )
+
+    vehicle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicles.id"),
+        nullable=True,
+    )
+
+    cargo_weight: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    stop_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    total_km: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    estimated_time: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    estimated_fuel: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    estimated_cost: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="Planejada",
+        nullable=False,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# PARADAS DAS ROTAS
+# ============================================================
+
+
+class RouteStop(Base):
+    __tablename__ = "route_stops"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    route_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "routes.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customers.id"),
+        nullable=True,
+    )
+
+    address: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    latitude: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    longitude: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    maps_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="Planejada",
+        nullable=False,
+    )
+
+
+# ============================================================
+# MANUTENÇÃO
+# ============================================================
+
+
+class Maintenance(Base):
+    __tablename__ = "maintenance"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    vehicle_id: Mapped[int] = mapped_column(
+        ForeignKey("vehicles.id"),
+        nullable=False,
+    )
+
+    type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    date: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="Agendado",
+        nullable=False,
+    )
+
+    km: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    next_km: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    next_date: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    value: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    workshop: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    responsible: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# ABASTECIMENTO
+# ============================================================
+
+
+class FuelRecord(Base):
+    __tablename__ = "fuel_records"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    vehicle_id: Mapped[int] = mapped_column(
+        ForeignKey("vehicles.id"),
+        nullable=False,
+    )
+
+    driver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("drivers.id"),
+        nullable=True,
+    )
+
+    date: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+    )
+
+    km: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+
+    liters: Mapped[float] = mapped_column(
+        Numeric(10, 3),
+        nullable=False,
+    )
+
+    price_per_liter: Mapped[float] = mapped_column(
+        Numeric(10, 3),
+        nullable=False,
+    )
+
+    total_value: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+
+    station: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    fuel_type: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+
+# ============================================================
+# PRODUTOS / ESTOQUE
+# ============================================================
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "code",
+            name="uq_products_company_code",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    code: Mapped[str] = mapped_column(
+        String(60),
+        index=True,
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(160),
+        index=True,
+        nullable=False,
+    )
+
+    model: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    category: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(20),
+        default="UN",
+        nullable=False,
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+        nullable=False,
+    )
+
+    minimum_stock: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+        nullable=False,
+    )
+
+    location: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    supplier: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    unit_value: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# MOVIMENTAÇÕES DO ESTOQUE
+# ============================================================
+
+
+class StockMovement(Base):
+    __tablename__ = "stock_movements"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id"),
+        nullable=False,
+        index=True,
+    )
+
+    type: Mapped[str] = mapped_column(
+        String(12),
+        nullable=False,
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+
+    responsible: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    recipient: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True,
+    )
+
+    sector: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    vehicle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicles.id"),
+        nullable=True,
+    )
+
+    observation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    invoice: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    unit_value: Mapped[float | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+
+# ============================================================
+# CONFIGURAÇÕES DA EMPRESA
+# ============================================================
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "key",
+            name="uq_settings_company_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    key: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    value: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# MÓDULO DE AGENDAMENTO
+# ============================================================
+
+
 class ScheduleWeek(Base):
-    """Uma das 3 semanas ativas da agenda de instalações. Ao arquivar vira backup consultável."""
+    """
+    Uma semana da agenda de instalações.
+    """
+
     __tablename__ = "schedule_weeks"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    start_date: Mapped[date] = mapped_column(Date)
-    label: Mapped[str | None] = mapped_column(String(60))
-    # matriz | filial — agenda separada por unidade
-    unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    status: Mapped[WeekStatus] = mapped_column(Enum(WeekStatus), default=WeekStatus.ATIVA)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    id: Mapped[int] = mapped_column(
+        primary_key=True
     )
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    start_date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+    )
+
+    label: Mapped[str | None] = mapped_column(
+        String(60),
+        nullable=True,
+    )
+
+    status: Mapped[WeekStatus] = mapped_column(
+        Enum(WeekStatus),
+        default=WeekStatus.ATIVA,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+# ============================================================
+# VAGAS / SLOTS DAS ROTAS
+# ============================================================
 
 
 class RouteSlot(Base):
     __tablename__ = "route_slots"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    week_id: Mapped[int] = mapped_column(
-        ForeignKey("schedule_weeks.id", ondelete="CASCADE")
+    id: Mapped[int] = mapped_column(
+        primary_key=True
     )
-    date: Mapped["date"] = mapped_column(Date, index=True)  # aspas resolvem o Pylance
-    region_code: Mapped[str] = mapped_column(String(10))
-    route_label: Mapped[str | None] = mapped_column(String(60))
-    total_slots: Mapped[int] = mapped_column(Integer, default=0)
-    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
-    second_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
-    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
-    closed: Mapped[bool] = mapped_column(Boolean, default=False)
-    notes: Mapped[str | None] = mapped_column(Text)
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    week_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "schedule_weeks.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+        nullable=False,
+    )
+
+    region_code: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
+
+    route_label: Mapped[str | None] = mapped_column(
+        String(60),
+        nullable=True,
+    )
+
+    total_slots: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    driver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("drivers.id"),
+        nullable=True,
+    )
+
+    second_driver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("drivers.id"),
+        nullable=True,
+    )
+
+    vehicle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicles.id"),
+        nullable=True,
+    )
+
+    closed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+
+# ============================================================
+# CLIENTES AGENDADOS
+# ============================================================
 
 
 class ScheduleEntry(Base):
-    """Um cliente agendado numa vaga da rota — consome 1 ou mais vagas."""
+    """
+    Um cliente agendado numa vaga da rota.
+    """
+
     __tablename__ = "schedule_entries"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    route_slot_id: Mapped[int] = mapped_column(ForeignKey("route_slots.id", ondelete="CASCADE"))
-    position: Mapped[int] = mapped_column(Integer)
-    service_description: Mapped[str] = mapped_column(String(200))
-    client_name: Mapped[str] = mapped_column(String(120))
-    phone: Mapped[str | None] = mapped_column(String(30))
-    location_link: Mapped[str | None] = mapped_column(String(300))
-    no_comanda: Mapped[bool] = mapped_column(Boolean, default=False)
-    comanda: Mapped[str | None] = mapped_column(String(30))
-    cooperativa: Mapped[bool] = mapped_column(Boolean, default=False)
-    cooperativa_nome: Mapped[str | None] = mapped_column(String(120))
-    pago: Mapped[bool] = mapped_column(Boolean, default=False)
-    slots_consumed: Mapped[int] = mapped_column(Integer, default=1)
-    status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
-    observation: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    id: Mapped[int] = mapped_column(
+        primary_key=True
     )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    route_slot_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "route_slots.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    service_description: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+
+    client_name: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    location_link: Mapped[str | None] = mapped_column(
+        String(300),
+        nullable=True,
+    )
+
+    no_comanda: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    comanda: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    cooperativa: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    cooperativa_nome: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    pago: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    slots_consumed: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        nullable=False,
+    )
+
+    status: Mapped[EntryStatus] = mapped_column(
+        Enum(EntryStatus),
+        default=EntryStatus.NORMAL,
+        nullable=False,
+    )
+
+    observation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+# ============================================================
+# EXTRAS DO AGENDAMENTO
+# ============================================================
 
 
 class ScheduleExtra(Base):
-    """Item adicional dentro do mesmo cliente (ex: cavalete de água).
-    NÃO desconta vaga nova — é um sub-item de um ScheduleEntry."""
     __tablename__ = "schedule_extras"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    entry_id: Mapped[int] = mapped_column(ForeignKey("schedule_entries.id", ondelete="CASCADE"))
-    description: Mapped[str] = mapped_column(String(200))
-    observation: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[EntryStatus] = mapped_column(Enum(EntryStatus), default=EntryStatus.NORMAL)
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    entry_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "schedule_entries.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    description: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+
+    observation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    status: Mapped[EntryStatus] = mapped_column(
+        Enum(EntryStatus),
+        default=EntryStatus.NORMAL,
+        nullable=False,
+    )
+
+
+# ============================================================
+# PRODUÇÃO
+# ============================================================
+
 
 class ProductionRecord(Base):
-    """Lançamento de produção (fábrica) ou montagem (padrões)."""
+    """
+    Lançamento de produção (fábrica) ou montagem.
+    """
+
     __tablename__ = "production_records"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
-    # "fabricacao" | "montagem"
-    kind: Mapped[str] = mapped_column(String(20), index=True)
-    production_date: Mapped[date] = mapped_column(Date, index=True)
-    model: Mapped[str] = mapped_column(String(80))
-    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    # só faz sentido em montagem (postes alterados de emergência)
-    emergency_altered: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
-    notes: Mapped[str | None] = mapped_column(Text)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    id: Mapped[int] = mapped_column(
+        primary_key=True
     )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # "fabricacao" | "montagem"
+    kind: Mapped[str] = mapped_column(
+        String(20),
+        index=True,
+        nullable=False,
+    )
+
+    production_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+        nullable=False,
+    )
+
+    model: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+        nullable=False,
+    )
+
+    # Só faz sentido em montagem.
+    emergency_altered: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+        nullable=False,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+# ============================================================
+# RECUPERAÇÃO DE SENHA
+# ============================================================
+
 
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    id: Mapped[int] = mapped_column(
+        primary_key=True
     )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+# ============================================================
+# PEDIDOS
+# ============================================================
+
 
 class Order(Base):
-    """Pedido filial → matriz."""
+    """
+    Pedido da empresa.
+    """
+
     __tablename__ = "orders"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    model: Mapped[str] = mapped_column(String(120))
-    quality: Mapped[str | None] = mapped_column(String(80))
-    cabling: Mapped[str | None] = mapped_column(String(120))  # cabeamento
-    breaker: Mapped[str | None] = mapped_column(String(80))   # disjuntor
-    height: Mapped[str | None] = mapped_column(String(40))    # altura
-    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=1)
-    order_date: Mapped[date] = mapped_column(Date, index=True)
-    ship_date: Mapped[date | None] = mapped_column(Date, index=True)  # data de saída
-    status: Mapped[str] = mapped_column(String(20), default="pendente", index=True)
-    # pendente | atrasado | entregue
-    branch: Mapped[str | None] = mapped_column(String(120))
-    notes: Mapped[str | None] = mapped_column(Text)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    id: Mapped[int] = mapped_column(
+        primary_key=True
     )
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    model: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+    )
+
+    quality: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    # Cabeamento
+    cabling: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    # Disjuntor
+    breaker: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    # Altura
+    height: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Numeric(12, 2),
+        default=1,
+        nullable=False,
+    )
+
+    order_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+        nullable=False,
+    )
+
+    # Data de saída
+    ship_date: Mapped[date | None] = mapped_column(
+        Date,
+        index=True,
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="pendente",
+        index=True,
+        nullable=False,
+    )
+
+    # Mantido como campo de texto por compatibilidade
+    # com o funcionamento atual do sistema.
+    branch: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
