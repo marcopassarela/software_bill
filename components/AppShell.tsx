@@ -206,15 +206,12 @@ const PERMISSION_GROUPS: {
   { module: 'users', label: 'Usuários' },
 ];
 
-/** Lista plana (compatível com expandPermissions / backend) */
 const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
   { value: g.module, label: g.label },
   ...(g.children || []),
 ]);
 
 function expandPermissions(keys: string[]): string[] {
-  // A aba-pai libera somente a visualização da aba. As ações internas são
-  // independentes e não podem ser expandidas automaticamente no salvamento.
   return Array.from(new Set(keys));
 }
 
