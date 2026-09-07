@@ -157,21 +157,12 @@ def require(module: str, write: bool = False):
         elif (
             "*" not in grants
             and module not in grants
-            # A interface permite liberar apenas uma ação da Agenda
-            # (schedule_edit, schedule_week etc.). Essas permissões também
-            # precisam liberar a leitura inicial de /schedule/weeks; antes a
-            # API respondia 403 porque exigia literalmente "schedule".
             and not (
                 module == "schedule"
                 and any(p.startswith("schedule_") for p in grants)
             )
         ):
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
-
-        # Em permissões customizadas, "schedule" sozinho representa apenas
-        # acesso de consulta à aba. Ações de escrita exigem uma permissão
-        # interna (schedule_edit, schedule_week, etc.). Perfis padrão seguem
-        # a regra de escrita definida em WRITE_ONLY_ROLES.
         if (
             write
             and module == "schedule"
@@ -200,6 +191,8 @@ def require(module: str, write: bool = False):
 
     return check
 
+user._session_unit = "matriz"
+    return user
 
 def main_admin(user: User = Depends(current_user)):
     if user.id != 1 or user.role not in (Role.ADMIN, Role.MONTAGEM):

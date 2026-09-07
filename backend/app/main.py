@@ -2308,6 +2308,9 @@ class ResetPasswordBody(BaseModel):
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+def session_unit(user: User) -> str:
+    return "matriz"
+
 
 def _send_reset_email(to_email: str, reset_link: str) -> bool:
     host = os.environ.get("SMTP_HOST")
