@@ -1,16 +1,24 @@
 import re
+import hashlib
+import os
+import secrets
+import smtplib
+
 from datetime import datetime, date, timedelta, timezone
+from email.message import EmailMessage
 from typing import Any
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, update, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
@@ -18,7 +26,6 @@ from .security import (
     audit,
     current_user,
     hash_password,
-    main_admin,
     require,
     token_for,
     verify_password,
@@ -27,25 +34,36 @@ from .security import (
     block_detail,
     clear_block,
 )
-import hashlib
-import os
-import secrets
-import smtplib
-from email.message import EmailMessage
 
-app = FastAPI(title="Gestão Logística API", version="1.0.0")
+
+# ============================================================
+# APP
+# ============================================================
+
+app = FastAPI(
+    title="Gestão Logística API",
+    version="1.0.0",
+)
+
 settings = get_settings()
-limiter = Limiter(key_func=get_remote_address)
+
+limiter = Limiter(
+    key_func=get_remote_address
+)
+
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded,
-    lambda r, e: Response(
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return Response(
         '{"detail":"Muitas tentativas nesta rede. Aguarde 1 minuto e tente novamente."}',
-        429,
+        status_code=429,
         headers={"Retry-After": "60"},
         media_type="application/json",
-    ),
-)
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -54,74 +72,229 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============================================================
+# PLANOS
+# ============================================================
+
 PLAN_LIMITS = {
-    "essencial": {"name": "Plano Essencial", "price": 39.90, "users": 1},
-    "profissional": {"name": "Plano Profissional", "price": 69.90, "users": 3},
-    "empresarial": {"name": "Plano Empresarial", "price": 119.90, "users": 6},
+    "essencial": {
+        "name": "Plano Essencial",
+        "price": 39.90,
+        "users": 1,
+    },
+    "profissional": {
+        "name": "Plano Profissional",
+        "price": 69.90,
+        "users": 3,
+    },
+    "empresarial": {
+        "name": "Plano Empresarial",
+        "price": 119.90,
+        "users": 6,
+    },
 }
 
 
+def get_current_company(
+    user: User,
+    db: Session,
+) -> Company:
+    """
+    Retorna a empresa do usuário autenticado.
+
+    IMPORTANTE:
+    company_id nunca vem do frontend.
+    O tenant é determinado exclusivamente pelo usuário autenticado.
+    """
+
+    company_id = getattr(user, "company_id", None)
+
+    if not company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Usuário não está vinculado a uma empresa.",
+        )
+
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id
+        )
+    )
+
+    if not company:
+        raise HTTPException(
+            status_code=403,
+            detail="Empresa não encontrada.",
+        )
+
+    if not company.active:
+        raise HTTPException(
+            status_code=403,
+            detail="Empresa inativa.",
+        )
+
+    return company
+
+
+def get_company_plan(
+    company: Company,
+) -> dict:
+    plan_key = (
+        getattr(company, "plan", None)
+        or "essencial"
+    ).strip().lower()
+
+    return PLAN_LIMITS.get(
+        plan_key,
+        PLAN_LIMITS["essencial"],
+    )
+
+
+def ensure_same_company(
+    obj,
+    company: Company,
+):
+    if not obj:
+        raise HTTPException(
+            404,
+            "Registro não encontrado",
+        )
+
+    if getattr(obj, "company_id", None) != company.id:
+        raise HTTPException(
+            404,
+            "Registro não encontrado",
+        )
+
+    return obj
+
+
+def company_condition(
+    model,
+    company: Company,
+):
+    if not hasattr(model, "company_id"):
+        raise HTTPException(
+            500,
+            f"Modelo {model.__name__} não possui company_id.",
+        )
+
+    return model.company_id == company.id
+
+
+# ============================================================
+# ERROS
+# ============================================================
+
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
+async def unhandled_exception_handler(
+    request: Request,
+    exc: Exception,
+):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Erro interno: {exc}"
+        },
+    )
 
 
-def update_maintenance_status(db: Session):
-    """Atualiza automaticamente manutenções cuja data já chegou para 'Em andamento'."""
+# ============================================================
+# MANUTENÇÃO
+# ============================================================
+
+def update_maintenance_status(
+    db: Session,
+):
+    """
+    Atualiza manutenções agendadas cuja data já chegou.
+    """
+
     today = date.today()
+
     db.execute(
         update(Maintenance)
         .where(
             Maintenance.status == "Agendado",
             func.date(Maintenance.date) <= today,
         )
-        .values(status="Em andamento")
+        .values(
+            status="Em andamento"
+        )
     )
+
     db.commit()
 
+
+# ============================================================
+# STARTUP
+# ============================================================
 
 @app.on_event("startup")
 def seed():
     Base.metadata.create_all(engine)
+
     with Session(engine) as db:
         update_maintenance_status(db)
 
 
+# ============================================================
+# SCHEMAS
+# ============================================================
+
 class Login(BaseModel):
     username: str
     password: str
-    unit: str = "matriz"
     latitude: float | None = None
     longitude: float | None = None
 
 
 class PasswordChange(BaseModel):
-    current_password: str = Field(min_length=1, max_length=200)
-    new_password: str = Field(min_length=3, max_length=200)
+    current_password: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    new_password: str = Field(
+        min_length=3,
+        max_length=200,
+    )
 
 
 class ProfileUpdate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    email: str | None = Field(default=None, max_length=160)
+    name: str = Field(
+        min_length=1,
+        max_length=120,
+    )
+
+    email: str | None = Field(
+        default=None,
+        max_length=160,
+    )
+
 
 class UserCreate(BaseModel):
     name: str
     username: str
-    email: str = Field(min_length=5, max_length=160)
-    password: str = Field(min_length=1)
+    email: str = Field(
+        min_length=5,
+        max_length=160,
+    )
+    password: str = Field(
+        min_length=1,
+    )
     role: Role
     permissions: str | None = None
-    units_access: str | None = "matriz,filial"
-    permissions_filial: str | None = None
 
 
 class Payload(BaseModel):
     data: dict[str, Any]
 
-# ============================================================
-# PRODUÇÃO / MONTAGEM
-# ============================================================
 
+# ============================================================
+# PRODUÇÃO / ESTOQUE
+# ============================================================
 
 class Movement(BaseModel):
     product_id: int
@@ -150,39 +323,61 @@ class MovementEdit(BaseModel):
 class MovementDelete(BaseModel):
     password: str
 
-from datetime import datetime, timezone
 
-def user_is_blocked(u: User, db: Session) -> bool:
-    """True se o usuário não pode usar o sistema agora."""
+# ============================================================
+# USUÁRIO
+# ============================================================
+
+def user_is_blocked(
+    u: User,
+    db: Session,
+) -> bool:
 
     if not u.active:
-        # Bloqueio agendado que já terminou
-        if u.block_type == "scheduled" and u.blocked_until:
+
+        if (
+            u.block_type == "scheduled"
+            and u.blocked_until
+        ):
             now = datetime.now(timezone.utc)
+
             until = u.blocked_until
+
             if until.tzinfo is None:
-                until = until.replace(tzinfo=timezone.utc)
+                until = until.replace(
+                    tzinfo=timezone.utc
+                )
+
             if now >= until:
                 clear_block(u)
                 db.commit()
                 return False
-        # Bloqueio permanente/manual ou agendado ainda ativo
+
         return True
 
     return False
 
 
-
-
+# ============================================================
+# SERIALIZAÇÃO
+# ============================================================
 
 def serialize(o):
-    d = {c.name: getattr(o, c.name) for c in o.__table__.columns}
+
+    if o is None:
+        return None
+
+    d = {
+        c.name: getattr(o, c.name)
+        for c in o.__table__.columns
+    }
+
     return {
         k: (
             v.value
             if hasattr(v, "value")
             else v.isoformat()
-            if isinstance(v, datetime)
+            if isinstance(v, (datetime, date))
             else float(v)
             if hasattr(v, "as_tuple")
             else v
@@ -191,105 +386,116 @@ def serialize(o):
     }
 
 
-def serialize_user(o, unit: str | None = None):
-    d = serialize(o)
-    d["permissions_filial"] = getattr(o, "permissions_filial", None) or ""
-    d.pop("password_hash", None)
-    # avatar pode ser grande; front usa avatar_data se existir
-    d["is_main_admin"] = o.id == 1
-    d["has_avatar"] = bool(getattr(o, "avatar_data", None))
-    sess = unit if unit is not None else getattr(o, "_session_unit", None)
-    if not sess:
-        sess = "matriz"
-    sess = str(sess).strip().lower()
-    if sess not in ("matriz", "filial"):
-        sess = "matriz"
-    d["current_unit"] = sess
-    d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
-    plan_key = getattr(o, "plan", None) or "essencial"
-    plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
-    d["plan"] = plan_key if plan_key in PLAN_LIMITS else "essencial"
-    d["plan_name"] = plan["name"]
-    d["plan_price"] = plan["price"]
-    d["plan_user_limit"] = plan["users"]
-    return d
+def serialize_user(
+    o: User,
+    company: Company | None = None,
+):
 
-def require_matriz(user: User):
-    if session_unit(user) != "matriz":
-        raise HTTPException(
-            403,
-            "O módulo Produção está disponível apenas na Matriz.",
+    d = serialize(o)
+
+    d.pop(
+        "password_hash",
+        None,
+    )
+
+    d["is_main_admin"] = bool(
+        o.role == Role.ADMIN
+        and getattr(o, "is_owner", False)
+    )
+
+    d["has_avatar"] = bool(
+        getattr(o, "avatar_data", None)
+    )
+
+    if company:
+
+        plan_key = (
+            getattr(company, "plan", None)
+            or "essencial"
+        ).strip().lower()
+
+        plan = PLAN_LIMITS.get(
+            plan_key,
+            PLAN_LIMITS["essencial"],
         )
 
+        d["plan"] = (
+            plan_key
+            if plan_key in PLAN_LIMITS
+            else "essencial"
+        )
 
-def _parse_units_access(raw) -> str:
-    if raw is None:
-        return "matriz,filial"
-    parts = [
-        p.strip().lower()
-        for p in str(raw).split(",")
-        if p.strip().lower() in ("matriz", "filial")
-    ]
-    # unique preserve order
-    seen = []
-    for p in parts:
-        if p not in seen:
-            seen.append(p)
-    return ",".join(seen) if seen else "matriz"
+        d["plan_name"] = plan["name"]
+        d["plan_price"] = plan["price"]
+        d["plan_user_limit"] = plan["users"]
 
+        d["company_id"] = company.id
+        d["company_name"] = company.name
+
+    return d
 
 
+def model_data(
+    model,
+    data,
+):
 
-def session_unit(user: User) -> str:
-    """Unidade ativa na sessão (JWT)."""
-    u = getattr(user, "_session_unit", None) or "matriz"
-    u = str(u).strip().lower()
-    return u if u in ("matriz", "filial") else "matriz"
+    ignored = {
+        "id",
+        "quantity",
+        "created_at",
+        "occurred_at",
+        "company_id",
+    }
 
-
-def assert_week_unit(w: "ScheduleWeek", user: User):
-    """Garante que a semana pertence à unidade logada."""
-    wu = (getattr(w, "unit", None) or "matriz").strip().lower()
-    if wu != session_unit(user):
-        raise HTTPException(404, "Semana não encontrada nesta unidade")
-
-
-def assert_slot_unit(slot: "RouteSlot", user: User, db: Session):
-    w = db.get(ScheduleWeek, slot.week_id)
-    if not w:
-        raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(w, user)
-    return w
-
-
-def model_data(model, data):
     return {
         c.name: v
         for c in model.__table__.columns
         for k, v in data.items()
-        if k == c.name and k not in {"id", "quantity", "created_at", "occurred_at"}
+        if k == c.name
+        and k not in ignored
     }
 
 
-def normalize_cpf(value: Any) -> str | None:
-    """CPF opcional: vazio -> None; se preenchido, exige 11 dígitos."""
+def normalize_cpf(
+    value: Any,
+) -> str | None:
+
     if value is None:
         return None
-    digits = "".join(c for c in str(value) if c.isdigit())
+
+    digits = "".join(
+        c
+        for c in str(value)
+        if c.isdigit()
+    )
+
     if not digits:
         return None
+
     if len(digits) != 11:
-        raise HTTPException(422, "CPF deve ter 11 dígitos")
+        raise HTTPException(
+            422,
+            "CPF deve ter 11 dígitos",
+        )
+
     return digits
 
 
-
-
+# ============================================================
+# HEALTH
+# ============================================================
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok"
+    }
 
+
+# ============================================================
+# LOGIN
+# ============================================================
 
 @app.post("/auth/login")
 @limiter.limit("20/minute")
@@ -299,9 +505,20 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ):
-    login_username = (body.username or "").strip().lower()
-    u = db.scalar(select(User).where(func.lower(User.username) == login_username))
+
+    login_username = (
+        body.username or ""
+    ).strip().lower()
+
+    u = db.scalar(
+        select(User).where(
+            func.lower(User.username)
+            == login_username
+        )
+    )
+
     if not u:
+
         audit(
             db,
             None,
@@ -310,34 +527,89 @@ def login(
             request=request,
             details="Tentativa de login inválida: Usuário inexistente",
             username_attempted=login_username[:120],
-            latitude=getattr(body, "latitude", None),
-            longitude=getattr(body, "longitude", None),
+            latitude=body.latitude,
+            longitude=body.longitude,
         )
-        db.commit()
-        raise HTTPException(401, "Usuário ou senha inválidos")
 
-    locked_until = getattr(u, "login_locked_until", None)
+        db.commit()
+
+        raise HTTPException(
+            401,
+            "Usuário ou senha inválidos",
+        )
+
+    locked_until = getattr(
+        u,
+        "login_locked_until",
+        None,
+    )
+
     if locked_until:
+
         if locked_until.tzinfo is None:
-            locked_until = locked_until.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+            locked_until = locked_until.replace(
+                tzinfo=timezone.utc
+            )
+
+        now = datetime.now(
+            timezone.utc
+        )
+
         if now < locked_until:
-            seconds = max(1, int((locked_until - now).total_seconds()))
-            minutes = max(1, (seconds + 59) // 60)
+
+            seconds = max(
+                1,
+                int(
+                    (
+                        locked_until
+                        - now
+                    ).total_seconds()
+                ),
+            )
+
+            minutes = max(
+                1,
+                (seconds + 59) // 60,
+            )
+
             raise HTTPException(
                 429,
-                f"Este usuário foi temporariamente protegido após várias tentativas. "
+                "Este usuário foi temporariamente protegido após várias tentativas. "
                 f"Tente novamente em aproximadamente {minutes} minuto(s).",
-                headers={"Retry-After": str(seconds)},
+                headers={
+                    "Retry-After": str(seconds)
+                },
             )
+
         u.login_locked_until = None
         u.login_failures = 0
 
-    if not verify_password(body.password, u.password_hash):
-        u.login_failures = int(getattr(u, "login_failures", 0) or 0) + 1
+    if not verify_password(
+        body.password,
+        u.password_hash,
+    ):
+
+        u.login_failures = (
+            int(
+                getattr(
+                    u,
+                    "login_failures",
+                    0,
+                )
+                or 0
+            )
+            + 1
+        )
+
         if u.login_failures >= 8:
-            u.login_locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+            u.login_locked_until = (
+                datetime.now(timezone.utc)
+                + timedelta(minutes=15)
+            )
+
             u.login_failures = 0
+
         audit(
             db,
             u,
@@ -346,15 +618,21 @@ def login(
             request=request,
             details="Tentativa de login inválida: Senha inválida",
             username_attempted=login_username[:120],
-            latitude=getattr(body, "latitude", None),
-            longitude=getattr(body, "longitude", None),
+            latitude=body.latitude,
+            longitude=body.longitude,
         )
-        db.commit()
-        raise HTTPException(401, "Usuário ou senha inválidos")
 
+        db.commit()
+
+        raise HTTPException(
+            401,
+            "Usuário ou senha inválidos",
+        )
 
     still_blocked = apply_auto_unblock(u)
+
     if still_blocked:
+
         audit(
             db,
             u,
@@ -363,14 +641,20 @@ def login(
             request=request,
             details="Login recusado: conta bloqueada",
             username_attempted=u.username,
-            latitude=getattr(body, "latitude", None),
-            longitude=getattr(body, "longitude", None),
+            latitude=body.latitude,
+            longitude=body.longitude,
         )
+
         db.commit()
-        raise HTTPException(status_code=403, detail=block_detail(u))
+
+        raise HTTPException(
+            403,
+            block_detail(u),
+        )
 
     u.login_failures = 0
     u.login_locked_until = None
+
     audit(
         db,
         u,
@@ -379,73 +663,38 @@ def login(
         request=request,
         details="Login realizado com sucesso",
         username_attempted=u.username,
-        latitude=getattr(body, "latitude", None),
-        longitude=getattr(body, "longitude", None),
+        latitude=body.latitude,
+        longitude=body.longitude,
     )
-    db.commit()
-    unit = (getattr(body, "unit", None) or "matriz")
-    if isinstance(unit, str):
-        unit = unit.strip().lower()
-    else:
-        unit = "matriz"
-    if unit not in ("matriz", "filial"):
-        raise HTTPException(400, "Unidade inválida")
 
-    access = _parse_units_access(getattr(u, "units_access", None))
-    allowed = {x.strip() for x in access.split(",") if x.strip()}
-    if u.id == 1:
-        allowed = {"matriz", "filial"}
-    if unit not in allowed:
-        raise HTTPException(
-            403,
-            "Seu usuário não tem acesso a esta unidade. Fale com o administrador.",
+    db.commit()
+
+    company = get_current_company(
+        u,
+        db,
+    )
+
+    response.set_cookie(
+        "gl_session",
+        token_for(u),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+
+    return {
+        "user": serialize_user(
+            u,
+            company,
         )
-
-    response.set_cookie(
-        "gl_session",
-        token_for(u, unit=unit),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.access_token_minutes * 60,
-        path="/",
-    )
-    u._session_unit = unit
-    return {"user": serialize_user(u, unit=unit)}
+    }
 
 
-
-@app.post("/auth/switch-unit")
-def switch_unit(
-    body: dict,
-    response: Response,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    unit = str((body or {}).get("unit") or "").strip().lower()
-    if unit not in ("matriz", "filial"):
-        raise HTTPException(400, "Unidade inválida")
-    access = _parse_units_access(getattr(user, "units_access", None))
-    allowed = {x.strip() for x in access.split(",") if x.strip()}
-    if user.id == 1:
-        allowed = {"matriz", "filial"}
-    if unit not in allowed:
-        raise HTTPException(403, "Sem permissão para esta unidade")
-    response.set_cookie(
-        "gl_session",
-        token_for(user, unit=unit),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.access_token_minutes * 60,
-        path="/",
-    )
-    user._session_unit = unit
-    audit(db, user, "TROCA_UNIDADE", "auth", user.id, request)
-    db.commit()
-    return serialize_user(user, unit=unit)
-
+# ============================================================
+# LOGOUT
+# ============================================================
 
 @app.post("/auth/logout")
 def logout(
@@ -454,16 +703,51 @@ def logout(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    audit(db, user, "LOGOUT", "auth", request=request)
-    db.commit()
-    response.delete_cookie("gl_session", path="/")
-    return {"ok": True}
 
+    audit(
+        db,
+        user,
+        "LOGOUT",
+        "auth",
+        request=request,
+    )
+
+    db.commit()
+
+    response.delete_cookie(
+        "gl_session",
+        path="/",
+    )
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# ME
+# ============================================================
 
 @app.get("/auth/me")
-def me(user: User = Depends(current_user)):
-    return serialize_user(user)
+def me(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
 
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    return serialize_user(
+        user,
+        company,
+    )
+
+
+# ============================================================
+# ALTERAR SENHA
+# ============================================================
 
 @app.post("/auth/change-password")
 def change_password(
@@ -472,14 +756,41 @@ def change_password(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    if not verify_password(body.current_password, user.password_hash):
-        raise HTTPException(400, "Senha atual incorreta")
-    user.password_hash = hash_password(body.new_password)
-    user.must_change_password = False
-    audit(db, user, "ALTERAÇÃO_DE_SENHA", "auth", user.id, request)
-    db.commit()
-    return {"ok": True}
 
+    if not verify_password(
+        body.current_password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            400,
+            "Senha atual incorreta",
+        )
+
+    user.password_hash = hash_password(
+        body.new_password
+    )
+
+    user.must_change_password = False
+
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO_DE_SENHA",
+        "auth",
+        user.id,
+        request,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# PERFIL
+# ============================================================
 
 @app.patch("/auth/profile")
 def update_profile(
@@ -488,26 +799,67 @@ def update_profile(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     user.name = body.name.strip()
 
     if body.email is not None:
-        email = body.email.strip().lower()
-        if not email or "@" not in email:
-            raise HTTPException(400, "E-mail inválido")
-        other = db.scalar(
-            select(User).where(User.email == email, User.id != user.id)
+
+        email = (
+            body.email
+            .strip()
+            .lower()
         )
+
+        if not email or "@" not in email:
+            raise HTTPException(
+                400,
+                "E-mail inválido",
+            )
+
+        other = db.scalar(
+            select(User).where(
+                User.email == email,
+                User.id != user.id,
+                User.company_id == company.id,
+            )
+        )
+
         if other:
-            raise HTTPException(400, "Este e-mail já está em uso")
+            raise HTTPException(
+                400,
+                "Este e-mail já está em uso",
+            )
+
         user.email = email
 
-    audit(db, user, "ALTERAÇÃO_DE_PERFIL", "auth", user.id, request)
-    db.commit()
-    return serialize_user(user)
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO_DE_PERFIL",
+        "auth",
+        user.id,
+        request,
+    )
 
+    db.commit()
+
+    return serialize_user(
+        user,
+        company,
+    )
+
+
+# ============================================================
+# AVATAR
+# ============================================================
 
 class AvatarBody(BaseModel):
-    avatar_data: str  # data:image/jpeg;base64,...
+    avatar_data: str
 
 
 @app.post("/auth/avatar")
@@ -517,19 +869,60 @@ def upload_avatar(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    raw = (body.avatar_data or "").strip()
-    if not raw.startswith("data:image/"):
-        raise HTTPException(400, "Envie uma imagem (JPEG ou PNG)")
-    # ~150 KB em base64
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    raw = (
+        body.avatar_data or ""
+    ).strip()
+
+    if not raw.startswith(
+        "data:image/"
+    ):
+        raise HTTPException(
+            400,
+            "Envie uma imagem (JPEG ou PNG)",
+        )
+
     if len(raw) > 200_000:
-        raise HTTPException(400, "Imagem muito grande. Use uma foto leve (até ~150 KB).")
-    u = db.get(User, user.id)
+        raise HTTPException(
+            400,
+            "Imagem muito grande. Use uma foto leve (até ~150 KB).",
+        )
+
+    u = db.scalar(
+        select(User).where(
+            User.id == user.id,
+            User.company_id == company.id,
+        )
+    )
+
     if not u:
-        raise HTTPException(404)
+        raise HTTPException(
+            404,
+            "Usuário não encontrado",
+        )
+
     u.avatar_data = raw
-    audit(db, u, "AVATAR", "auth", u.id, request)
+
+    audit(
+        db,
+        u,
+        "AVATAR",
+        "auth",
+        u.id,
+        request,
+    )
+
     db.commit()
-    return serialize_user(u)
+
+    return serialize_user(
+        u,
+        company,
+    )
 
 
 @app.delete("/auth/avatar")
@@ -538,65 +931,227 @@ def delete_avatar(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    u = db.get(User, user.id)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    u = db.scalar(
+        select(User).where(
+            User.id == user.id,
+            User.company_id == company.id,
+        )
+    )
+
     if not u:
-        raise HTTPException(404)
+        raise HTTPException(
+            404,
+            "Usuário não encontrado",
+        )
+
     u.avatar_data = None
-    audit(db, u, "AVATAR_REMOVE", "auth", u.id, request)
+
+    audit(
+        db,
+        u,
+        "AVATAR_REMOVE",
+        "auth",
+        u.id,
+        request,
+    )
+
     db.commit()
-    return serialize_user(u)
+
+    return serialize_user(
+        u,
+        company,
+    )
+
+
+# ============================================================
+# ADMIN DA EMPRESA
+# ============================================================
+
+def company_admin(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    if user.role != Role.ADMIN:
+        raise HTTPException(
+            403,
+            "Apenas administradores podem executar esta ação.",
+        )
+
+    return user
 
 
 @app.get("/users")
-def users(_: User = Depends(main_admin), db: Session = Depends(get_db)):
-    return [serialize_user(x) for x in db.scalars(select(User).order_by(User.name)).all()]
+def users(
+    admin: User = Depends(company_admin),
+    db: Session = Depends(get_db),
+):
+
+    company = get_current_company(
+        admin,
+        db,
+    )
+
+    rows = db.scalars(
+        select(User)
+        .where(
+            User.company_id == company.id
+        )
+        .order_by(User.name)
+    ).all()
+
+    return [
+        serialize_user(
+            user,
+            company,
+        )
+        for user in rows
+    ]
 
 
 @app.post("/users")
 def create_user(
     body: UserCreate,
     request: Request,
-    admin: User = Depends(main_admin),
+    admin: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    plan_key = getattr(admin, "plan", None) or "essencial"
-    plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
-    current_users = db.scalar(select(func.count()).select_from(User)) or 0
+
+    company = get_current_company(
+        admin,
+        db,
+    )
+
+    plan = get_company_plan(
+        company
+    )
+
+    current_users = (
+        db.scalar(
+            select(
+                func.count(User.id)
+            ).where(
+                User.company_id
+                == company.id
+            )
+        )
+        or 0
+    )
+
     if current_users >= plan["users"]:
+
         raise HTTPException(
             409,
-            f"O {plan['name']} permite no máximo {plan['users']} usuário(s). "
+            f"O {plan['name']} permite no máximo "
+            f"{plan['users']} usuário(s). "
             "Faça upgrade do plano para cadastrar outro usuário.",
         )
-    username = (body.username or "").strip().lower()
+
+    username = (
+        body.username or ""
+    ).strip().lower()
+
     if not username:
-        raise HTTPException(422, "Nome de usuário é obrigatório")
-    duplicate = db.scalar(select(User).where(func.lower(User.username) == username))
+        raise HTTPException(
+            422,
+            "Nome de usuário é obrigatório",
+        )
+
+    duplicate = db.scalar(
+        select(User).where(
+            func.lower(
+                User.username
+            ) == username,
+            User.company_id
+            == company.id,
+        )
+    )
+
     if duplicate:
-        raise HTTPException(409, "Nome de usuário já está em uso")
-    email = (body.email or "").strip().lower()
+        raise HTTPException(
+            409,
+            "Nome de usuário já está em uso nesta empresa",
+        )
+
+    email = (
+        body.email or ""
+    ).strip().lower()
+
     if "@" not in email:
-        raise HTTPException(422, "E-mail inválido")
+        raise HTTPException(
+            422,
+            "E-mail inválido",
+        )
+
+    duplicate_email = db.scalar(
+        select(User).where(
+            func.lower(
+                User.email
+            ) == email,
+            User.company_id
+            == company.id,
+        )
+    )
+
+    if duplicate_email:
+        raise HTTPException(
+            409,
+            "Este e-mail já está em uso nesta empresa",
+        )
+
     u = User(
-        name=body.name,
+        company_id=company.id,
+        name=body.name.strip(),
         username=username,
         email=email,
-        password_hash=hash_password(body.password),
+        password_hash=hash_password(
+            body.password
+        ),
         role=body.role,
         permissions=body.permissions,
-        units_access=_parse_units_access(getattr(body, "units_access", None)),
         must_change_password=True,
-        permissions_filial=body.permissions_filial,
     )
+
     db.add(u)
+
     try:
         db.flush()
-    except IntegrityError:
+
+    except IntegrityError as exc:
+
         db.rollback()
-        raise HTTPException(409, "Usuário já existe")
-    audit(db, admin, "CRIAÇÃO_DE_USUÁRIO", "users", u.id, request)
+
+        raise HTTPException(
+            409,
+            "Usuário já existe",
+        ) from exc
+
+    audit(
+        db,
+        admin,
+        "CRIAÇÃO_DE_USUÁRIO",
+        "users",
+        u.id,
+        request,
+    )
+
     db.commit()
-    return serialize_user(u)
+
+    return serialize_user(
+        u,
+        company,
+    )
 
 
 @app.patch("/users/{user_id}")
@@ -604,81 +1159,233 @@ def update_user(
     user_id: int,
     body: Payload,
     request: Request,
-    admin: User = Depends(main_admin),
+    admin: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    u = db.get(User, user_id)
-    if not u:
-        raise HTTPException(404, "Usuário não encontrado")
-    if "email" in body.data and body.data["email"] is not None:
-        body.data["email"] = str(body.data["email"]).strip().lower()
-    if "username" in body.data and body.data["username"] is not None:
-        username = str(body.data["username"]).strip().lower()
-        duplicate = db.scalar(
-            select(User).where(func.lower(User.username) == username, User.id != user_id)
+
+    company = get_current_company(
+        admin,
+        db,
+    )
+
+    u = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.company_id == company.id,
         )
+    )
+
+    if not u:
+        raise HTTPException(
+            404,
+            "Usuário não encontrado",
+        )
+
+    data = dict(body.data)
+
+    data.pop(
+        "company_id",
+        None,
+    )
+
+    if "email" in data and data["email"] is not None:
+
+        data["email"] = (
+            str(data["email"])
+            .strip()
+            .lower()
+        )
+
+        duplicate = db.scalar(
+            select(User).where(
+                func.lower(User.email)
+                == data["email"],
+                User.id != user_id,
+                User.company_id == company.id,
+            )
+        )
+
         if duplicate:
-            raise HTTPException(409, "Nome de usuário já está em uso")
-        body.data["username"] = username
-    if "units_access" in body.data and body.data["units_access"] is not None:
-        body.data["units_access"] = _parse_units_access(body.data["units_access"])
-    for k in (
+            raise HTTPException(
+                409,
+                "Este e-mail já está em uso",
+            )
+
+    if "username" in data and data["username"] is not None:
+
+        username = (
+            str(data["username"])
+            .strip()
+            .lower()
+        )
+
+        duplicate = db.scalar(
+            select(User).where(
+                func.lower(
+                    User.username
+                ) == username,
+                User.id != user_id,
+                User.company_id == company.id,
+            )
+        )
+
+        if duplicate:
+            raise HTTPException(
+                409,
+                "Nome de usuário já está em uso",
+            )
+
+        data["username"] = username
+
+    allowed = {
         "name",
         "username",
         "email",
         "role",
         "active",
         "permissions",
-        "permissions_filial",
-        "units_access",
-    ):
-        if k in body.data:
-            setattr(u, k, body.data[k])
-    if body.data.get("password"):
-        pwd = body.data["password"]
+    }
+
+    for key in allowed:
+
+        if key in data:
+            setattr(
+                u,
+                key,
+                data[key],
+            )
+
+    if data.get("password"):
+
+        pwd = str(
+            data["password"]
+        )
+
         if len(pwd) < 3:
-            raise HTTPException(422, "A nova senha deve ter pelo menos 3 caracteres")
-        u.password_hash = hash_password(pwd)
+            raise HTTPException(
+                422,
+                "A nova senha deve ter pelo menos 3 caracteres",
+            )
+
+        u.password_hash = hash_password(
+            pwd
+        )
+
         u.must_change_password = True
+
     try:
         db.flush()
-    except IntegrityError:
+
+    except IntegrityError as exc:
+
         db.rollback()
-        raise HTTPException(409, "Nome de usuário já em uso")
-    audit(db, admin, "ALTERAÇÃO_DE_USUÁRIO", "users", u.id, request)
+
+        raise HTTPException(
+            409,
+            "Nome de usuário ou e-mail já está em uso",
+        ) from exc
+
+    audit(
+        db,
+        admin,
+        "ALTERAÇÃO_DE_USUÁRIO",
+        "users",
+        u.id,
+        request,
+    )
+
     db.commit()
-    return serialize_user(u)
+
+    return serialize_user(
+        u,
+        company,
+    )
 
 
 @app.delete("/users/{user_id}")
 def delete_user(
     user_id: int,
     request: Request,
-    admin: User = Depends(main_admin),
+    admin: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    u = db.get(User, user_id)
+
+    company = get_current_company(
+        admin,
+        db,
+    )
+
+    u = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.company_id == company.id,
+        )
+    )
+
     if not u:
-        raise HTTPException(404, "Usuário não encontrado")
-    if u.id == 1:
-        raise HTTPException(400, "Não é possível excluir o Administrador Principal")
-    db.execute(update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None))
+        raise HTTPException(
+            404,
+            "Usuário não encontrado",
+        )
+
+    if u.id == admin.id and getattr(
+        u,
+        "is_owner",
+        False,
+    ):
+        raise HTTPException(
+            400,
+            "Não é possível excluir o proprietário da empresa",
+        )
+
+    db.execute(
+        update(AuditLog)
+        .where(
+            AuditLog.user_id == user_id,
+            AuditLog.company_id == company.id,
+        )
+        .values(
+            user_id=None
+        )
+    )
+
     try:
+
         db.delete(u)
         db.flush()
-    except IntegrityError:
+
+    except IntegrityError as exc:
+
         db.rollback()
+
         raise HTTPException(
             409,
-            "Não é possível excluir: este usuário possui movimentações de estoque registradas. Desative-o em vez de excluir.",
-        )
-    audit(db, admin, "EXCLUSÃO_DE_USUÁRIO", "users", user_id, request)
+            "Não é possível excluir: este usuário possui registros vinculados. Desative-o em vez de excluir.",
+        ) from exc
+
+    audit(
+        db,
+        admin,
+        "EXCLUSÃO_DE_USUÁRIO",
+        "users",
+        user_id,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# BLOQUEIO DE USUÁRIO
+# ============================================================
 
 class BlockUserBody(BaseModel):
-    mode: str  # "manual" | "scheduled" | "permanent" | "unblock"
-    blocked_until: datetime | None = None  # obrigatório se scheduled
+    mode: str
+    blocked_until: datetime | None = None
     reason: str | None = None
 
 
@@ -687,236 +1394,506 @@ def block_user(
     user_id: int,
     body: BlockUserBody,
     request: Request,
-    admin: User = Depends(main_admin),
+    admin: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    u = db.get(User, user_id)
+
+    company = get_current_company(
+        admin,
+        db,
+    )
+
+    u = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.company_id == company.id,
+        )
+    )
+
     if not u:
-        raise HTTPException(404, "Usuário não encontrado")
-    if u.id == 1:
-        raise HTTPException(400, "Não é possível bloquear o Administrador Principal")
+        raise HTTPException(
+            404,
+            "Usuário não encontrado",
+        )
 
-    mode = (body.mode or "").lower().strip()
+    if (
+        u.id == admin.id
+        and getattr(
+            u,
+            "is_owner",
+            False,
+        )
+    ):
+        raise HTTPException(
+            400,
+            "Não é possível bloquear o proprietário da empresa",
+        )
 
-    # ---- DESBLOQUEAR ----
+    mode = (
+        body.mode or ""
+    ).lower().strip()
+
     if mode == "unblock":
+
         u.active = True
         u.block_type = None
         u.blocked_until = None
         u.block_reason = None
-        u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
-        audit(db, admin, "DESBLOQUEIO", "users", u.id, request)
-        db.commit()
-        return serialize_user(u)
 
-    if mode not in ("manual", "scheduled", "permanent"):
-        raise HTTPException(400, "mode inválido")
+        u.token_version = (
+            int(
+                getattr(
+                    u,
+                    "token_version",
+                    0,
+                )
+                or 0
+            )
+            + 1
+        )
+
+        audit(
+            db,
+            admin,
+            "DESBLOQUEIO",
+            "users",
+            u.id,
+            request,
+        )
+
+        db.commit()
+
+        return serialize_user(
+            u,
+            company,
+        )
+
+    if mode not in (
+        "manual",
+        "scheduled",
+        "permanent",
+    ):
+        raise HTTPException(
+            400,
+            "mode inválido",
+        )
 
     if mode == "scheduled":
+
         if not body.blocked_until:
-            raise HTTPException(400, "Informe data e hora para desbloqueio automático")
+            raise HTTPException(
+                400,
+                "Informe data e hora para desbloqueio automático",
+            )
+
         until = body.blocked_until
+
         if until.tzinfo is None:
-            until = until.replace(tzinfo=timezone.utc)
+            until = until.replace(
+                tzinfo=timezone.utc
+            )
+
         u.blocked_until = until
+
     else:
         u.blocked_until = None
 
     u.active = False
     u.block_type = mode
-    u.block_reason = (body.reason or "").strip() or None
-    u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
 
-    audit(db, admin, f"BLOQUEIO_{mode.upper()}", "users", u.id, request)
+    u.block_reason = (
+        (body.reason or "")
+        .strip()
+        or None
+    )
+
+    u.token_version = (
+        int(
+            getattr(
+                u,
+                "token_version",
+                0,
+            )
+            or 0
+        )
+        + 1
+    )
+
+    audit(
+        db,
+        admin,
+        f"BLOQUEIO_{mode.upper()}",
+        "users",
+        u.id,
+        request,
+    )
+
     db.commit()
-    return serialize_user(u)
 
+    return serialize_user(
+        u,
+        company,
+    )
+
+
+# ============================================================
+# AUDITORIA
+# ============================================================
 
 @app.get("/audit")
 def logs(
-    user_filter: str | None = Query(default=None, alias="user"),
+    user_filter: str | None = Query(
+        default=None,
+        alias="user",
+    ),
     module: str | None = None,
     action: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    _: User = Depends(main_admin),
+    user: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     query = (
-        select(AuditLog, User.name.label("user_name"))
-        .outerjoin(User, AuditLog.user_id == User.id)
+        select(
+            AuditLog,
+            User.name.label("user_name"),
+        )
+        .outerjoin(
+            User,
+            AuditLog.user_id == User.id,
+        )
+        .where(
+            AuditLog.company_id
+            == company.id
+        )
     )
 
     if user_filter and user_filter.strip():
-        term = f"%{user_filter.strip()}%"
+
+        term = (
+            f"%{user_filter.strip()}%"
+        )
+
         query = query.where(
             (User.name.ilike(term))
             | (User.username.ilike(term))
         )
 
     if module and module.strip():
-        query = query.where(AuditLog.module.ilike(f"%{module.strip()}%"))
+
+        query = query.where(
+            AuditLog.module.ilike(
+                f"%{module.strip()}%"
+            )
+        )
 
     if action and action.strip():
-        query = query.where(AuditLog.action.ilike(f"%{action.strip()}%"))
+
+        query = query.where(
+            AuditLog.action.ilike(
+                f"%{action.strip()}%"
+            )
+        )
 
     if date_from:
-        start_datetime = datetime.combine(date_from, datetime.min.time())
-        query = query.where(AuditLog.created_at >= start_datetime)
+
+        start_datetime = datetime.combine(
+            date_from,
+            datetime.min.time(),
+        )
+
+        query = query.where(
+            AuditLog.created_at
+            >= start_datetime
+        )
 
     if date_to:
+
         end_datetime = datetime.combine(
             date_to + timedelta(days=1),
             datetime.min.time(),
         )
-        query = query.where(AuditLog.created_at < end_datetime)
+
+        query = query.where(
+            AuditLog.created_at
+            < end_datetime
+        )
 
     rows = db.execute(
         query
-        .order_by(AuditLog.created_at.desc())
+        .order_by(
+            AuditLog.created_at.desc()
+        )
         .limit(50)
     ).all()
 
-    window_start = datetime.now(timezone.utc) - timedelta(minutes=10)
+    window_start = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=10)
+    )
+
     brute_force_counts = dict(
         db.execute(
-            select(AuditLog.ip, func.count(AuditLog.id))
-            .where(
-                AuditLog.action == "LOGIN_INVÁLIDO",
-                AuditLog.ip.is_not(None),
-                AuditLog.created_at >= window_start,
+            select(
+                AuditLog.ip,
+                func.count(AuditLog.id),
             )
-            .group_by(AuditLog.ip)
+            .where(
+                AuditLog.company_id
+                == company.id,
+                AuditLog.action
+                == "LOGIN_INVÁLIDO",
+                AuditLog.ip.is_not(None),
+                AuditLog.created_at
+                >= window_start,
+            )
+            .group_by(
+                AuditLog.ip
+            )
         ).all()
     )
 
     return [
         {
             **serialize(log),
-            "user_name": user_name or (
+            "user_name": user_name
+            or (
                 "Usuário desconhecido"
-                if log.action == "LOGIN_INVÁLIDO"
+                if log.action
+                == "LOGIN_INVÁLIDO"
                 else "Sistema"
             ),
             "is_brute_force": bool(
-                log.ip and brute_force_counts.get(log.ip, 0) >= 5
+                log.ip
+                and brute_force_counts.get(
+                    log.ip,
+                    0,
+                )
+                >= 5
             ),
         }
         for log, user_name in rows
     ]
 
 
+# ============================================================
+# DASHBOARD
+# ============================================================
 
 @app.get("/dashboard")
-def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def dashboard(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+
     require("dashboard")(user)
-    update_maintenance_status(db)
-    today = datetime.now().date()
-    unit = session_unit(user)
-    count = lambda q: db.scalar(q) or 0
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    update_maintenance_status(
+        db
+    )
+
+    today = date.today()
+
+    def count(q):
+        return db.scalar(q) or 0
 
     vehicles_in_maintenance = count(
-        select(func.count(func.distinct(Maintenance.vehicle_id)))
+        select(
+            func.count(
+                func.distinct(
+                    Maintenance.vehicle_id
+                )
+            )
+        )
         .select_from(Maintenance)
         .where(
-            Maintenance.status == "Em andamento",
-            Maintenance.org_unit == unit,
+            Maintenance.company_id
+            == company.id,
+            Maintenance.status
+            == "Em andamento",
         )
     )
+
     maintenance_today = count(
         select(func.count())
         .select_from(Maintenance)
         .where(
-            func.date(Maintenance.date) == today,
-            Maintenance.status.in_(["Agendado", "Em andamento"]),
-            Maintenance.org_unit == unit,
+            Maintenance.company_id
+            == company.id,
+            func.date(
+                Maintenance.date
+            ) == today,
+            Maintenance.status.in_(
+                [
+                    "Agendado",
+                    "Em andamento",
+                ]
+            ),
         )
     )
+
     maintenance_overdue = count(
         select(func.count())
         .select_from(Maintenance)
         .where(
-            func.date(Maintenance.date) < today,
-            Maintenance.status.notin_(["Concluído"]),
-            Maintenance.org_unit == unit,
+            Maintenance.company_id
+            == company.id,
+            func.date(
+                Maintenance.date
+            ) < today,
+            Maintenance.status.notin_(
+                ["Concluído"]
+            ),
         )
     )
+
     maintenance_completed = count(
         select(func.count())
         .select_from(Maintenance)
         .where(
-            Maintenance.status == "Concluído",
-            Maintenance.org_unit == unit,
+            Maintenance.company_id
+            == company.id,
+            Maintenance.status
+            == "Concluído",
         )
     )
+
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
             select(Maintenance)
             .where(
-                Maintenance.status == "Em andamento",
-                Maintenance.org_unit == unit,
+                Maintenance.company_id
+                == company.id,
+                Maintenance.status
+                == "Em andamento",
             )
-            .order_by(Maintenance.date)
+            .order_by(
+                Maintenance.date
+            )
             .limit(20)
         ).all()
     ]
 
-    # rotas do dia na agenda (schedule) desta unidade
     routes_today = count(
         select(func.count())
         .select_from(RouteSlot)
-        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
         .where(
+            RouteSlot.company_id
+            == company.id,
             RouteSlot.date == today,
-            ScheduleWeek.unit == unit,
         )
     )
 
     return {
-        "unit": unit,
         "available": count(
             select(func.count())
             .select_from(Vehicle)
-            .where(Vehicle.status == "Disponível", Vehicle.org_unit == unit)
+            .where(
+                Vehicle.company_id
+                == company.id,
+                Vehicle.status
+                == "Disponível",
+            )
         ),
-        "maintenance": vehicles_in_maintenance,
-        "maintenance_completed": maintenance_completed,
-        "maintenance_today": maintenance_today,
-        "maintenance_overdue": maintenance_overdue,
-        "routes_today": routes_today,
+
+        "maintenance":
+            vehicles_in_maintenance,
+
+        "maintenance_completed":
+            maintenance_completed,
+
+        "maintenance_today":
+            maintenance_today,
+
+        "maintenance_overdue":
+            maintenance_overdue,
+
+        "routes_today":
+            routes_today,
+
         "products": count(
-            select(func.count()).select_from(Product).where(Product.org_unit == unit)
+            select(func.count())
+            .select_from(Product)
+            .where(
+                Product.company_id
+                == company.id
+            )
         ),
+
         "low_stock": count(
             select(func.count())
             .select_from(Product)
             .where(
-                Product.org_unit == unit,
-                Product.quantity <= Product.minimum_stock,
+                Product.company_id
+                == company.id,
+                Product.quantity
+                <= Product.minimum_stock,
             )
         ),
+
         "fuel_cost": float(
             db.scalar(
-                select(func.coalesce(func.sum(FuelRecord.total_value), 0)).where(
-                    FuelRecord.org_unit == unit
+                select(
+                    func.coalesce(
+                        func.sum(
+                            FuelRecord.total_value
+                        ),
+                        0,
+                    )
+                )
+                .where(
+                    FuelRecord.company_id
+                    == company.id
                 )
             )
             or 0
         ),
-        "maintenance_alerts": maintenance_alerts,
+
+        "maintenance_alerts":
+            maintenance_alerts,
     }
 
 
+# ============================================================
+# ESTOQUE
+# ============================================================
+
 @app.get("/stock/movements")
-def movements(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def movements(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+
     require("stock")(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     return [
         serialize(x)
         for x in db.scalars(
             select(StockMovement)
-            .where(StockMovement.org_unit == session_unit(user))
-            .order_by(StockMovement.occurred_at.desc())
+            .where(
+                StockMovement.company_id
+                == company.id
+            )
+            .order_by(
+                StockMovement.occurred_at.desc()
+            )
             .limit(500)
         ).all()
     ]
@@ -930,26 +1907,67 @@ def stock(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    if kind not in ("entry", "output"):
+
+    if kind not in (
+        "entry",
+        "output",
+    ):
         raise HTTPException(404)
+
     require("stock")(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     product = db.scalar(
-        select(Product).where(Product.id == body.product_id).with_for_update()
+        select(Product)
+        .where(
+            Product.id
+            == body.product_id,
+            Product.company_id
+            == company.id,
+        )
+        .with_for_update()
     )
+
     if not product:
-        raise HTTPException(404, "Produto não encontrado")
-    if (getattr(product, "org_unit", None) or "matriz") != session_unit(user):
-        raise HTTPException(404, "Produto não encontrado")
-    current_qty = float(product.quantity)
-    if kind == "output" and current_qty < body.quantity:
-        raise HTTPException(409, "Estoque insuficiente")
-    new_qty = (
-        current_qty + body.quantity if kind == "entry" else current_qty - body.quantity
+        raise HTTPException(
+            404,
+            "Produto não encontrado",
+        )
+
+    current_qty = float(
+        product.quantity
     )
+
+    if (
+        kind == "output"
+        and current_qty
+        < body.quantity
+    ):
+        raise HTTPException(
+            409,
+            "Estoque insuficiente",
+        )
+
+    new_qty = (
+        current_qty + body.quantity
+        if kind == "entry"
+        else current_qty - body.quantity
+    )
+
     product.quantity = new_qty
+
     m = StockMovement(
+        company_id=company.id,
         product_id=product.id,
-        type="ENTRADA" if kind == "entry" else "SAÍDA",
+        type=(
+            "ENTRADA"
+            if kind == "entry"
+            else "SAÍDA"
+        ),
         quantity=body.quantity,
         user_id=user.id,
         responsible=body.responsible,
@@ -959,13 +1977,28 @@ def stock(
         observation=body.observation,
         invoice=body.invoice,
         unit_value=body.unit_value,
-        org_unit=session_unit(user),
     )
+
     db.add(m)
     db.flush()
-    audit(db, user, m.type, "stock", m.id, request)
+
+    audit(
+        db,
+        user,
+        m.type,
+        "stock",
+        m.id,
+        request,
+    )
+
     db.commit()
-    return {"movement": serialize(m), "quantity": float(product.quantity)}
+
+    return {
+        "movement": serialize(m),
+        "quantity": float(
+            product.quantity
+        ),
+    }
 
 
 @app.patch("/stock/movements/{movement_id}")
@@ -976,39 +2009,145 @@ def edit_movement(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("stock")(user)
-    if not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Senha incorreta")
-    m = db.get(StockMovement, movement_id)
-    if not m:
-        raise HTTPException(404, "Movimentação não encontrada")
-    product = db.scalar(
-        select(Product).where(Product.id == m.product_id).with_for_update()
-    )
-    if not product:
-        raise HTTPException(404, "Produto não encontrado")
-    current = float(product.quantity)
-    old_qty = float(m.quantity)
-    current = current - old_qty if m.type == "ENTRADA" else current + old_qty
-    new_qty = body.quantity if body.quantity is not None else old_qty
-    for field, val in (
-        ("responsible", body.responsible),
-        ("recipient", body.recipient),
-        ("sector", body.sector),
-        ("vehicle_id", body.vehicle_id),
-        ("observation", body.observation),
-        ("invoice", body.invoice),
-        ("unit_value", body.unit_value),
+
+    if not verify_password(
+        body.password,
+        user.password_hash,
     ):
+        raise HTTPException(
+            401,
+            "Senha incorreta",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    m = db.scalar(
+        select(StockMovement).where(
+            StockMovement.id
+            == movement_id,
+            StockMovement.company_id
+            == company.id,
+        )
+    )
+
+    if not m:
+        raise HTTPException(
+            404,
+            "Movimentação não encontrada",
+        )
+
+    product = db.scalar(
+        select(Product)
+        .where(
+            Product.id == m.product_id,
+            Product.company_id
+            == company.id,
+        )
+        .with_for_update()
+    )
+
+    if not product:
+        raise HTTPException(
+            404,
+            "Produto não encontrado",
+        )
+
+    current = float(
+        product.quantity
+    )
+
+    old_qty = float(
+        m.quantity
+    )
+
+    current = (
+        current - old_qty
+        if m.type == "ENTRADA"
+        else current + old_qty
+    )
+
+    new_qty = (
+        body.quantity
+        if body.quantity is not None
+        else old_qty
+    )
+
+    if new_qty <= 0:
+        raise HTTPException(
+            422,
+            "Quantidade deve ser maior que zero",
+        )
+
+    for field, val in (
+        (
+            "responsible",
+            body.responsible,
+        ),
+        (
+            "recipient",
+            body.recipient,
+        ),
+        (
+            "sector",
+            body.sector,
+        ),
+        (
+            "vehicle_id",
+            body.vehicle_id,
+        ),
+        (
+            "observation",
+            body.observation,
+        ),
+        (
+            "invoice",
+            body.invoice,
+        ),
+        (
+            "unit_value",
+            body.unit_value,
+        ),
+    ):
+
         if val is not None:
-            setattr(m, field, val)
+            setattr(
+                m,
+                field,
+                val,
+            )
+
     m.quantity = new_qty
-    current = current + new_qty if m.type == "ENTRADA" else current - new_qty
+
+    current = (
+        current + new_qty
+        if m.type == "ENTRADA"
+        else current - new_qty
+    )
+
     if current < 0:
-        raise HTTPException(409, "Essa alteração deixaria o estoque negativo")
+        raise HTTPException(
+            409,
+            "Essa alteração deixaria o estoque negativo",
+        )
+
     product.quantity = current
-    audit(db, user, "ALTERAÇÃO", "stock", movement_id, request)
+
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO",
+        "stock",
+        movement_id,
+        request,
+    )
+
     db.commit()
+
     return serialize(m)
 
 
@@ -1020,31 +2159,87 @@ def delete_movement(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("stock")(user)
-    if not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Senha incorreta")
-    m = db.get(StockMovement, movement_id)
-    if not m:
-        raise HTTPException(404, "Movimentação não encontrada")
-    product = db.scalar(
-        select(Product).where(Product.id == m.product_id).with_for_update()
-    )
-    if product:
-        qty = float(m.quantity)
-        new_qty = (
-            float(product.quantity) - qty
-            if m.type == "ENTRADA"
-            else float(product.quantity) + qty
+
+    if not verify_password(
+        body.password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            401,
+            "Senha incorreta",
         )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    m = db.scalar(
+        select(StockMovement).where(
+            StockMovement.id
+            == movement_id,
+            StockMovement.company_id
+            == company.id,
+        )
+    )
+
+    if not m:
+        raise HTTPException(
+            404,
+            "Movimentação não encontrada",
+        )
+
+    product = db.scalar(
+        select(Product)
+        .where(
+            Product.id == m.product_id,
+            Product.company_id
+            == company.id,
+        )
+        .with_for_update()
+    )
+
+    if product:
+
+        qty = float(
+            m.quantity
+        )
+
+        new_qty = (
+            float(product.quantity)
+            - qty
+            if m.type == "ENTRADA"
+            else float(product.quantity)
+            + qty
+        )
+
         if new_qty < 0:
             raise HTTPException(
-                409, "Não é possível excluir: deixaria o estoque negativo"
+                409,
+                "Não é possível excluir: deixaria o estoque negativo",
             )
+
         product.quantity = new_qty
+
     db.delete(m)
-    audit(db, user, "EXCLUSÃO", "stock", movement_id, request)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        "stock",
+        movement_id,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True
+    }
+
 
 @app.post("/stock/movements/{movement_id}/delete")
 def delete_movement_post(
@@ -1054,8 +2249,19 @@ def delete_movement_post(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    return delete_movement(movement_id, body, request, user, db)
 
+    return delete_movement(
+        movement_id,
+        body,
+        request,
+        user,
+        db,
+    )
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
 
 @app.patch("/settings/{key}")
 def edit_setting(
@@ -1065,15 +2271,45 @@ def edit_setting(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("settings")(user)
-    s = db.get(Setting, key)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    s = db.scalar(
+        select(Setting).where(
+            Setting.company_id
+            == company.id,
+            Setting.key == key,
+        )
+    )
+
     if not s:
-        s = Setting(key=key)
+
+        s = Setting(
+            company_id=company.id,
+            key=key,
+        )
+
         db.add(s)
+
     if "value" in body.data:
         s.value = body.data["value"]
-    audit(db, user, "ALTERAÇÃO", "settings", key, request)
+
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO",
+        "settings",
+        key,
+        request,
+    )
+
     db.commit()
+
     return serialize(s)
 
 
@@ -1084,41 +2320,114 @@ def delete_setting(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("settings")(user)
-    s = db.get(Setting, key)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    s = db.scalar(
+        select(Setting).where(
+            Setting.company_id
+            == company.id,
+            Setting.key == key,
+        )
+    )
+
     if not s:
-        raise HTTPException(404)
+        raise HTTPException(
+            404,
+            "Configuração não encontrada",
+        )
+
     db.delete(s)
-    audit(db, user, "EXCLUSÃO", "settings", key, request)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        "settings",
+        key,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
 
+    return {
+        "ok": True
+    }
 
-RESOURCES = {
-    "customers": (Customer, "customers"),
-    "vehicles": (Vehicle, "vehicles"),
-    "drivers": (Driver, "drivers"),
-    "routes": (Route, "routes"),
-    "route-stops": (RouteStop, "routes"),
-    "maintenance": (Maintenance, "maintenance"),
-    "fuel": (FuelRecord, "fuel"),
-    "products": (Product, "stock"),
-    "settings": (Setting, "settings"),
-}
 
 # ============================================================
-# PEDIDOS (filial → matriz)
+# RESOURCES
+# ============================================================
+
+RESOURCES = {
+    "customers": (
+        Customer,
+        "customers",
+    ),
+    "vehicles": (
+        Vehicle,
+        "vehicles",
+    ),
+    "drivers": (
+        Driver,
+        "drivers",
+    ),
+    "routes": (
+        Route,
+        "routes",
+    ),
+    "route-stops": (
+        RouteStop,
+        "routes",
+    ),
+    "maintenance": (
+        Maintenance,
+        "maintenance",
+    ),
+    "fuel": (
+        FuelRecord,
+        "fuel",
+    ),
+    "products": (
+        Product,
+        "stock",
+    ),
+    "settings": (
+        Setting,
+        "settings",
+    ),
+}
+
+
+# ============================================================
+# PEDIDOS
 # ============================================================
 
 class OrderBody(BaseModel):
-    model: str = Field(min_length=1, max_length=120)
+    model: str = Field(
+        min_length=1,
+        max_length=120,
+    )
+
     cabling: str | None = None
     breaker: str | None = None
     height: str | None = None
-    quantity: float = Field(default=1, gt=0)
+
+    quantity: float = Field(
+        default=1,
+        gt=0,
+    )
+
     order_date: date
     ship_date: date | None = None
+
     status: str = "pendente"
+
     branch: str | None = None
     notes: str | None = None
 
@@ -1127,10 +2436,24 @@ class OrderDeleteBody(BaseModel):
     password: str
 
 
-def _norm_order_status(s: str) -> str:
-    s = (s or "pendente").strip().lower()
-    if s not in ("pendente", "atrasado", "entregue"):
-        raise HTTPException(422, "Status inválido: use pendente, atrasado ou entregue")
+def _norm_order_status(
+    s: str,
+) -> str:
+
+    s = (
+        s or "pendente"
+    ).strip().lower()
+
+    if s not in (
+        "pendente",
+        "atrasado",
+        "entregue",
+    ):
+        raise HTTPException(
+            422,
+            "Status inválido: use pendente, atrasado ou entregue",
+        )
+
     return s
 
 
@@ -1142,15 +2465,48 @@ def list_orders(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("orders")(user)
-    q = select(Order).order_by(Order.order_date.desc(), Order.id.desc())
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    q = (
+        select(Order)
+        .where(
+            Order.company_id
+            == company.id
+        )
+        .order_by(
+            Order.order_date.desc(),
+            Order.id.desc(),
+        )
+    )
+
     if status:
-        q = q.where(Order.status == _norm_order_status(status))
+        q = q.where(
+            Order.status
+            == _norm_order_status(status)
+        )
+
     if date_from:
-        q = q.where(Order.order_date >= date_from)
+        q = q.where(
+            Order.order_date
+            >= date_from
+        )
+
     if date_to:
-        q = q.where(Order.order_date <= date_to)
-    return [serialize(x) for x in db.scalars(q).all()]
+        q = q.where(
+            Order.order_date
+            <= date_to
+        )
+
+    return [
+        serialize(x)
+        for x in db.scalars(q).all()
+    ]
 
 
 @app.post("/orders")
@@ -1160,24 +2516,60 @@ def create_order(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("orders")(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     o = Order(
+        company_id=company.id,
         model=body.model.strip(),
-        cabling=(body.cabling or "").strip() or None,
-        breaker=(body.breaker or "").strip() or None,
-        height=(body.height or "").strip() or None,
+        cabling=(
+            body.cabling or ""
+        ).strip()
+        or None,
+        breaker=(
+            body.breaker or ""
+        ).strip()
+        or None,
+        height=(
+            body.height or ""
+        ).strip()
+        or None,
         quantity=body.quantity,
         order_date=body.order_date,
         ship_date=body.ship_date,
-        status=_norm_order_status(body.status),
-        branch=(body.branch or "").strip() or None,
-        notes=(body.notes or "").strip() or None,
+        status=_norm_order_status(
+            body.status
+        ),
+        branch=(
+            body.branch or ""
+        ).strip()
+        or None,
+        notes=(
+            body.notes or ""
+        ).strip()
+        or None,
         created_by=user.id,
     )
+
     db.add(o)
     db.flush()
-    audit(db, user, "CADASTRO", "orders", o.id, request)
+
+    audit(
+        db,
+        user,
+        "CADASTRO",
+        "orders",
+        o.id,
+        request,
+    )
+
     db.commit()
+
     return serialize(o)
 
 
@@ -1189,22 +2581,69 @@ def update_order(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("orders")(user)
-    o = db.get(Order, order_id)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    o = db.scalar(
+        select(Order).where(
+            Order.id == order_id,
+            Order.company_id
+            == company.id,
+        )
+    )
+
     if not o:
-        raise HTTPException(404, "Pedido não encontrado")
+        raise HTTPException(
+            404,
+            "Pedido não encontrado",
+        )
+
     o.model = body.model.strip()
-    o.cabling = (body.cabling or "").strip() or None
-    o.breaker = (body.breaker or "").strip() or None
-    o.height = (body.height or "").strip() or None
+
+    o.cabling = (
+        body.cabling or ""
+    ).strip() or None
+
+    o.breaker = (
+        body.breaker or ""
+    ).strip() or None
+
+    o.height = (
+        body.height or ""
+    ).strip() or None
+
     o.quantity = body.quantity
     o.order_date = body.order_date
     o.ship_date = body.ship_date
-    o.status = _norm_order_status(body.status)
-    o.branch = (body.branch or "").strip() or None
-    o.notes = (body.notes or "").strip() or None
-    audit(db, user, "ALTERAÇÃO", "orders", order_id, request)
+
+    o.status = _norm_order_status(
+        body.status
+    )
+
+    o.branch = (
+        body.branch or ""
+    ).strip() or None
+
+    o.notes = (
+        body.notes or ""
+    ).strip() or None
+
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO",
+        "orders",
+        order_id,
+        request,
+    )
+
     db.commit()
+
     return serialize(o)
 
 
@@ -1216,35 +2655,107 @@ def delete_order(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("orders")(user)
-    if not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Senha incorreta")
-    o = db.get(Order, order_id)
-    if not o:
-        raise HTTPException(404, "Pedido não encontrado")
-    db.delete(o)
-    audit(db, user, "EXCLUSÃO", "orders", order_id, request)
-    db.commit()
-    return {"ok": True}
 
+    require("orders")(user)
+
+    if not verify_password(
+        body.password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            401,
+            "Senha incorreta",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    o = db.scalar(
+        select(Order).where(
+            Order.id == order_id,
+            Order.company_id
+            == company.id,
+        )
+    )
+
+    if not o:
+        raise HTTPException(
+            404,
+            "Pedido não encontrado",
+        )
+
+    db.delete(o)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        "orders",
+        order_id,
+        request,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# CRUD GENÉRICO
+# ============================================================
 
 @app.get("/{resource}")
 def list_resource(
-    resource: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+    resource: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
+
     if resource not in RESOURCES:
         raise HTTPException(404)
-    model, module = RESOURCES[resource]
+
+    model, module = RESOURCES[
+        resource
+    ]
+
     require(module)(user)
 
-    if resource == "maintenance":
-        update_maintenance_status(db)
+    company = get_current_company(
+        user,
+        db,
+    )
 
-    # settings / customers sem isolamento por unidade
-    q = select(model)
-    if hasattr(model, "org_unit") and resource != "settings":
-        q = q.where(model.org_unit == session_unit(user))
-    return [serialize(x) for x in db.scalars(q.limit(500)).all()]
+    if not hasattr(
+        model,
+        "company_id",
+    ):
+        raise HTTPException(
+            500,
+            f"Recurso {resource} não possui isolamento por empresa.",
+        )
+
+    if resource == "maintenance":
+        update_maintenance_status(
+            db
+        )
+
+    q = (
+        select(model)
+        .where(
+            model.company_id
+            == company.id
+        )
+        .limit(500)
+    )
+
+    return [
+        serialize(x)
+        for x in db.scalars(q).all()
+    ]
 
 
 @app.post("/{resource}")
@@ -1255,35 +2766,140 @@ def add_resource(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     if resource not in RESOURCES:
         raise HTTPException(404)
-    model, module = RESOURCES[resource]
+
+    model, module = RESOURCES[
+        resource
+    ]
+
     require(module)(user)
 
-    data = dict(body.data)
-    if resource == "drivers":
-        if "cpf" in data:
-            data["cpf"] = normalize_cpf(data.get("cpf"))
-        if "cnh" in data:
-            cnh = (data.get("cnh") or "").strip()
-            data["cnh"] = cnh or None
+    company = get_current_company(
+        user,
+        db,
+    )
 
-    if hasattr(model, "org_unit"):
-        data["org_unit"] = session_unit(user)
-    x = model(**model_data(model, data))
+    if not hasattr(
+        model,
+        "company_id",
+    ):
+        raise HTTPException(
+            500,
+            f"Recurso {resource} não possui company_id.",
+        )
+
+    data = dict(
+        body.data
+    )
+
+    # Nunca aceitar tenant vindo do frontend
+    data.pop(
+        "company_id",
+        None,
+    )
+
+    data["company_id"] = (
+        company.id
+    )
+
+    if resource == "drivers":
+
+        if "cpf" in data:
+            data["cpf"] = normalize_cpf(
+                data.get("cpf")
+            )
+
+        if "cnh" in data:
+
+            cnh = (
+                data.get("cnh")
+                or ""
+            ).strip()
+
+            data["cnh"] = (
+                cnh or None
+            )
+
+    # Relações também precisam pertencer à empresa
+    if resource == "vehicles":
+
+        if data.get("id"):
+            data.pop("id", None)
+
+    if resource == "products":
+
+        if data.get("code"):
+            data["code"] = (
+                str(data["code"])
+                .strip()
+            )
+
+    x = model(
+        **model_data(
+            model,
+            data,
+        )
+    )
+
     db.add(x)
+
     try:
+
         db.flush()
+
     except IntegrityError as exc:
+
         db.rollback()
-        if resource == "vehicles" and "plate" in data:
+
+        if (
+            resource == "vehicles"
+            and "plate" in data
+        ):
             raise HTTPException(
                 409,
-                f"A placa {data['plate']} já está cadastrada nesta unidade.",
+                f"A placa {data['plate']} já está cadastrada nesta empresa.",
             ) from exc
-        raise HTTPException(409, "Já existe um registro com os mesmos dados.") from exc
-    audit(db, user, "CADASTRO", module, x.id if hasattr(x, "id") else None, request)
+
+        if (
+            resource == "drivers"
+            and "email" in data
+        ):
+            raise HTTPException(
+                409,
+                "Este e-mail já está cadastrado nesta empresa.",
+            ) from exc
+
+        if (
+            resource == "products"
+            and "code" in data
+        ):
+            raise HTTPException(
+                409,
+                "Este código de produto já está cadastrado nesta empresa.",
+            ) from exc
+
+        raise HTTPException(
+            409,
+            "Já existe um registro com os mesmos dados.",
+        ) from exc
+
+    audit(
+        db,
+        user,
+        "CADASTRO",
+        module,
+        getattr(
+            x,
+            "id",
+            None,
+        ),
+        request,
+    )
+
     db.commit()
+
     return serialize(x)
 
 
@@ -1296,86 +2912,125 @@ def edit_resource(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     if resource not in RESOURCES:
         raise HTTPException(404)
-    model, module = RESOURCES[resource]
+
+    model, module = RESOURCES[
+        resource
+    ]
+
     require(module)(user)
-    x = db.get(model, record_id)
-    if not x:
-        raise HTTPException(404)
-    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
-        raise HTTPException(404)
-    if not x:
-        raise HTTPException(404)
 
-    data = dict(body.data)
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    if not hasattr(
+        model,
+        "company_id",
+    ):
+        raise HTTPException(
+            500,
+            f"Recurso {resource} não possui company_id.",
+        )
+
+    x = db.scalar(
+        select(model).where(
+            model.id == record_id,
+            model.company_id
+            == company.id,
+        )
+    )
+
+    if not x:
+        raise HTTPException(
+            404,
+            "Registro não encontrado",
+        )
+
+    data = dict(
+        body.data
+    )
+
+    # Nunca permitir troca de empresa
+    data.pop(
+        "company_id",
+        None,
+    )
+
     if resource == "drivers":
+
         if "cpf" in data:
-            data["cpf"] = normalize_cpf(data.get("cpf"))
+            data["cpf"] = normalize_cpf(
+                data.get("cpf")
+            )
+
         if "cnh" in data:
-            cnh = (data.get("cnh") or "").strip()
-            data["cnh"] = cnh or None
 
-    for k, v in model_data(model, data).items():
-        setattr(x, k, v)
+            cnh = (
+                data.get("cnh")
+                or ""
+            ).strip()
 
-    audit(db, user, "ALTERAÇÃO", module, record_id, request)
+            data["cnh"] = (
+                cnh or None
+            )
+
+    for k, v in model_data(
+        model,
+        data,
+    ).items():
+
+        setattr(
+            x,
+            k,
+            v,
+        )
+
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO",
+        module,
+        record_id,
+        request,
+    )
+
+    try:
+
+        db.flush()
+
+    except IntegrityError as exc:
+
+        db.rollback()
+
+        raise HTTPException(
+            409,
+            "Já existe um registro com esses dados.",
+        ) from exc
+
     db.commit()
+
     return serialize(x)
 
 
-@app.delete("/{resource}/{record_id}")
-def delete_resource(
-    resource: str,
-    record_id: int,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    if resource not in RESOURCES:
-        raise HTTPException(404)
-    model, module = RESOURCES[resource]
-    require(module)(user)
-    x = db.get(model, record_id)
-    if not x:
-        raise HTTPException(404)
-    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
-        raise HTTPException(404)
-    if not x:
-        raise HTTPException(404)
-
-    if resource == "products":
-        movs = db.scalars(
-            select(StockMovement).where(StockMovement.product_id == record_id)
-        ).all()
-        for m in movs:
-            db.delete(m)
-        db.flush()
-
-    try:
-        db.delete(x)
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            409, "Não é possível excluir: existem registros vinculados a este item"
-        )
-    audit(db, user, "EXCLUSÃO", module, record_id, request)
-    db.commit()
-    return {"ok": True}
-
-
 # ============================================================
-# MÓDULO DE AGENDAMENTO (instalações / postes)
+# AGENDAMENTO
 # ============================================================
-
 
 class RouteSlotCreate(BaseModel):
     week_id: int
     date: date
-    region_code: str = Field(min_length=1, max_length=10)
+    region_code: str = Field(
+        min_length=1,
+        max_length=10,
+    )
     route_label: str | None = None
-    total_slots: int = Field(ge=0)
+    total_slots: int = Field(
+        ge=0
+    )
     driver_id: int | None = None
     second_driver_id: int | None = None
     vehicle_id: int | None = None
@@ -1385,7 +3040,10 @@ class RouteSlotCreate(BaseModel):
 class RouteSlotUpdate(BaseModel):
     region_code: str | None = None
     route_label: str | None = None
-    total_slots: int | None = Field(default=None, ge=0)
+    total_slots: int | None = Field(
+        default=None,
+        ge=0,
+    )
     driver_id: int | None = None
     second_driver_id: int | None = None
     vehicle_id: int | None = None
@@ -1395,8 +3053,14 @@ class RouteSlotUpdate(BaseModel):
 
 class ScheduleEntryCreate(BaseModel):
     route_slot_id: int
-    service_description: str = Field(min_length=1, max_length=200)
-    client_name: str = Field(min_length=1, max_length=120)
+    service_description: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    client_name: str = Field(
+        min_length=1,
+        max_length=120,
+    )
     phone: str | None = None
     location_link: str | None = None
     no_comanda: bool = False
@@ -1426,7 +3090,10 @@ class ScheduleEntryUpdate(BaseModel):
 
 class ScheduleExtraCreate(BaseModel):
     entry_id: int
-    description: str = Field(min_length=1, max_length=200)
+    description: str = Field(
+        min_length=1,
+        max_length=200,
+    )
     observation: str | None = None
     status: str = "Normal"
 
@@ -1437,11 +3104,13 @@ class ScheduleWeekCreate(BaseModel):
 
 
 class MoveEntryBody(BaseModel):
-    direction: str  # "up" ou "down"
+    direction: str
+
 
 class ReorderEntriesBody(BaseModel):
     route_slot_id: int
     ordered_ids: list[int]
+
 
 class TransferEntryBody(BaseModel):
     target_route_slot_id: int
@@ -1449,69 +3118,208 @@ class TransferEntryBody(BaseModel):
 
 class TransferSlotBody(BaseModel):
     new_date: date
-    week_id: int | None = None  # se mudar de semana
+    week_id: int | None = None
 
 
 class DeleteWeekBody(BaseModel):
     password: str
 
 
-def calcular_vagas(service_description: str) -> int:
-    match = re.match(r'^(\d+)', (service_description or '').strip())
-    return int(match.group(1)) if match else 0
+def calcular_vagas(
+    service_description: str,
+) -> int:
+
+    match = re.match(
+        r"^(\d+)",
+        (service_description or "").strip(),
+    )
+
+    return (
+        int(match.group(1))
+        if match
+        else 0
+    )
 
 
-def serialize_extra(x: ScheduleExtra):
+def serialize_extra(
+    x: ScheduleExtra,
+):
     return serialize(x)
 
 
-def serialize_entry(x: ScheduleEntry, db: Session):
+def serialize_entry(
+    x: ScheduleEntry,
+    db: Session,
+):
+
     d = serialize(x)
+
     extras = db.scalars(
-        select(ScheduleExtra).where(ScheduleExtra.entry_id == x.id)
+        select(ScheduleExtra)
+        .where(
+            ScheduleExtra.id
+            == ScheduleExtra.id,
+            ScheduleExtra.entry_id
+            == x.id,
+            ScheduleExtra.company_id
+            == x.company_id,
+        )
     ).all()
-    d["extras"] = [serialize_extra(e) for e in extras]
-    # Garante que os novos campos sempre apareçam
+
+    d["extras"] = [
+        serialize_extra(e)
+        for e in extras
+    ]
+
     d["comanda"] = x.comanda
     d["pago"] = bool(x.pago)
-    d["cooperativa_nome"] = x.cooperativa_nome
-    d["slots_consumed"] = x.slots_consumed if x.slots_consumed is not None else calcular_vagas(x.service_description)
+    d["cooperativa_nome"] = (
+        x.cooperativa_nome
+    )
+
+    d["slots_consumed"] = (
+        x.slots_consumed
+        if x.slots_consumed is not None
+        else calcular_vagas(
+            x.service_description
+        )
+    )
+
     return d
 
 
-def serialize_route_slot(x: RouteSlot, db: Session):
+def serialize_route_slot(
+    x: RouteSlot,
+    db: Session,
+):
+
     d = serialize(x)
+
     entries = db.scalars(
         select(ScheduleEntry)
-        .where(ScheduleEntry.route_slot_id == x.id)
-        .order_by(ScheduleEntry.position)
+        .where(
+            ScheduleEntry.route_slot_id
+            == x.id,
+            ScheduleEntry.company_id
+            == x.company_id,
+        )
+        .order_by(
+            ScheduleEntry.position
+        )
     ).all()
-    d["entries"] = [serialize_entry(e, db) for e in entries]
-    # Soma real de vagas consumidas
+
+    d["entries"] = [
+        serialize_entry(e, db)
+        for e in entries
+    ]
+
     used = sum(
-        (e.slots_consumed or calcular_vagas(e.service_description)) for e in entries
+        (
+            e.slots_consumed
+            or calcular_vagas(
+                e.service_description
+            )
+        )
+        for e in entries
     )
+
     d["slots_used"] = used
-    d["slots_available"] = max(x.total_slots - used, 0)
-    driver = db.get(Driver, x.driver_id) if x.driver_id else None
-    second_driver = db.get(Driver, x.second_driver_id) if x.second_driver_id else None
-    vehicle = db.get(Vehicle, x.vehicle_id) if x.vehicle_id else None
-    d["driver"] = serialize(driver) if driver else None
-    d["second_driver"] = serialize(second_driver) if second_driver else None
-    d["vehicle"] = serialize(vehicle) if vehicle else None
+
+    d["slots_available"] = max(
+        x.total_slots - used,
+        0,
+    )
+
+    driver = None
+    second_driver = None
+    vehicle = None
+
+    if x.driver_id:
+
+        driver = db.scalar(
+            select(Driver).where(
+                Driver.id == x.driver_id,
+                Driver.company_id
+                == x.company_id,
+            )
+        )
+
+    if x.second_driver_id:
+
+        second_driver = db.scalar(
+            select(Driver).where(
+                Driver.id
+                == x.second_driver_id,
+                Driver.company_id
+                == x.company_id,
+            )
+        )
+
+    if x.vehicle_id:
+
+        vehicle = db.scalar(
+            select(Vehicle).where(
+                Vehicle.id == x.vehicle_id,
+                Vehicle.company_id
+                == x.company_id,
+            )
+        )
+
+    d["driver"] = (
+        serialize(driver)
+        if driver
+        else None
+    )
+
+    d["second_driver"] = (
+        serialize(second_driver)
+        if second_driver
+        else None
+    )
+
+    d["vehicle"] = (
+        serialize(vehicle)
+        if vehicle
+        else None
+    )
+
     return d
 
 
-def serialize_week(x: ScheduleWeek, db: Session):
+def serialize_week(
+    x: ScheduleWeek,
+    db: Session,
+):
+
     slots = db.scalars(
         select(RouteSlot)
-        .where(RouteSlot.week_id == x.id)
-        .order_by(RouteSlot.date, RouteSlot.id)
+        .where(
+            RouteSlot.week_id == x.id,
+            RouteSlot.company_id
+            == x.company_id,
+        )
+        .order_by(
+            RouteSlot.date,
+            RouteSlot.id,
+        )
     ).all()
+
     d = serialize(x)
-    d["route_slots"] = [serialize_route_slot(s, db) for s in slots]
+
+    d["route_slots"] = [
+        serialize_route_slot(
+            s,
+            db,
+        )
+        for s in slots
+    ]
+
     return d
 
+
+# ============================================================
+# SEMANAS
+# ============================================================
 
 @app.get("/schedule/weeks")
 def list_schedule_weeks(
@@ -1519,18 +3327,43 @@ def list_schedule_weeks(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("schedule")(user)
-    unit = session_unit(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     q = (
         select(ScheduleWeek)
-        .where(ScheduleWeek.unit == unit)
-        .order_by(ScheduleWeek.start_date)
+        .where(
+            ScheduleWeek.company_id
+            == company.id
+        )
+        .order_by(
+            ScheduleWeek.start_date
+        )
     )
+
     if status == "ativa":
-        q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
-    # semanas antigas sem coluna preenchida tratadas como matriz no SQL default
-    weeks = db.scalars(q).all()
-    return [serialize_week(w, db) for w in weeks]
+
+        q = q.where(
+            ScheduleWeek.status
+            == WeekStatus.ATIVA
+        )
+
+    weeks = db.scalars(
+        q
+    ).all()
+
+    return [
+        serialize_week(
+            w,
+            db,
+        )
+        for w in weeks
+    ]
 
 
 @app.post("/schedule/weeks")
@@ -1540,18 +3373,42 @@ def create_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
     w = ScheduleWeek(
+        company_id=company.id,
         start_date=body.start_date,
         label=body.label,
         status=WeekStatus.ATIVA,
-        unit=session_unit(user),
     )
+
     db.add(w)
     db.flush()
-    audit(db, user, "CRIAÇÃO_SEMANA", "schedule", w.id, request)
+
+    audit(
+        db,
+        user,
+        "CRIAÇÃO_SEMANA",
+        "schedule",
+        w.id,
+        request,
+    )
+
     db.commit()
-    return serialize_week(w, db)
+
+    return serialize_week(
+        w,
+        db,
+    )
 
 
 @app.delete("/schedule/weeks/{week_id}")
@@ -1562,34 +3419,77 @@ def delete_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Exclui permanentemente a semana com permissão explícita e senha válida."""
-    if user.id != 1:
-        raw_permissions = (
-            getattr(user, "permissions_filial", None) or user.permissions
-            if session_unit(user) == "filial"
-            else user.permissions
-        )
-        permissions = {p.strip() for p in (raw_permissions or "").split(",") if p.strip()}
-        if "schedule_delete" not in permissions:
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    if user.role != Role.ADMIN:
+        permissions = {
+            p.strip()
+            for p in (
+                user.permissions
+                or ""
+            ).split(",")
+            if p.strip()
+        }
+
+        if (
+            "schedule_delete"
+            not in permissions
+            and "*"
+            not in permissions
+        ):
             raise HTTPException(
                 403,
                 "Você não possui permissão para excluir semanas permanentemente",
             )
 
-    admin = db.get(User, 1)
-    password_ok = verify_password(body.password, user.password_hash)
-    if admin and admin.id != user.id:
-        password_ok = password_ok or verify_password(body.password, admin.password_hash)
-    if not password_ok:
-        raise HTTPException(401, "Senha incorreta")
-    w = db.get(ScheduleWeek, week_id)
+    if not verify_password(
+        body.password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            401,
+            "Senha incorreta",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    w = db.scalar(
+        select(ScheduleWeek).where(
+            ScheduleWeek.id == week_id,
+            ScheduleWeek.company_id
+            == company.id,
+        )
+    )
+
     if not w:
-        raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(w, user)
+        raise HTTPException(
+            404,
+            "Semana não encontrada",
+        )
+
     db.delete(w)
-    audit(db, user, "EXCLUSÃO_SEMANA", "schedule", week_id, request)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO_SEMANA",
+        "schedule",
+        week_id,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True
+    }
 
 
 @app.post("/schedule/weeks/{week_id}/archive")
@@ -1599,25 +3499,52 @@ def archive_schedule_week(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    if user.id != 1:
-        raw_permissions = (
-            getattr(user, "permissions_filial", None) or user.permissions
-            if session_unit(user) == "filial"
-            else user.permissions
-        )
-        permissions = [p.strip() for p in (raw_permissions or "").split(",") if p.strip()]
 
-        if "schedule_archive" not in permissions:
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    if user.role != Role.ADMIN:
+
+        permissions = {
+            p.strip()
+            for p in (
+                user.permissions
+                or ""
+            ).split(",")
+            if p.strip()
+        }
+
+        if (
+            "schedule_archive"
+            not in permissions
+            and "*"
+            not in permissions
+        ):
             raise HTTPException(
                 403,
-                "Você não possui permissão para arquivar semanas."
+                "Você não possui permissão para arquivar semanas.",
             )
 
-    w = db.get(ScheduleWeek, week_id)
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    w = db.scalar(
+        select(ScheduleWeek).where(
+            ScheduleWeek.id == week_id,
+            ScheduleWeek.company_id
+            == company.id,
+        )
+    )
 
     if not w:
-        raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(w, user)
+        raise HTTPException(
+            404,
+            "Semana não encontrada",
+        )
 
     w.status = WeekStatus.ARQUIVADA
     w.archived_at = func.now()
@@ -1628,12 +3555,20 @@ def archive_schedule_week(
         "ARQUIVAMENTO_SEMANA",
         "schedule",
         week_id,
-        request
+        request,
     )
 
     db.commit()
 
-    return {"ok": True}
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# ROTAS
+# ============================================================
+
 @app.post("/schedule/route-slots")
 def create_route_slot(
     body: RouteSlotCreate,
@@ -1641,15 +3576,80 @@ def create_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    week = db.get(ScheduleWeek, body.week_id)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    week = db.scalar(
+        select(ScheduleWeek).where(
+            ScheduleWeek.id
+            == body.week_id,
+            ScheduleWeek.company_id
+            == company.id,
+        )
+    )
+
     if not week:
-        raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(week, user)
+        raise HTTPException(
+            404,
+            "Semana não encontrada",
+        )
+
     if week.status != WeekStatus.ATIVA:
-        raise HTTPException(409, "Não é possível adicionar rota em semana arquivada")
+        raise HTTPException(
+            409,
+            "Não é possível adicionar rota em semana arquivada",
+        )
+
+    # Validar motorista
+    for driver_id in (
+        body.driver_id,
+        body.second_driver_id,
+    ):
+
+        if driver_id:
+
+            driver = db.scalar(
+                select(Driver).where(
+                    Driver.id == driver_id,
+                    Driver.company_id
+                    == company.id,
+                )
+            )
+
+            if not driver:
+                raise HTTPException(
+                    404,
+                    "Motorista não encontrado",
+                )
+
+    # Validar veículo
+    if body.vehicle_id:
+
+        vehicle = db.scalar(
+            select(Vehicle).where(
+                Vehicle.id
+                == body.vehicle_id,
+                Vehicle.company_id
+                == company.id,
+            )
+        )
+
+        if not vehicle:
+            raise HTTPException(
+                404,
+                "Veículo não encontrado",
+            )
 
     rs = RouteSlot(
+        company_id=company.id,
         week_id=body.week_id,
         date=body.date,
         region_code=body.region_code.upper().strip(),
@@ -1661,11 +3661,26 @@ def create_route_slot(
         notes=body.notes,
         closed=False,
     )
+
     db.add(rs)
     db.flush()
-    audit(db, user, "CRIAÇÃO_ROTA", "schedule", rs.id, request)
+
+    audit(
+        db,
+        user,
+        "CRIAÇÃO_ROTA",
+        "schedule",
+        rs.id,
+        request,
+    )
+
     db.commit()
-    return serialize_route_slot(rs, db)
+
+    return serialize_route_slot(
+        rs,
+        db,
+    )
+
 
 @app.patch("/schedule/route-slots/{slot_id}")
 def update_route_slot(
@@ -1675,16 +3690,123 @@ def update_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    rs = db.get(RouteSlot, slot_id)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rs = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id == slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
     if not rs:
-        raise HTTPException(404, "Rota não encontrada")
-    assert_slot_unit(rs, user, db)
-    for k, v in body.model_dump(exclude_unset=True).items():
-        setattr(rs, k, v)
-    audit(db, user, "ALTERAÇÃO", "schedule", slot_id, request)
+        raise HTTPException(
+            404,
+            "Rota não encontrada",
+        )
+
+    data = body.model_dump(
+        exclude_unset=True
+    )
+
+    if (
+        "driver_id" in data
+        and data["driver_id"]
+    ):
+
+        driver = db.scalar(
+            select(Driver).where(
+                Driver.id
+                == data["driver_id"],
+                Driver.company_id
+                == company.id,
+            )
+        )
+
+        if not driver:
+            raise HTTPException(
+                404,
+                "Motorista não encontrado",
+            )
+
+    if (
+        "second_driver_id" in data
+        and data["second_driver_id"]
+    ):
+
+        driver = db.scalar(
+            select(Driver).where(
+                Driver.id
+                == data[
+                    "second_driver_id"
+                ],
+                Driver.company_id
+                == company.id,
+            )
+        )
+
+        if not driver:
+            raise HTTPException(
+                404,
+                "Segundo motorista não encontrado",
+            )
+
+    if (
+        "vehicle_id" in data
+        and data["vehicle_id"]
+    ):
+
+        vehicle = db.scalar(
+            select(Vehicle).where(
+                Vehicle.id
+                == data["vehicle_id"],
+                Vehicle.company_id
+                == company.id,
+            )
+        )
+
+        if not vehicle:
+            raise HTTPException(
+                404,
+                "Veículo não encontrado",
+            )
+
+    for k, v in data.items():
+
+        if k == "region_code" and v:
+            v = v.upper().strip()
+
+        setattr(
+            rs,
+            k,
+            v,
+        )
+
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO",
+        "schedule",
+        slot_id,
+        request,
+    )
+
     db.commit()
-    return serialize_route_slot(rs, db)
+
+    return serialize_route_slot(
+        rs,
+        db,
+    )
 
 
 @app.delete("/schedule/route-slots/{slot_id}")
@@ -1694,18 +3816,52 @@ def delete_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    rs = db.get(RouteSlot, slot_id)
-    if not rs:
-        raise HTTPException(404, "Rota não encontrada")
-    assert_slot_unit(rs, user, db)
-    if not rs:
-        raise HTTPException(404, "Rota não encontrada")
-    db.delete(rs)
-    audit(db, user, "EXCLUSÃO", "schedule", slot_id, request)
-    db.commit()
-    return {"ok": True}
 
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rs = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id == slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
+    if not rs:
+        raise HTTPException(
+            404,
+            "Rota não encontrada",
+        )
+
+    db.delete(rs)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        "schedule",
+        slot_id,
+        request,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# CLIENTES DA ROTA
+# ============================================================
 
 @app.post("/schedule/entries")
 def create_schedule_entry(
@@ -1714,25 +3870,76 @@ def create_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    rs = db.get(RouteSlot, body.route_slot_id)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rs = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id
+            == body.route_slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
     if not rs:
-        raise HTTPException(404, "Rota não encontrada")
+        raise HTTPException(
+            404,
+            "Rota não encontrada",
+        )
+
     if rs.closed:
-        raise HTTPException(409, "Esta rota está fechada para novos clientes")
+        raise HTTPException(
+            409,
+            "Esta rota está fechada para novos clientes",
+        )
 
-    slots_needed = body.slots_consumed or calcular_vagas(body.service_description)
+    slots_needed = (
+        body.slots_consumed
+        or calcular_vagas(
+            body.service_description
+        )
+    )
 
-    # Calcula vagas já usadas
     entries = db.scalars(
-        select(ScheduleEntry).where(ScheduleEntry.route_slot_id == rs.id)
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id
+            == rs.id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
     ).all()
-    used = sum((e.slots_consumed or calcular_vagas(e.service_description)) for e in entries)
 
-    if rs.total_slots and (used + slots_needed) > rs.total_slots:
-        raise HTTPException(409, "Não há vagas suficientes nesta rota")
+    used = sum(
+        (
+            e.slots_consumed
+            or calcular_vagas(
+                e.service_description
+            )
+        )
+        for e in entries
+    )
+
+    if (
+        rs.total_slots
+        and used + slots_needed
+        > rs.total_slots
+    ):
+        raise HTTPException(
+            409,
+            "Não há vagas suficientes nesta rota",
+        )
 
     entry = ScheduleEntry(
+        company_id=company.id,
         route_slot_id=rs.id,
         position=len(entries) + 1,
         service_description=body.service_description,
@@ -1748,11 +3955,25 @@ def create_schedule_entry(
         status=body.status,
         observation=body.observation,
     )
+
     db.add(entry)
     db.flush()
-    audit(db, user, "CADASTRO", "schedule", entry.id, request)
+
+    audit(
+        db,
+        user,
+        "CADASTRO",
+        "schedule",
+        entry.id,
+        request,
+    )
+
     db.commit()
-    return serialize_entry(entry, db)
+
+    return serialize_entry(
+        entry,
+        db,
+    )
 
 
 @app.patch("/schedule/entries/{entry_id}")
@@ -1763,23 +3984,72 @@ def update_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    entry = db.get(ScheduleEntry, entry_id)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    entry = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.id
+            == entry_id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+    )
+
     if not entry:
-        raise HTTPException(404, "Cliente não encontrado")
+        raise HTTPException(
+            404,
+            "Cliente não encontrado",
+        )
 
-    data = body.model_dump(exclude_unset=True)
+    data = body.model_dump(
+        exclude_unset=True
+    )
 
-    # Se mudou o serviço, recalcula slots_consumed
-    if "service_description" in data and "slots_consumed" not in data:
-        data["slots_consumed"] = calcular_vagas(data["service_description"])
+    if (
+        "service_description"
+        in data
+        and "slots_consumed"
+        not in data
+    ):
+        data["slots_consumed"] = (
+            calcular_vagas(
+                data[
+                    "service_description"
+                ]
+            )
+        )
 
     for k, v in data.items():
-        setattr(entry, k, v)
+        setattr(
+            entry,
+            k,
+            v,
+        )
 
-    audit(db, user, "ALTERAÇÃO", "schedule", entry_id, request)
+    audit(
+        db,
+        user,
+        "ALTERAÇÃO",
+        "schedule",
+        entry_id,
+        request,
+    )
+
     db.commit()
-    return serialize_entry(entry, db)
+
+    return serialize_entry(
+        entry,
+        db,
+    )
 
 
 @app.delete("/schedule/entries/{entry_id}")
@@ -1789,24 +4059,67 @@ def delete_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    entry = db.get(ScheduleEntry, entry_id)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    entry = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.id
+            == entry_id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+    )
+
     if not entry:
-        raise HTTPException(404, "Cliente não encontrado")
-    slot_id, removed_pos = entry.route_slot_id, entry.position
+        raise HTTPException(
+            404,
+            "Cliente não encontrado",
+        )
+
+    slot_id = entry.route_slot_id
+    removed_pos = entry.position
+
     db.delete(entry)
     db.flush()
+
     later = db.scalars(
         select(ScheduleEntry).where(
-            ScheduleEntry.route_slot_id == slot_id,
-            ScheduleEntry.position > removed_pos,
+            ScheduleEntry.route_slot_id
+            == slot_id,
+            ScheduleEntry.company_id
+            == company.id,
+            ScheduleEntry.position
+            > removed_pos,
         )
     ).all()
+
     for e in later:
         e.position -= 1
-    audit(db, user, "EXCLUSÃO", "schedule", entry_id, request)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        "schedule",
+        entry_id,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True
+    }
+
 
 @app.post("/schedule/entries/{entry_id}/move")
 def move_schedule_entry(
@@ -1816,32 +4129,94 @@ def move_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    entry = db.get(ScheduleEntry, entry_id)
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    entry = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.id
+            == entry_id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+    )
+
     if not entry:
-        raise HTTPException(404, "Cliente não encontrado")
+        raise HTTPException(
+            404,
+            "Cliente não encontrado",
+        )
 
-    direction = body.direction.lower()
-    if direction not in ("up", "down"):
-        raise HTTPException(400, "direction deve ser 'up' ou 'down'")
+    direction = (
+        body.direction
+        or ""
+    ).lower()
 
-    new_pos = entry.position - 1 if direction == "up" else entry.position + 1
+    if direction not in (
+        "up",
+        "down",
+    ):
+        raise HTTPException(
+            400,
+            "direction deve ser 'up' ou 'down'",
+        )
+
+    new_pos = (
+        entry.position - 1
+        if direction == "up"
+        else entry.position + 1
+    )
+
     if new_pos < 1:
-        raise HTTPException(400, "Já está na primeira posição")
+        raise HTTPException(
+            400,
+            "Já está na primeira posição",
+        )
 
     other = db.scalar(
         select(ScheduleEntry).where(
-            ScheduleEntry.route_slot_id == entry.route_slot_id,
-            ScheduleEntry.position == new_pos,
+            ScheduleEntry.route_slot_id
+            == entry.route_slot_id,
+            ScheduleEntry.company_id
+            == company.id,
+            ScheduleEntry.position
+            == new_pos,
         )
     )
-    if not other:
-        raise HTTPException(400, "Não há cliente nessa posição")
 
-    entry.position, other.position = other.position, entry.position
-    audit(db, user, "REORDENAÇÃO", "schedule", entry_id, request)
+    if not other:
+        raise HTTPException(
+            400,
+            "Não há cliente nessa posição",
+        )
+
+    entry.position, other.position = (
+        other.position,
+        entry.position,
+    )
+
+    audit(
+        db,
+        user,
+        "REORDENAÇÃO",
+        "schedule",
+        entry_id,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True
+    }
 
 
 @app.post("/schedule/entries/reorder")
@@ -1851,31 +4226,83 @@ def reorder_schedule_entries(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    if not body.ordered_ids:
-        raise HTTPException(400, "Lista de ordenação vazia")
 
-    rs = db.get(RouteSlot, body.route_slot_id)
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    if not body.ordered_ids:
+        raise HTTPException(
+            400,
+            "Lista de ordenação vazia",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rs = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id
+            == body.route_slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
     if not rs:
-        raise HTTPException(404, "Rota não encontrada")
+        raise HTTPException(
+            404,
+            "Rota não encontrada",
+        )
 
     entries = db.scalars(
-        select(ScheduleEntry).where(ScheduleEntry.route_slot_id == body.route_slot_id)
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id
+            == body.route_slot_id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
     ).all()
-    by_id = {e.id: e for e in entries}
 
-    if set(body.ordered_ids) != set(by_id.keys()):
+    by_id = {
+        e.id: e
+        for e in entries
+    }
+
+    if set(body.ordered_ids) != set(
+        by_id.keys()
+    ):
         raise HTTPException(
             400,
             "A lista de IDs não confere com os clientes desta rota",
         )
 
-    for index, entry_id in enumerate(body.ordered_ids, start=1):
-        by_id[entry_id].position = index
+    for index, entry_id in enumerate(
+        body.ordered_ids,
+        start=1,
+    ):
+        by_id[
+            entry_id
+        ].position = index
 
-    audit(db, user, "REORDENAÇÃO", "schedule", body.route_slot_id, request)
+    audit(
+        db,
+        user,
+        "REORDENAÇÃO",
+        "schedule",
+        body.route_slot_id,
+        request,
+    )
+
     db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True
+    }
+
 
 @app.post("/schedule/entries/{entry_id}/transfer")
 def transfer_schedule_entry(
@@ -1885,49 +4312,142 @@ def transfer_schedule_entry(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    entry = db.get(ScheduleEntry, entry_id)
-    if not entry:
-        raise HTTPException(404, "Cliente não encontrado")
 
-    target = db.get(RouteSlot, body.target_route_slot_id)
-    if not target:
-        raise HTTPException(404, "Rota de destino não encontrada")
-    if target.closed:
-        raise HTTPException(409, "A rota de destino está fechada")
-    if entry.route_slot_id == target.id:
-        raise HTTPException(400, "O cliente já está nesta rota")
+    require(
+        "schedule",
+        write=True,
+    )(user)
 
-    slots_needed = entry.slots_consumed or calcular_vagas(entry.service_description)
-    dest_entries = db.scalars(
-        select(ScheduleEntry).where(ScheduleEntry.route_slot_id == target.id)
-    ).all()
-    used = sum(
-        (e.slots_consumed or calcular_vagas(e.service_description)) for e in dest_entries
+    company = get_current_company(
+        user,
+        db,
     )
-    if target.total_slots and (used + slots_needed) > target.total_slots:
-        raise HTTPException(409, "Não há vagas suficientes na rota de destino")
 
-    old_slot_id = entry.route_slot_id
+    entry = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.id
+            == entry_id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+    )
+
+    if not entry:
+        raise HTTPException(
+            404,
+            "Cliente não encontrado",
+        )
+
+    target = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id
+            == body.target_route_slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
+    if not target:
+        raise HTTPException(
+            404,
+            "Rota de destino não encontrada",
+        )
+
+    if target.closed:
+        raise HTTPException(
+            409,
+            "A rota de destino está fechada",
+        )
+
+    if entry.route_slot_id == target.id:
+        raise HTTPException(
+            400,
+            "O cliente já está nesta rota",
+        )
+
+    slots_needed = (
+        entry.slots_consumed
+        or calcular_vagas(
+            entry.service_description
+        )
+    )
+
+    dest_entries = db.scalars(
+        select(ScheduleEntry).where(
+            ScheduleEntry.route_slot_id
+            == target.id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+    ).all()
+
+    used = sum(
+        (
+            e.slots_consumed
+            or calcular_vagas(
+                e.service_description
+            )
+        )
+        for e in dest_entries
+    )
+
+    if (
+        target.total_slots
+        and used + slots_needed
+        > target.total_slots
+    ):
+        raise HTTPException(
+            409,
+            "Não há vagas suficientes na rota de destino",
+        )
+
+    old_slot_id = (
+        entry.route_slot_id
+    )
+
     old_pos = entry.position
 
     entry.route_slot_id = target.id
-    entry.position = len(dest_entries) + 1
+    entry.position = (
+        len(dest_entries) + 1
+    )
+
     db.flush()
 
     later = db.scalars(
         select(ScheduleEntry).where(
-            ScheduleEntry.route_slot_id == old_slot_id,
-            ScheduleEntry.position > old_pos,
+            ScheduleEntry.route_slot_id
+            == old_slot_id,
+            ScheduleEntry.company_id
+            == company.id,
+            ScheduleEntry.position
+            > old_pos,
         )
     ).all()
+
     for e in later:
         e.position -= 1
 
-    audit(db, user, "TRANSFERÊNCIA_CLIENTE", "schedule", entry_id, request)
-    db.commit()
-    return serialize_entry(entry, db)
+    audit(
+        db,
+        user,
+        "TRANSFERÊNCIA_CLIENTE",
+        "schedule",
+        entry_id,
+        request,
+    )
 
+    db.commit()
+
+    return serialize_entry(
+        entry,
+        db,
+    )
+
+
+# ============================================================
+# TRANSFERIR ROTA
+# ============================================================
 
 @app.post("/schedule/route-slots/{slot_id}/transfer")
 def transfer_route_slot(
@@ -1937,24 +4457,81 @@ def transfer_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    rs = db.get(RouteSlot, slot_id)
-    if not rs:
-        raise HTTPException(404, "Rota não encontrada")
 
-    target_week_id = body.week_id if body.week_id is not None else rs.week_id
-    week = db.get(ScheduleWeek, target_week_id)
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rs = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id == slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
+    if not rs:
+        raise HTTPException(
+            404,
+            "Rota não encontrada",
+        )
+
+    target_week_id = (
+        body.week_id
+        if body.week_id is not None
+        else rs.week_id
+    )
+
+    week = db.scalar(
+        select(ScheduleWeek).where(
+            ScheduleWeek.id
+            == target_week_id,
+            ScheduleWeek.company_id
+            == company.id,
+        )
+    )
+
     if not week:
-        raise HTTPException(404, "Semana de destino não encontrada")
+        raise HTTPException(
+            404,
+            "Semana de destino não encontrada",
+        )
+
     if week.status != WeekStatus.ATIVA:
-        raise HTTPException(409, "Não é possível transferir para semana arquivada")
+        raise HTTPException(
+            409,
+            "Não é possível transferir para semana arquivada",
+        )
 
     rs.date = body.new_date
     rs.week_id = target_week_id
-    audit(db, user, "TRANSFERÊNCIA_ROTA", "schedule", slot_id, request)
-    db.commit()
-    return serialize_route_slot(rs, db)
 
+    audit(
+        db,
+        user,
+        "TRANSFERÊNCIA_ROTA",
+        "schedule",
+        slot_id,
+        request,
+    )
+
+    db.commit()
+
+    return serialize_route_slot(
+        rs,
+        db,
+    )
+
+
+# ============================================================
+# EXTRAS
+# ============================================================
 
 @app.post("/schedule/extras")
 def create_schedule_extra(
@@ -1963,15 +4540,57 @@ def create_schedule_extra(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    if not db.get(ScheduleEntry, body.entry_id):
-        raise HTTPException(404, "Cliente não encontrado")
-    extra = ScheduleExtra(**body.model_dump())
+
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    entry = db.scalar(
+        select(ScheduleEntry).where(
+            ScheduleEntry.id
+            == body.entry_id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+    )
+
+    if not entry:
+        raise HTTPException(
+            404,
+            "Cliente não encontrado",
+        )
+
+    extra = ScheduleExtra(
+        company_id=company.id,
+        entry_id=entry.id,
+        description=body.description,
+        observation=body.observation,
+        status=body.status,
+    )
+
     db.add(extra)
     db.flush()
-    audit(db, user, "CADASTRO", "schedule", extra.id, request)
+
+    audit(
+        db,
+        user,
+        "CADASTRO",
+        "schedule",
+        extra.id,
+        request,
+    )
+
     db.commit()
-    return serialize_extra(extra)
+
+    return serialize_extra(
+        extra
+    )
 
 
 @app.delete("/schedule/extras/{extra_id}")
@@ -1981,15 +4600,52 @@ def delete_schedule_extra(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    require("schedule", write=True)(user)
-    extra = db.get(ScheduleExtra, extra_id)
-    if not extra:
-        raise HTTPException(404, "Item não encontrado")
-    db.delete(extra)
-    audit(db, user, "EXCLUSÃO", "schedule", extra_id, request)
-    db.commit()
-    return {"ok": True}
 
+    require(
+        "schedule",
+        write=True,
+    )(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    extra = db.scalar(
+        select(ScheduleExtra).where(
+            ScheduleExtra.id == extra_id,
+            ScheduleExtra.company_id
+            == company.id,
+        )
+    )
+
+    if not extra:
+        raise HTTPException(
+            404,
+            "Item não encontrado",
+        )
+
+    db.delete(extra)
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        "schedule",
+        extra_id,
+        request,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# EXPORTAR ROTA
+# ============================================================
 
 @app.get("/schedule/route-slots/{slot_id}/export")
 def export_route_slot(
@@ -1997,39 +4653,100 @@ def export_route_slot(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("schedule")(user)
-    rs = db.get(RouteSlot, slot_id)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rs = db.scalar(
+        select(RouteSlot).where(
+            RouteSlot.id == slot_id,
+            RouteSlot.company_id
+            == company.id,
+        )
+    )
+
     if not rs:
-        raise HTTPException(404, "Rota não encontrada")
+        raise HTTPException(
+            404,
+            "Rota não encontrada",
+        )
+
     entries = db.scalars(
         select(ScheduleEntry)
-        .where(ScheduleEntry.route_slot_id == rs.id)
-        .order_by(ScheduleEntry.position)
+        .where(
+            ScheduleEntry.route_slot_id
+            == rs.id,
+            ScheduleEntry.company_id
+            == company.id,
+        )
+        .order_by(
+            ScheduleEntry.position
+        )
     ).all()
+
     lines = []
+
     for e in entries:
-        lines.append(f"*{e.position:02d}°* - {e.client_name.upper()}")
+
+        lines.append(
+            f"*{e.position:02d}°* - {e.client_name.upper()}"
+        )
+
         if e.location_link:
-            lines.append(f"localização: {e.location_link}")
+            lines.append(
+                f"localização: {e.location_link}"
+            )
+
         if e.phone:
-            lines.append(f"tel: {e.phone}")
+            lines.append(
+                f"tel: {e.phone}"
+            )
+
         if e.observation:
-            lines.append(f"*obs: {e.observation}*")          # ← OBS em negrito
+            lines.append(
+                f"*obs: {e.observation}*"
+            )
+
         extras = db.scalars(
-            select(ScheduleExtra).where(ScheduleExtra.entry_id == e.id)
+            select(ScheduleExtra)
+            .where(
+                ScheduleExtra.entry_id
+                == e.id,
+                ScheduleExtra.company_id
+                == company.id,
+            )
         ).all()
+
         for extra in extras:
-            lines.append(f"+ {extra.description}")
+            lines.append(
+                f"+ {extra.description}"
+            )
+
         lines.append("")
-    text = "\n".join(lines).strip()
-    return Response(content=text, media_type="text/plain; charset=utf-8")
+
+    text = "\n".join(
+        lines
+    ).strip()
+
+    return Response(
+        content=text,
+        media_type="text/plain; charset=utf-8",
+    )
+
 
 # ============================================================
-# ADMIN — backup + configurações críticas
+# ADMIN / CRÍTICO
 # ============================================================
 
 class CriticalBody(BaseModel):
-    password: str = Field(min_length=1)
+    password: str = Field(
+        min_length=1
+    )
+
     confirm_text: str | None = None
 
 
@@ -2038,69 +4755,206 @@ def _assert_critical(
     body: CriticalBody,
     expected_confirm: str | None = None,
 ):
-    if user.id != 1 or user.role != Role.ADMIN:
-        raise HTTPException(403, "Apenas o Administrador Principal")
-    if not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Senha incorreta")
-    if expected_confirm and (body.confirm_text or "").strip() != expected_confirm:
-        raise HTTPException(400, f"Digite exatamente: {expected_confirm}")
+
+    if user.role != Role.ADMIN:
+        raise HTTPException(
+            403,
+            "Apenas administradores podem executar esta ação.",
+        )
+
+    if not verify_password(
+        body.password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            401,
+            "Senha incorreta",
+        )
+
+    if (
+        expected_confirm
+        and (
+            body.confirm_text or ""
+        ).strip()
+        != expected_confirm
+    ):
+        raise HTTPException(
+            400,
+            f"Digite exatamente: {expected_confirm}",
+        )
 
 
-@app.get("/admin/backup/export")
-def backup_export(
-    user: User = Depends(main_admin),
-    db: Session = Depends(get_db),
-):
-    from datetime import timezone
+def block_payload(
+    u: User,
+) -> dict | None:
 
-def block_payload(u: User) -> dict | None:
-    """Se bloqueado agora, retorna info; se scheduled já passou, limpa e retorna None."""
     if u.active and not u.block_type:
         return None
 
-    # auto-desbloqueio programado
-    if u.block_type == "scheduled" and u.blocked_until:
+    if (
+        u.block_type == "scheduled"
+        and u.blocked_until
+    ):
+
         until = u.blocked_until
+
         if until.tzinfo is None:
-            until = until.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+            until = until.replace(
+                tzinfo=timezone.utc
+            )
+
+        now = datetime.now(
+            timezone.utc
+        )
+
         if now >= until:
+
             u.active = True
             u.block_type = None
             u.blocked_until = None
             u.block_reason = None
+
             return None
 
     until_iso = None
+
     if u.blocked_until:
+
         until = u.blocked_until
+
         if until.tzinfo is None:
-            until = until.replace(tzinfo=timezone.utc)
+            until = until.replace(
+                tzinfo=timezone.utc
+            )
+
         until_iso = until.isoformat()
 
     return {
         "blocked": True,
-        "block_type": u.block_type or "manual",
+        "block_type": (
+            u.block_type
+            or "manual"
+        ),
         "blocked_until": until_iso,
         "reason": u.block_reason,
     }
+
+
+@app.get("/admin/backup/export")
+def backup_export(
+    user: User = Depends(company_admin),
+    db: Session = Depends(get_db),
+):
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    tables = {
+        "customers": Customer,
+        "vehicles": Vehicle,
+        "drivers": Driver,
+        "routes": Route,
+        "route_stops": RouteStop,
+        "maintenance": Maintenance,
+        "fuel": FuelRecord,
+        "products": Product,
+        "stock_movements": StockMovement,
+        "schedule_weeks": ScheduleWeek,
+        "route_slots": RouteSlot,
+        "schedule_entries": ScheduleEntry,
+        "schedule_extras": ScheduleExtra,
+        "production": ProductionRecord,
+        "orders": Order,
+        "settings": Setting,
+        "users": User,
+        "audit": AuditLog,
+    }
+
+    result = {
+        "exported_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
+        "company": serialize(
+            company
+        ),
+        "tables": {},
+    }
+
+    for name, model in tables.items():
+
+        if not hasattr(
+            model,
+            "company_id",
+        ):
+            continue
+
+        rows = db.scalars(
+            select(model).where(
+                model.company_id
+                == company.id
+            )
+        ).all()
+
+        if model is User:
+            result["tables"][name] = [
+                serialize_user(
+                    row,
+                    company,
+                )
+                for row in rows
+            ]
+        else:
+            result["tables"][name] = [
+                serialize(row)
+                for row in rows
+            ]
+
+    return result
 
 
 @app.post("/admin/critical/revoke-sessions")
 def critical_revoke_sessions(
     body: CriticalBody,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    _assert_critical(user, body, "ENCERRAR SESSOES")
 
-    # Encerra as sessões de todos os usuários,
-    # EXCETO o administrador que executou a ação.
-    for u in db.scalars(select(User)).all():
-        if u.id == 1:
-            continue
-        u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
+    _assert_critical(
+        user,
+        body,
+        "ENCERRAR SESSOES",
+    )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    rows = db.scalars(
+        select(User).where(
+            User.company_id
+            == company.id,
+            User.id != user.id,
+        )
+    ).all()
+
+    for u in rows:
+
+        u.token_version = (
+            int(
+                getattr(
+                    u,
+                    "token_version",
+                    0,
+                )
+                or 0
+            )
+            + 1
+        )
 
     audit(
         db,
@@ -2115,7 +4969,7 @@ def critical_revoke_sessions(
 
     return {
         "ok": True,
-        "detail": "Todas as sessões dos demais usuários foram encerradas",
+        "detail": "Todas as sessões dos demais usuários desta empresa foram encerradas",
     }
 
 
@@ -2123,38 +4977,96 @@ def critical_revoke_sessions(
 def critical_purge_users(
     body: CriticalBody,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    _assert_critical(user, body, "REMOVER USUARIOS")
-    others = db.scalars(select(User).where(User.id != 1)).all()
-    for u in others:
-        db.execute(
-            update(AuditLog).where(AuditLog.user_id == u.id).values(user_id=None)
+
+    _assert_critical(
+        user,
+        body,
+        "REMOVER USUARIOS",
+    )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    others = db.scalars(
+        select(User).where(
+            User.company_id
+            == company.id,
+            User.id != user.id,
         )
+    ).all()
+
+    for u in others:
+
+        db.execute(
+            update(AuditLog)
+            .where(
+                AuditLog.user_id
+                == u.id,
+                AuditLog.company_id
+                == company.id,
+            )
+            .values(
+                user_id=None
+            )
+        )
+
         try:
+
             db.delete(u)
             db.flush()
-        except IntegrityError:
+
+        except IntegrityError as exc:
+
             db.rollback()
+
             raise HTTPException(
                 409,
                 f"Não foi possível excluir {u.username}: há vínculos.",
-            )
-    audit(db, user, "CRITICO_PURGE_USERS", "admin", None, request)
+            ) from exc
+
+    audit(
+        db,
+        user,
+        "CRITICO_PURGE_USERS",
+        "admin",
+        None,
+        request,
+    )
+
     db.commit()
-    return {"ok": True, "removed": len(others)}
+
+    return {
+        "ok": True,
+        "removed": len(others),
+    }
 
 
 @app.post("/admin/critical/wipe-operational")
 def critical_wipe_operational(
     body: CriticalBody,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-    _assert_critical(user, body, "EXCLUIR DADOS")
-    for model in (
+
+    _assert_critical(
+        user,
+        body,
+        "EXCLUIR DADOS",
+    )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    # Filhos primeiro
+    operational_models = (
         ScheduleExtra,
         ScheduleEntry,
         RouteSlot,
@@ -2162,11 +5074,38 @@ def critical_wipe_operational(
         StockMovement,
         Maintenance,
         FuelRecord,
-    ):
-        db.execute(model.__table__.delete())
-    audit(db, user, "CRITICO_WIPE_OPERATIONAL", "admin", None, request)
+    )
+
+    for model in operational_models:
+
+        if hasattr(
+            model,
+            "company_id",
+        ):
+
+            db.execute(
+                delete(model).where(
+                    model.company_id
+                    == company.id
+                )
+            )
+
+    audit(
+        db,
+        user,
+        "CRITICO_WIPE_OPERATIONAL",
+        "admin",
+        None,
+        request,
+    )
+
     db.commit()
-    return {"ok": True, "detail": "Dados operacionais removidos"}
+
+    return {
+        "ok": True,
+        "detail": "Dados operacionais da empresa foram removidos",
+    }
+
 
 # ============================================================
 # PRODUÇÃO / MONTAGEM
@@ -2192,9 +5131,19 @@ PRODUCTION_MODELS = [
 
 
 class ProductionLineIn(BaseModel):
-    model: str = Field(min_length=1, max_length=80)
-    quantity: float = Field(ge=0)
-    emergency_altered: float = Field(default=0, ge=0)
+    model: str = Field(
+        min_length=1,
+        max_length=80,
+    )
+
+    quantity: float = Field(
+        ge=0
+    )
+
+    emergency_altered: float = Field(
+        default=0,
+        ge=0,
+    )
 
 
 class ProductionBatchIn(BaseModel):
@@ -2204,21 +5153,61 @@ class ProductionBatchIn(BaseModel):
     notes: str | None = None
 
 
-def _can_prod(user: User, need: str) -> bool:
-    if user.id == 1:
-        return True
-    perms = set((user.permissions or "").split(",")) if user.permissions else set()
-    grants = MODULES.get(user.role, set()) if not user.permissions else perms
+def _can_prod(
+    user: User,
+    need: str,
+) -> bool:
+
+    perms = set(
+        p.strip()
+        for p in (
+            user.permissions
+            or ""
+        ).split(",")
+        if p.strip()
+    )
+
+    grants = (
+        MODULES.get(
+            user.role,
+            set(),
+        )
+        if not user.permissions
+        else perms
+    )
+
     if "*" in grants or "*" in perms:
         return True
-    return need in perms or need in grants
+
+    return (
+        need in perms
+        or need in grants
+    )
 
 
 @app.get("/production/models")
-def production_models(user: User = Depends(current_user)):
-    if not (_can_prod(user, "production") or _can_prod(user, "assembly")):
-        raise HTTPException(403, "Sem permissão")
-    return list(PRODUCTION_MODELS)
+def production_models(
+    user: User = Depends(current_user),
+):
+
+    if not (
+        _can_prod(
+            user,
+            "production",
+        )
+        or _can_prod(
+            user,
+            "assembly",
+        )
+    ):
+        raise HTTPException(
+            403,
+            "Sem permissão",
+        )
+
+    return list(
+        PRODUCTION_MODELS
+    )
 
 
 @app.post("/production/batch")
@@ -2228,24 +5217,77 @@ def create_production_batch(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    kind = (body.kind or "").lower().strip()
-    if kind not in ("fabricacao", "montagem"):
-        raise HTTPException(400, "kind inválido")
-    if kind == "fabricacao" and not _can_prod(user, "production"):
-        raise HTTPException(403, "Sem permissão de Produção")
-    if kind == "montagem" and not _can_prod(user, "assembly"):
-        raise HTTPException(403, "Sem permissão de Montagem")
+
+    kind = (
+        body.kind or ""
+    ).lower().strip()
+
+    if kind not in (
+        "fabricacao",
+        "montagem",
+    ):
+        raise HTTPException(
+            400,
+            "kind inválido",
+        )
+
+    if (
+        kind == "fabricacao"
+        and not _can_prod(
+            user,
+            "production",
+        )
+    ):
+        raise HTTPException(
+            403,
+            "Sem permissão de Produção",
+        )
+
+    if (
+        kind == "montagem"
+        and not _can_prod(
+            user,
+            "assembly",
+        )
+    ):
+        raise HTTPException(
+            403,
+            "Sem permissão de Montagem",
+        )
+
     if not body.lines:
-        raise HTTPException(400, "Informe ao menos um modelo")
+        raise HTTPException(
+            400,
+            "Informe ao menos um modelo",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
 
     created = []
+
     for line in body.lines:
-        qty = float(line.quantity or 0)
-        em = float(line.emergency_altered or 0) if kind == "montagem" else 0.0
+
+        qty = float(
+            line.quantity or 0
+        )
+
+        em = (
+            float(
+                line.emergency_altered
+                or 0
+            )
+            if kind == "montagem"
+            else 0.0
+        )
+
         if qty <= 0 and em <= 0:
             continue
+
         rec = ProductionRecord(
-        org_unit=session_unit(user),
+            company_id=company.id,
             kind=kind,
             production_date=body.production_date,
             model=line.model.strip(),
@@ -2254,15 +5296,36 @@ def create_production_batch(
             notes=body.notes,
             user_id=user.id,
         )
+
         db.add(rec)
         db.flush()
-        created.append(serialize(rec))
+
+        created.append(
+            serialize(rec)
+        )
 
     if not created:
-        raise HTTPException(400, "Nenhuma quantidade informada")
-    audit(db, user, "PRODUCAO_LOTE", "production", None, request)
+        raise HTTPException(
+            400,
+            "Nenhuma quantidade informada",
+        )
+
+    audit(
+        db,
+        user,
+        "PRODUCAO_LOTE",
+        "production",
+        None,
+        request,
+    )
+
     db.commit()
-    return {"ok": True, "count": len(created), "records": created}
+
+    return {
+        "ok": True,
+        "count": len(created),
+        "records": created,
+    }
 
 
 @app.get("/production/by-day")
@@ -2272,34 +5335,81 @@ def production_by_day(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    allow_fab = _can_prod(user, "production")
-    allow_mnt = _can_prod(user, "assembly")
+
+    allow_fab = _can_prod(
+        user,
+        "production",
+    )
+
+    allow_mnt = _can_prod(
+        user,
+        "assembly",
+    )
+
     if not allow_fab and not allow_mnt:
-        raise HTTPException(403, "Sem permissão")
+        raise HTTPException(
+            403,
+            "Sem permissão",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
 
     q = (
         select(ProductionRecord)
-        .where(ProductionRecord.org_unit == session_unit(user))
+        .where(
+            ProductionRecord.company_id
+            == company.id
+        )
         .order_by(
             ProductionRecord.production_date.desc(),
             ProductionRecord.kind,
             ProductionRecord.model,
         )
     )
-    if date_from:
-        q = q.where(ProductionRecord.production_date >= date_from)
-    if date_to:
-        q = q.where(ProductionRecord.production_date <= date_to)
 
-    rows = db.scalars(q.limit(3000)).all()
+    if date_from:
+        q = q.where(
+            ProductionRecord.production_date
+            >= date_from
+        )
+
+    if date_to:
+        q = q.where(
+            ProductionRecord.production_date
+            <= date_to
+        )
+
+    rows = db.scalars(
+        q.limit(3000)
+    ).all()
+
     days: dict[str, dict] = {}
+
     for r in rows:
-        if r.kind == "fabricacao" and not allow_fab:
+
+        if (
+            r.kind == "fabricacao"
+            and not allow_fab
+        ):
             continue
-        if r.kind == "montagem" and not allow_mnt:
+
+        if (
+            r.kind == "montagem"
+            and not allow_mnt
+        ):
             continue
-        key = r.production_date.isoformat() if r.production_date else ""
+
+        key = (
+            r.production_date.isoformat()
+            if r.production_date
+            else ""
+        )
+
         if key not in days:
+
             days[key] = {
                 "date": key,
                 "fabricacao": [],
@@ -2308,23 +5418,52 @@ def production_by_day(
                 "montagem_total": 0.0,
                 "emergency_total": 0.0,
             }
+
         item = {
             "id": r.id,
             "model": r.model,
-            "quantity": float(r.quantity or 0),
-            "emergency_altered": float(r.emergency_altered or 0),
+            "quantity": float(
+                r.quantity or 0
+            ),
+            "emergency_altered": float(
+                r.emergency_altered or 0
+            ),
             "user_id": r.user_id,
             "notes": r.notes,
         }
-        if r.kind == "fabricacao":
-            days[key]["fabricacao"].append(item)
-            days[key]["fabricacao_total"] += item["quantity"]
-        else:
-            days[key]["montagem"].append(item)
-            days[key]["montagem_total"] += item["quantity"]
-            days[key]["emergency_total"] += item["emergency_altered"]
 
-    return sorted(days.values(), key=lambda x: x["date"], reverse=True)
+        if r.kind == "fabricacao":
+
+            days[key][
+                "fabricacao"
+            ].append(item)
+
+            days[key][
+                "fabricacao_total"
+            ] += item["quantity"]
+
+        else:
+
+            days[key][
+                "montagem"
+            ].append(item)
+
+            days[key][
+                "montagem_total"
+            ] += item["quantity"]
+
+            days[key][
+                "emergency_total"
+            ] += item[
+                "emergency_altered"
+            ]
+
+    return sorted(
+        days.values(),
+        key=lambda x: x["date"],
+        reverse=True,
+    )
+
 
 @app.get("/production/export")
 def export_production(
@@ -2334,25 +5473,85 @@ def export_production(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """JSON completo para backup (antes de apagar)."""
-    if not (_can_prod(user, "production") or _can_prod(user, "assembly")):
-        raise HTTPException(403, "Sem permissão")
-    q = select(ProductionRecord).order_by(
-        ProductionRecord.production_date, ProductionRecord.kind, ProductionRecord.model
+
+    if not (
+        _can_prod(
+            user,
+            "production",
+        )
+        or _can_prod(
+            user,
+            "assembly",
+        )
+    ):
+        raise HTTPException(
+            403,
+            "Sem permissão",
+        )
+
+    company = get_current_company(
+        user,
+        db,
     )
+
+    q = (
+        select(ProductionRecord)
+        .where(
+            ProductionRecord.company_id
+            == company.id
+        )
+        .order_by(
+            ProductionRecord.production_date,
+            ProductionRecord.kind,
+            ProductionRecord.model,
+        )
+    )
+
     if date_from:
-        q = q.where(ProductionRecord.production_date >= date_from)
+        q = q.where(
+            ProductionRecord.production_date
+            >= date_from
+        )
+
     if date_to:
-        q = q.where(ProductionRecord.production_date <= date_to)
-    if kind in ("fabricacao", "montagem"):
-        q = q.where(ProductionRecord.kind == kind)
+        q = q.where(
+            ProductionRecord.production_date
+            <= date_to
+        )
+
+    if kind in (
+        "fabricacao",
+        "montagem",
+    ):
+        q = q.where(
+            ProductionRecord.kind
+            == kind
+        )
+
     rows = db.scalars(q).all()
+
     return {
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "date_from": date_from.isoformat() if date_from else None,
-        "date_to": date_to.isoformat() if date_to else None,
+        "exported_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
+
+        "date_from":
+            date_from.isoformat()
+            if date_from
+            else None,
+
+        "date_to":
+            date_to.isoformat()
+            if date_to
+            else None,
+
         "count": len(rows),
-        "records": [serialize(r) for r in rows],
+
+        "records": [
+            serialize(r)
+            for r in rows
+        ],
     }
 
 
@@ -2360,7 +5559,7 @@ class ProductionPurgeBody(BaseModel):
     password: str
     date_from: date | None = None
     date_to: date | None = None
-    confirm_text: str  # deve ser APAGAR PRODUCAO
+    confirm_text: str
 
 
 @app.post("/production/purge")
@@ -2370,26 +5569,69 @@ def purge_production(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Apaga lançamentos (só depois do backup no front). Exige senha."""
-    if user.id != 1 and user.role != Role.ADMIN and user.role != Role.MANAGER:
-        # ajuste: só admin/gerente
-        if not getattr(user, "is_main_admin", False) and user.id != 1:
-            if user.role not in (Role.ADMIN, Role.MANAGER):
-                raise HTTPException(403, "Apenas administrador ou gerente")
-    if body.confirm_text.strip().upper() != "APAGAR PRODUCAO":
-        raise HTTPException(400, "Digite APAGAR PRODUCAO para confirmar")
-    if not verify_password(body.password, user.password_hash):
-        raise HTTPException(403, "Senha incorreta")
 
-    q = select(ProductionRecord)
+    if user.role not in (
+        Role.ADMIN,
+        Role.MANAGER,
+    ):
+        raise HTTPException(
+            403,
+            "Apenas administrador ou gerente",
+        )
+
+    if (
+        body.confirm_text
+        .strip()
+        .upper()
+        != "APAGAR PRODUCAO"
+    ):
+        raise HTTPException(
+            400,
+            "Digite APAGAR PRODUCAO para confirmar",
+        )
+
+    if not verify_password(
+        body.password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            403,
+            "Senha incorreta",
+        )
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    q = select(
+        ProductionRecord
+    ).where(
+        ProductionRecord.company_id
+        == company.id
+    )
+
     if body.date_from:
-        q = q.where(ProductionRecord.production_date >= body.date_from)
+        q = q.where(
+            ProductionRecord.production_date
+            >= body.date_from
+        )
+
     if body.date_to:
-        q = q.where(ProductionRecord.production_date <= body.date_to)
-    rows = db.scalars(q).all()
+        q = q.where(
+            ProductionRecord.production_date
+            <= body.date_to
+        )
+
+    rows = db.scalars(
+        q
+    ).all()
+
     n = len(rows)
+
     for r in rows:
         db.delete(r)
+
     audit(
         db,
         user,
@@ -2399,106 +5641,237 @@ def purge_production(
         request,
         details=f"Apagados {n} registros",
     )
+
     db.commit()
-    return {"ok": True, "deleted": n}
+
+    return {
+        "ok": True,
+        "deleted": n,
+    }
+
 
 # ============================================================
 # ESQUECI MINHA SENHA
 # ============================================================
 
 class ForgotPasswordBody(BaseModel):
-    username: str = Field(min_length=1, max_length=60)
-    email: str = Field(min_length=5, max_length=160)
+    username: str = Field(
+        min_length=1,
+        max_length=60,
+    )
+
+    email: str = Field(
+        min_length=5,
+        max_length=160,
+    )
 
 
 class ResetPasswordBody(BaseModel):
-    token: str = Field(min_length=20, max_length=200)
-    new_password: str = Field(min_length=3, max_length=200)
+    token: str = Field(
+        min_length=20,
+        max_length=200,
+    )
+
+    new_password: str = Field(
+        min_length=3,
+        max_length=200,
+    )
 
 
-def _hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+def _hash_token(
+    token: str,
+) -> str:
+
+    return hashlib.sha256(
+        token.encode("utf-8")
+    ).hexdigest()
 
 
-def _send_reset_email(to_email: str, reset_link: str) -> bool:
-    host = os.environ.get("SMTP_HOST")
-    user = os.environ.get("SMTP_USER")
-    password = os.environ.get("SMTP_PASSWORD")
-    port = int(os.environ.get("SMTP_PORT") or 587)
-    from_addr = os.environ.get("SMTP_FROM") or user
+def _send_reset_email(
+    to_email: str,
+    reset_link: str,
+) -> bool:
+
+    host = os.environ.get(
+        "SMTP_HOST"
+    )
+
+    user = os.environ.get(
+        "SMTP_USER"
+    )
+
+    password = os.environ.get(
+        "SMTP_PASSWORD"
+    )
+
+    port = int(
+        os.environ.get(
+            "SMTP_PORT"
+        )
+        or 587
+    )
+
+    from_addr = (
+        os.environ.get(
+            "SMTP_FROM"
+        )
+        or user
+    )
+
     if not host or not user or not password or not from_addr:
         return False
 
-    front = (os.environ.get("FRONTEND_URL") or "https://logisticasbill.vercel.app").rstrip("/")
-    logo_url = f"{front}/icon2.png"
+    front = (
+        os.environ.get(
+            "FRONTEND_URL"
+        )
+        or "https://logisticasbill.vercel.app"
+    ).rstrip("/")
+
+    logo_url = (
+        f"{front}/icon2.png"
+    )
 
     text = (
         "LOGÍSTICAS BILL — Redefinição de senha\n\n"
         "Recebemos um pedido para redefinir a senha da sua conta.\n"
-        f"Abra o link abaixo (válido por 1 hora):\n{reset_link}\n\n"
+        "Abra o link abaixo (válido por 1 hora):\n"
+        f"{reset_link}\n\n"
         "Se você não solicitou, ignore este e-mail.\n"
     )
-    html = f"""\
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-        <head><meta charset="utf-8"/></head>
-        <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#16253a;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:24px 12px;">
-            <tr><td align="center">
-              <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);">
-                <tr>
-                  <td style="background:#0f2846;padding:20px 24px;text-align:center;">
-                    <img src="{logo_url}" alt="Logísticas Bill" width="56" height="56" style="display:inline-block;border:0;"/>
-                    <div style="color:#ffffff;font-size:18px;font-weight:bold;margin-top:10px;letter-spacing:0.5px;">LOGÍSTICAS BILL</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:28px 24px;">
-                    <h1 style="margin:0 0 12px;font-size:20px;color:#0f2846;">Redefinição de senha</h1>
-                    <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#475569;">
-                      Recebemos um pedido para redefinir a senha da sua conta no sistema.
-                      Clique no botão abaixo. Este link é <strong>válido por 1 hora</strong>.
-                    </p>
-                    <p style="text-align:center;margin:28px 0;">
-                      <a href="{reset_link}"
-                         style="display:inline-block;background:#0e7490;color:#ffffff;text-decoration:none;
-                                font-size:14px;font-weight:bold;padding:12px 28px;border-radius:8px;">
-                        Redefinir minha senha
-                      </a>
-                    </p>
-                    <p style="margin:0 0 8px;font-size:12px;color:#64748b;line-height:1.4;">
-                      Se o botão não funcionar, copie e cole no navegador:<br/>
-                      <a href="{reset_link}" style="color:#0e7490;word-break:break-all;">{reset_link}</a>
-                    </p>
-                    <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">
-                      Se você não solicitou esta alteração, ignore este e-mail. Nenhuma senha será alterada.
-                    </p>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="background:#f8fafc;padding:14px 24px;text-align:center;font-size:11px;color:#94a3b8;">
-                    © Logísticas Bill — sistema interno · não responda este e-mail
-                  </td>
-                </tr>
-              </table>
-            </td></tr>
-          </table>
-        </body>
-        </html>
-        """
+
+    html = f"""
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+</head>
+
+<body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#16253a;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:24px 12px;">
+<tr>
+<td align="center">
+
+<table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;">
+
+<tr>
+<td style="background:#0f2846;padding:20px 24px;text-align:center;">
+
+<img
+src="{logo_url}"
+alt="Logísticas Bill"
+width="56"
+height="56"
+style="display:inline-block;border:0;"
+/>
+
+<div style="color:#ffffff;font-size:18px;font-weight:bold;margin-top:10px;">
+LOGÍSTICAS BILL
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="padding:28px 24px;">
+
+<h1 style="margin:0 0 12px;font-size:20px;color:#0f2846;">
+Redefinição de senha
+</h1>
+
+<p style="font-size:14px;line-height:1.5;color:#475569;">
+Recebemos um pedido para redefinir a senha da sua conta no sistema.
+Clique no botão abaixo. Este link é
+<strong>válido por 1 hora</strong>.
+</p>
+
+<p style="text-align:center;margin:28px 0;">
+
+<a
+href="{reset_link}"
+style="display:inline-block;background:#0e7490;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:8px;"
+>
+Redefinir minha senha
+</a>
+
+</p>
+
+<p style="font-size:12px;color:#64748b;line-height:1.4;">
+
+Se o botão não funcionar, copie e cole no navegador:
+
+<br/>
+
+<a
+href="{reset_link}"
+style="color:#0e7490;word-break:break-all;"
+>
+{reset_link}
+</a>
+
+</p>
+
+<p style="font-size:12px;color:#94a3b8;">
+Se você não solicitou esta alteração, ignore este e-mail.
+</p>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f8fafc;padding:14px 24px;text-align:center;font-size:11px;color:#94a3b8;">
+© Logísticas Bill — sistema interno
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+"""
+
     msg = EmailMessage()
-    msg["Subject"] = "Logísticas Bill — redefinir senha"
+
+    msg["Subject"] = (
+        "Logísticas Bill — redefinir senha"
+    )
+
     msg["From"] = from_addr
     msg["To"] = to_email
+
     msg.set_content(text)
-    msg.add_alternative(html, subtype="html")
+
+    msg.add_alternative(
+        html,
+        subtype="html",
+    )
+
     try:
-        with smtplib.SMTP(host, port, timeout=20) as s:
+
+        with smtplib.SMTP(
+            host,
+            port,
+            timeout=20,
+        ) as s:
+
             s.starttls()
-            s.login(user, password)
+
+            s.login(
+                user,
+                password,
+            )
+
             s.send_message(msg)
+
         return True
+
     except Exception:
+
         return False
 
 
@@ -2509,41 +5882,104 @@ def forgot_password(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    username = body.username.strip()
-    email = body.email.strip().lower()
-    u = db.scalar(select(User).where(User.username == username))
 
-    # Só gera token se usuário + e-mail cadastrado baterem
-    if u and (u.email or "").strip().lower() == email and u.active:
+    username = (
+        body.username
+        .strip()
+        .lower()
+    )
+
+    email = (
+        body.email
+        .strip()
+        .lower()
+    )
+
+    u = db.scalar(
+        select(User).where(
+            func.lower(
+                User.username
+            ) == username
+        )
+    )
+
+    if (
+        u
+        and (
+            u.email or ""
+        ).strip().lower()
+        == email
+        and u.active
+    ):
+
         for old in db.scalars(
-            select(PasswordResetToken).where(
-                PasswordResetToken.user_id == u.id,
-                PasswordResetToken.used_at.is_(None),
+            select(
+                PasswordResetToken
+            ).where(
+                PasswordResetToken.user_id
+                == u.id,
+                PasswordResetToken.used_at.is_(
+                    None
+                ),
             )
         ).all():
-            old.used_at = datetime.now(timezone.utc)
 
-        raw = secrets.token_urlsafe(32)
+            old.used_at = datetime.now(
+                timezone.utc
+            )
+
+        raw = secrets.token_urlsafe(
+            32
+        )
+
         db.add(
             PasswordResetToken(
                 user_id=u.id,
-                token_hash=_hash_token(raw),
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                token_hash=_hash_token(
+                    raw
+                ),
+                expires_at=(
+                    datetime.now(
+                        timezone.utc
+                    )
+                    + timedelta(hours=1)
+                ),
             )
         )
-        front = (os.environ.get("FRONTEND_URL") or "https://logisticasbill.vercel.app").rstrip("/")
-        link = f"{front}/?reset_token={raw}"
-        sent = _send_reset_email(email, link)
+
+        front = (
+            os.environ.get(
+                "FRONTEND_URL"
+            )
+            or "https://logisticasbill.vercel.app"
+        ).rstrip("/")
+
+        link = (
+            f"{front}/?reset_token={raw}"
+        )
+
+        sent = _send_reset_email(
+            email,
+            link,
+        )
+
         audit(
             db,
             u,
             "FORGOT_PASSWORD",
             "auth",
             request=request,
-            details="E-mail enviado" if sent else "Token gerado (SMTP ausente ou falhou)",
+            details=(
+                "E-mail enviado"
+                if sent
+                else "Token gerado (SMTP ausente ou falhou)"
+            ),
         )
+
         db.commit()
+
     else:
+
         audit(
             db,
             None,
@@ -2553,11 +5989,15 @@ def forgot_password(
             details="Usuário/e-mail não conferem",
             username_attempted=username[:120],
         )
+
         db.commit()
 
     return {
         "ok": True,
-        "detail": "Se os dados estiverem corretos, você receberá um e-mail com o link em alguns minutos.",
+        "detail": (
+            "Se os dados estiverem corretos, "
+            "você receberá um e-mail com o link em alguns minutos."
+        ),
     }
 
 
@@ -2568,30 +6008,97 @@ def reset_password(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    th = _hash_token(body.token.strip())
-    row = db.scalar(
-        select(PasswordResetToken).where(PasswordResetToken.token_hash == th)
+
+    th = _hash_token(
+        body.token.strip()
     )
+
+    row = db.scalar(
+        select(
+            PasswordResetToken
+        ).where(
+            PasswordResetToken.token_hash
+            == th
+        )
+    )
+
     if not row or row.used_at is not None:
-        raise HTTPException(400, "Link inválido ou já usado")
+        raise HTTPException(
+            400,
+            "Link inválido ou já usado",
+        )
+
     exp = row.expires_at
+
     if exp is None:
-        raise HTTPException(400, "Link inválido")
+        raise HTTPException(
+            400,
+            "Link inválido",
+        )
+
     if exp.tzinfo is None:
-        exp = exp.replace(tzinfo=timezone.utc)
+        exp = exp.replace(
+            tzinfo=timezone.utc
+        )
     else:
-        exp = exp.astimezone(timezone.utc)
-    if datetime.now(timezone.utc) >= exp:
-        raise HTTPException(400, "Link expirado. Solicite a redefinição novamente.")
+        exp = exp.astimezone(
+            timezone.utc
+        )
 
-    u = db.get(User, row.user_id)
+    if (
+        datetime.now(timezone.utc)
+        >= exp
+    ):
+        raise HTTPException(
+            400,
+            "Link expirado. Solicite a redefinição novamente.",
+        )
+
+    u = db.scalar(
+        select(User).where(
+            User.id == row.user_id
+        )
+    )
+
     if not u or not u.active:
-        raise HTTPException(400, "Usuário indisponível")
+        raise HTTPException(
+            400,
+            "Usuário indisponível",
+        )
 
-    u.password_hash = hash_password(body.new_password)
+    u.password_hash = hash_password(
+        body.new_password
+    )
+
     u.must_change_password = False
-    u.token_version = int(getattr(u, "token_version", 0) or 0) + 1
-    row.used_at = datetime.now(timezone.utc)
-    audit(db, u, "RESET_PASSWORD", "auth", request=request)
+
+    u.token_version = (
+        int(
+            getattr(
+                u,
+                "token_version",
+                0,
+            )
+            or 0
+        )
+        + 1
+    )
+
+    row.used_at = datetime.now(
+        timezone.utc
+    )
+
+    audit(
+        db,
+        u,
+        "RESET_PASSWORD",
+        "auth",
+        request=request,
+    )
+
     db.commit()
-    return {"ok": True, "detail": "Senha alterada. Faça login."}
+
+    return {
+        "ok": True,
+        "detail": "Senha alterada. Faça login.",
+    }
