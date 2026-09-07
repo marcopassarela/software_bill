@@ -1501,7 +1501,7 @@ function AccountPanel({
   }
 
   return (
-    <div className="absolute right-0 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg">
+    <div className="absolute right-4 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg">
       <div className="mb-3 flex items-center gap-3 border-b pb-3">
         {user.avatar_data ? (
           <img
