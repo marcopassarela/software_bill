@@ -206,12 +206,15 @@ const PERMISSION_GROUPS: {
   { module: 'users', label: 'Usuários' },
 ];
 
+/** Lista plana (compatível com expandPermissions / backend) */
 const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
   { value: g.module, label: g.label },
   ...(g.children || []),
 ]);
 
 function expandPermissions(keys: string[]): string[] {
+  // A aba-pai libera somente a visualização da aba. As ações internas são
+  // independentes e não podem ser expandidas automaticamente no salvamento.
   return Array.from(new Set(keys));
 }
 
@@ -585,10 +588,18 @@ export default function AppShell({
   const isMainAdmin = !!user.is_main_admin;
 
     const allowed = (key: string) => {
+    if (
+      (key === 'production' || key === 'assembly') &&
+      user?.current_unit === 'filial'
+    ) {
+      return false;
+    }
     if (isMainAdmin) return true;
-    const perms = user.permissions
-      ? String(user.permissions).split(',').filter(Boolean)
-      : null;
+    const rawPerms =
+      user?.current_unit === 'filial'
+        ? user.permissions_filial || user.permissions
+        : user.permissions;
+    const perms = rawPerms ? String(rawPerms).split(',').filter(Boolean) : null;
     if (perms) {
       if (perms.includes(key)) return true;
       if (key === 'production' && perms.includes('assembly')) return true;
@@ -612,6 +623,17 @@ export default function AppShell({
     });
     return first ? first[0] : '';
   });
+
+  // Filial não pode ficar em Produção
+  useEffect(() => {
+    if (user?.current_unit === 'filial' && page === 'production') {
+      const first = items.find(([k]) => {
+        if (k === 'critical') return isMainAdmin;
+        return allowed(k);
+      });
+      setPage(first ? first[0] : '');
+    }
+  }, [user?.current_unit, page]);
 
   // Se não tem acesso à página atual, vai para a primeira liberada
   useEffect(() => {
@@ -832,6 +854,9 @@ export default function AppShell({
   async function create(data: any) {
     setError('');
     try {
+      if (page === 'users' && !data.units_access) {
+        data = { ...data, units_access: 'matriz,filial' };
+      }
       if (page === 'entry' || page === 'output')
         await request('/stock/' + page, { method: 'POST', body: JSON.stringify(data) });
       else
@@ -1138,7 +1163,15 @@ export default function AppShell({
       <main className="min-w-0 flex-1 p-4 md:p-8">
 
         <header className="mb-7 flex items-center justify-between gap-3">
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">
+              {page ? titleFor(page) : 'Sem acesso'}
+            </h1>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+              {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
             <div className="relative" ref={accountMenuRef}>
               <button
                 type="button"
@@ -1412,7 +1445,10 @@ function AccountPanel({
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
-  const [tab, setTab] = useState<'conta' | 'senha' | 'foto'>('conta');
+  const [unitBusy, setUnitBusy] = useState(false);
+  const [unitMsg, setUnitMsg] = useState('');
+  const [unitErr, setUnitErr] = useState('');
+  const [tab, setTab] = useState<'conta' | 'unidade' | 'senha' | 'foto'>('conta');
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1435,6 +1471,33 @@ function AccountPanel({
       setSavingName(false);
     }
   }
+
+  async function switchUnit(next: 'matriz' | 'filial') {
+    if (user?.current_unit === next) return;
+    setUnitBusy(true);
+    setUnitErr('');
+    setUnitMsg('');
+    try {
+      const updated = await request('/auth/switch-unit', {
+        method: 'POST',
+        body: JSON.stringify({ unit: next }),
+      });
+      onUserUpdate(updated);
+      setUnitMsg(next === 'filial' ? 'Unidade: Filial' : 'Unidade: Matriz');
+    } catch (e: any) {
+      setUnitErr(e.message || 'Não foi possível trocar a unidade');
+    } finally {
+      setUnitBusy(false);
+    }
+  }
+
+  const unitsAccess = String(user?.units_access || 'matriz,filial')
+    .split(',')
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+  const canMatriz = !!user?.is_main_admin || unitsAccess.includes('matriz');
+  const canFilial = !!user?.is_main_admin || unitsAccess.includes('filial');
+  const canSwitch = canMatriz && canFilial;
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -1501,7 +1564,7 @@ function AccountPanel({
   }
 
   return (
-    <div className="fixed right-4 top-16 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg">
+    <div className="absolute right-0 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg">
       <div className="mb-3 flex items-center gap-3 border-b pb-3">
         {user.avatar_data ? (
           <img
@@ -1517,6 +1580,9 @@ function AccountPanel({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
           <p className="truncate text-xs text-slate-500">@{user.username}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-600">
+            {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+          </p>
         </div>
       </div>
 
@@ -1524,6 +1590,7 @@ function AccountPanel({
         {(
           [
             ['conta', 'Conta'],
+            ['unidade', 'Unidade'],
             ['senha', 'Senha'],
             ['foto', 'Foto'],
           ] as const
@@ -1578,6 +1645,47 @@ function AccountPanel({
           </form>
         )}
 
+        {tab === 'unidade' && (
+          <div className="space-y-2">
+            {unitErr && <p className="text-xs text-red-600">{unitErr}</p>}
+            {unitMsg && <p className="text-xs text-green-600">{unitMsg}</p>}
+            {canSwitch ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={unitBusy || user?.current_unit === 'matriz'}
+                  onClick={() => switchUnit('matriz')}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                    user?.current_unit !== 'filial'
+                      ? 'border-brand bg-brand text-white'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  } disabled:opacity-60`}
+                >
+                  1 — Matriz
+                </button>
+                <button
+                  type="button"
+                  disabled={unitBusy || user?.current_unit === 'filial'}
+                  onClick={() => switchUnit('filial')}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                    user?.current_unit === 'filial'
+                      ? 'border-brand bg-brand text-white'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  } disabled:opacity-60`}
+                >
+                  2 — Filial
+                </button>
+              </div>
+            ) : (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+                <span className="mt-0.5 block text-slate-500">
+                  Seu usuário só tem acesso a esta unidade.
+                </span>
+              </p>
+            )}
+          </div>
+        )}
 
         {tab === 'senha' && (
           <form onSubmit={submitPassword} className="space-y-2" autoComplete="off">
@@ -3203,9 +3311,16 @@ function EditUserForm({
     email: user.email || '',
     role: user.role || '',
     permissions: user.permissions || '',
+    permissions_filial: user.permissions_filial || '',
     active: user.active ? 'Sim' : 'Não',
     password: '',
   });
+  const [unitsAccess, setUnitsAccess] = useState<string[]>(
+    String(user.units_access || 'matriz,filial')
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+  );
   const [saving, setSaving] = useState(false);
 
   function set(key: string, v: string) {
@@ -3225,7 +3340,13 @@ function EditUserForm({
             String(values.permissions).split(',').filter(Boolean)
           ).join(',')
         : null,
+      permissions_filial: values.permissions_filial
+        ? expandPermissions(
+            String(values.permissions_filial).split(',').filter(Boolean)
+          ).join(',')
+        : null,
       active: values.active === 'Sim',
+      units_access: (unitsAccess.length ? unitsAccess : ['matriz']).join(','),
     };
     if (values.password) data.password = values.password;
     try {
@@ -3281,19 +3402,67 @@ function EditUserForm({
         </Wrapper>
         );
       })}
+      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="mb-2 text-sm font-medium text-slate-700">Acesso às unidades</p>
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={unitsAccess.includes('matriz')}
+              onChange={(e) => {
+                const s = new Set(unitsAccess);
+                if (e.target.checked) s.add('matriz');
+                else s.delete('matriz');
+                setUnitsAccess(Array.from(s));
+              }}
+            />
+            1 — Matriz
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={unitsAccess.includes('filial')}
+              onChange={(e) => {
+                const s = new Set(unitsAccess);
+                if (e.target.checked) s.add('filial');
+                else s.delete('filial');
+                setUnitsAccess(Array.from(s));
+              }}
+            />
+            2 — Filial
+          </label>
+        </div>
+                <p className="mt-1 text-xs text-slate-500">
+          Define em qual unidade este usuário pode entrar no login.
+        </p>
+      </div>
 
       <div className="sm:col-span-2 space-y-4">
         <div className="rounded-xl border border-slate-200 p-3">
           <p className="mb-2 text-sm font-semibold text-slate-800">
-            Permissões
+            Permissões na Matriz
           </p>
           <p className="mb-2 text-xs text-slate-500">
-            Abas e botões liberados para este usuário.
+            Abas e botões quando o usuário estiver na unidade Matriz.
           </p>
           <PermissionsField
             value={values.permissions}
             onChange={(v) => set('permissions', v)}
             startOpen={!!user.permissions}
+          />
+        </div>
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="mb-2 text-sm font-semibold text-slate-800">
+            Permissões na Filial
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            Liberado pela Matriz. Vale quando o usuário estiver na Filial.
+            Produção não se aplica à Filial.
+          </p>
+          <PermissionsField
+            value={values.permissions_filial}
+            onChange={(v) => set('permissions_filial', v)}
+            startOpen={!!user.permissions_filial}
           />
         </div>
       </div>
@@ -3520,7 +3689,14 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     extras: true,
   });
 
-  const perms = String(user.permissions || '')
+  // As permissões são específicas da unidade ativa. Antes este componente
+  // sempre lia user.permissions (Matriz), fazendo a agenda da Filial aparecer
+  // sem os botões/campos liberados em permissions_filial.
+  const activePermissions =
+    user?.current_unit === 'filial'
+      ? user.permissions_filial || user.permissions
+      : user.permissions;
+  const perms = String(activePermissions || '')
     .split(',')
     .map((p: string) => p.trim())
     .filter(Boolean);

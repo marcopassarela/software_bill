@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyCookie
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
-
 from .config import get_settings
 from .database import get_db
 from .models import User, Role
@@ -30,6 +29,11 @@ MODULES = {
     Role.MONTAGEM: {"dashboard", "production", "assembly"},
 }
 
+# Módulos onde view e edição são diferentes: só os perfis listados aqui podem
+# criar/editar/excluir. Quem tem o módulo em MODULES mas não está aqui só
+# consegue ler (GET). Perfis com permissões customizadas (user.permissions
+# preenchido) continuam com acesso total de leitura/escrita aos módulos
+# liberados, como já era antes.
 WRITE_ONLY_ROLES = {
     "schedule": {Role.ADMIN, Role.MANAGER},
 }
@@ -43,18 +47,21 @@ def verify_password(password: str, hashed: str):
     return password_hash.verify(password, hashed)
 
 
-def token_for(user: User):
+def token_for(user: User, unit: str = "matriz"):
     s = get_settings()
+    unit = (unit or "matriz").strip().lower()
+    if unit not in ("matriz", "filial"):
+        unit = "matriz"
     return jwt.encode(
         {
             "sub": str(user.id),
             "ver": int(getattr(user, "token_version", 0) or 0),
+            "unit": unit,
             "exp": datetime.now(timezone.utc) + timedelta(minutes=s.access_token_minutes),
         },
         s.auth_secret,
         algorithm="HS256",
     )
-
 
 def clear_block(u: User):
     u.active = True
@@ -110,6 +117,7 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
     was_inactive = not user.active
     still_blocked = apply_auto_unblock(user)
     if was_inactive and not still_blocked:
+        # auto-liberou scheduled
         db.commit()
     if still_blocked:
         raise HTTPException(status_code=403, detail=block_detail(user))
@@ -122,7 +130,15 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
             detail="Sessão encerrada. Faça login novamente.",
         )
 
-    user._session_unit = "matriz"
+    unit = (data.get("unit") or "matriz")
+    if isinstance(unit, str):
+        unit = unit.strip().lower()
+    else:
+        unit = "matriz"
+    if unit not in ("matriz", "filial"):
+        unit = "matriz"
+    # unidade da sessão (login) — usada em serialize_user / filtros futuros
+    user._session_unit = unit
     return user
 
 
@@ -133,7 +149,19 @@ def require(module: str, write: bool = False):
             grants = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
         else:
             grants = set(MODULES.get(user.role, set()))
+        unit = getattr(user, "_session_unit", None) or "matriz"
+        if str(unit).strip().lower() == "filial":
+            raw = getattr(user, "permissions_filial", None) or user.permissions
+        else:
+            raw = user.permissions
 
+        has_custom_permissions = bool(raw)
+        if has_custom_permissions:
+            grants = {p.strip() for p in (raw or "").split(",") if p.strip()}
+        else:
+            grants = set(MODULES.get(user.role, set()))
+
+        # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders"
         if module == "orders":
             if "*" in grants or "orders" in grants:
                 pass
@@ -144,6 +172,7 @@ def require(module: str, write: bool = False):
                         detail="Sem permissão para este módulo",
                     )
             else:
+                # leitura (lista)
                 if "orders_list" not in grants and "orders_create" not in grants:
                     raise HTTPException(
                         status_code=403,
@@ -152,6 +181,10 @@ def require(module: str, write: bool = False):
         elif (
             "*" not in grants
             and module not in grants
+            # A interface permite liberar apenas uma ação da Agenda
+            # (schedule_edit, schedule_week etc.). Essas permissões também
+            # precisam liberar a leitura inicial de /schedule/weeks; antes a
+            # API respondia 403 porque exigia literalmente "schedule".
             and not (
                 module == "schedule"
                 and any(p.startswith("schedule_") for p in grants)
@@ -159,6 +192,10 @@ def require(module: str, write: bool = False):
         ):
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
 
+        # Em permissões customizadas, "schedule" sozinho representa apenas
+        # acesso de consulta à aba. Ações de escrita exigem uma permissão
+        # interna (schedule_edit, schedule_week, etc.). Perfis padrão seguem
+        # a regra de escrita definida em WRITE_ONLY_ROLES.
         if (
             write
             and module == "schedule"
@@ -178,7 +215,6 @@ def require(module: str, write: bool = False):
                 status_code=403,
                 detail="Você só pode consultar este módulo, não editar",
             )
-
         if user.must_change_password and module != "auth":
             raise HTTPException(
                 status_code=403,
@@ -193,8 +229,9 @@ def main_admin(user: User = Depends(current_user)):
     if user.id != 1 or user.role not in (Role.ADMIN, Role.MONTAGEM):
         raise HTTPException(
             status_code=403,
-            detail="Apenas o Administrador Principal pode executar esta ação",
+            detail="Apenas o Administrador Principal pode executar esta ação"
         )
+
     return user
 
 
@@ -214,15 +251,17 @@ def audit(
 
     headers = request.headers if request else {}
 
+    # Usa a localização autorizada pelo navegador quando existir.
+    # Se não existir, utiliza a localização aproximada fornecida pela Vercel.
     client_latitude = (
         str(latitude)
         if latitude is not None
-        else headers.get("x-vercel-ip-latitude")
+        else headers.get('x-vercel-ip-latitude')
     )
     client_longitude = (
         str(longitude)
         if longitude is not None
-        else headers.get("x-vercel-ip-longitude")
+        else headers.get('x-vercel-ip-longitude')
     )
 
     db.add(
@@ -232,9 +271,9 @@ def audit(
             module=module,
             record_id=str(record_id) if record_id else None,
             ip=request.client.host if request and request.client else None,
-            country=headers.get("x-vercel-ip-country"),
-            region=headers.get("x-vercel-ip-country-region"),
-            city=headers.get("x-vercel-ip-city"),
+            country=headers.get('x-vercel-ip-country'),
+            region=headers.get('x-vercel-ip-country-region'),
+            city=headers.get('x-vercel-ip-city'),
             latitude=client_latitude,
             longitude=client_longitude,
             username_attempted=username_attempted,
