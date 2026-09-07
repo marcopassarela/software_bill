@@ -91,13 +91,6 @@ class Company(Base):
     # PLANO DA EMPRESA
     # =========================================================
 
-    plan: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="essencial",
-        server_default="essencial"
-    )
-
     # =========================================================
     # STATUS DA ASSINATURA
     # =========================================================
@@ -205,17 +198,17 @@ class Customer(Base):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(160), index=True)
-    document: Mapped[str | None] = mapped_column(String(24))
-    phone: Mapped[str | None] = mapped_column(String(30))
-    address: Mapped[str | None] = mapped_column(String(255))
-    city: Mapped[str | None] = mapped_column(String(80))
-    state: Mapped[str | None] = mapped_column(String(2))
-    zip_code: Mapped[str | None] = mapped_column(String(12))
-    latitude: Mapped[str | None] = mapped_column(String(30))
-    longitude: Mapped[str | None] = mapped_column(String(30))
-    maps_url: Mapped[str | None] = mapped_column(String(500))
-    notes: Mapped[str | None] = mapped_column(Text)
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(160),
+        index=True
+    )
 
 
 class Vehicle(Base):
