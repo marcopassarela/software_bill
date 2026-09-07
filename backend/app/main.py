@@ -2691,3 +2691,76 @@ def reset_password(
     audit(db, u, "RESET_PASSWORD", "auth", request=request)
     db.commit()
     return {"ok": True, "detail": "Senha alterada. Faça login."}
+
+class CompanyRegister(BaseModel):
+    plan: str = Field(pattern="^(essencial|profissional|empresarial)$")
+    company_name: str = Field(min_length=2, max_length=160)
+    company_document: str | None = None
+    company_phone: str | None = None
+    admin_name: str = Field(min_length=2, max_length=120)
+    admin_username: str = Field(min_length=3, max_length=60)
+    admin_email: str = Field(min_length=5, max_length=160)
+    admin_password: str = Field(min_length=6, max_length=200)
+
+
+@app.post("/auth/register-company")
+@limiter.limit("5/minute")
+def register_company(
+    body: CompanyRegister,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    email = body.admin_email.strip().lower()
+    username = body.admin_username.strip().lower()
+
+    if "@" not in email:
+        raise HTTPException(422, "E-mail inválido")
+
+    exists = db.scalar(
+        select(User).where(
+            (User.username == username) | (User.email == email)
+        )
+    )
+    if exists:
+        raise HTTPException(409, "Usuário ou e-mail já cadastrado")
+
+    u = User(
+        name=body.admin_name.strip(),
+        username=username,
+        email=email,
+        password_hash=hash_password(body.admin_password),
+        role=Role.ADMIN,
+        active=True,
+        must_change_password=False,
+        plan=body.plan,
+        units_access="matriz,filial",
+        permissions=None,
+    )
+    db.add(u)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Usuário ou e-mail já cadastrado")
+
+    audit(
+        db,
+        u,
+        "CADASTRO_EMPRESA",
+        "auth",
+        u.id,
+        request,
+        details=f"Empresa: {body.company_name} | Plano: {body.plan}",
+    )
+    db.commit()
+
+    # TODO: integrar Asaas de verdade (criar cliente + assinatura)
+    # Por enquanto retorna null — na próxima etapa geramos o payment_url
+    payment_url = None
+
+    return {
+        "ok": True,
+        "user_id": u.id,
+        "plan": body.plan,
+        "payment_url": payment_url,
+    }

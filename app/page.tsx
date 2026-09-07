@@ -51,7 +51,58 @@ export default function Home() {
   const [resetPass, setResetPass] = useState('');
   const [resetPass2, setResetPass2] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
+  const [signupOpen, setSignupOpen] = useState(false);
+  const [signupStep, setSignupStep] = useState<'form' | 'payment'>('form');
+  const [signupBusy, setSignupBusy] = useState(false);
+  const [signupError, setSignupError] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState<'essencial' | 'profissional' | 'empresarial'>('essencial');
+  const [companyName, setCompanyName] = useState('');
+  const [companyDoc, setCompanyDoc] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [adminName, setAdminName] = useState('');
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [unit, setUnit] = useState<'matriz' | 'filial'>('matriz');
+
+  const SIGNUP_PLANS = [
+  { key: 'essencial' as const, name: 'Essencial', price: 'R$ 39,90', users: 1 },
+  { key: 'profissional' as const, name: 'Profissional', price: 'R$ 69,90', users: 3 },
+  { key: 'empresarial' as const, name: 'Empresarial', price: 'R$ 119,90', users: 6 },
+  ];
+
+  async function submitSignup(e: React.FormEvent) {
+  e.preventDefault();
+  setSignupError('');
+  if (adminPassword.length < 6) {
+    setSignupError('A senha deve ter no mínimo 6 caracteres.');
+    return;
+  }
+  setSignupBusy(true);
+  try {
+    const res = await request('/auth/register-company', {
+      method: 'POST',
+      body: JSON.stringify({
+        plan: selectedPlan,
+        company_name: companyName,
+        company_document: companyDoc,
+        company_phone: companyPhone,
+        admin_name: adminName,
+        admin_username: adminUsername,
+        admin_email: adminEmail,
+        admin_password: adminPassword,
+      }),
+    });
+    // Vai para tela de pagamento
+    setPaymentUrl(res.payment_url || null);
+    setSignupStep('payment');
+  } catch (err: any) {
+    setSignupError(err?.message || 'Erro ao criar conta');
+  } finally {
+    setSignupBusy(false);
+  }
+}
 
   useEffect(() => {
     function handleSessionExpired() {
@@ -535,6 +586,18 @@ export default function Home() {
             {busy ? 'Entrando…' : 'Entrar'}
           </button>
           <button
+            type="button"
+            onClick={() => {
+              setSignupOpen(true);
+              setSignupStep('form');
+              setSignupError('');
+              setPaymentUrl(null);
+            }}
+            className="mt-3 w-full rounded-lg border border-brand bg-white p-2.5 text-sm font-semibold text-brand hover:bg-brand/5"
+            >
+            Criar conta da empresa
+          </button>
+          <button
              type="button"
              onClick={() => {
                setForgotOpen(true);
@@ -546,6 +609,186 @@ export default function Home() {
               Esqueci minha senha
           </button>
         </form>
+        {signupOpen && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl my-8">
+      {signupStep === 'form' ? (
+        <>
+          <h3 className="text-xl font-bold text-slate-900">Criar conta da empresa</h3>
+          <p className="mt-1 text-sm text-slate-500">Preencha os dados e escolha o plano.</p>
+
+          <form onSubmit={submitSignup} className="mt-5 space-y-4">
+            {/* Planos */}
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-700">Escolha o plano</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {SIGNUP_PLANS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setSelectedPlan(p.key)}
+                    className={`rounded-xl border p-3 text-left transition ${
+                      selectedPlan === p.key
+                        ? 'border-brand bg-brand/5 ring-2 ring-brand/30'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <p className="font-semibold text-slate-900">{p.name}</p>
+                    <p className="mt-1 text-lg font-bold text-brand">{p.price}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Até {p.users} {p.users === 1 ? 'usuário' : 'usuários'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Empresa */}
+            <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-700">Dados da empresa</p>
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">Nome da empresa *</span>
+                <input
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-600">CNPJ / CPF</span>
+                  <input
+                    value={companyDoc}
+                    onChange={(e) => setCompanyDoc(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                    placeholder="Opcional"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-600">Telefone</span>
+                  <input
+                    value={companyPhone}
+                    onChange={(e) => setCompanyPhone(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                    placeholder="Opcional"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Admin */}
+            <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-700">Usuário administrador</p>
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">Nome completo *</span>
+                <input
+                  value={adminName}
+                  onChange={(e) => setAdminName(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">Usuário (login) *</span>
+                <input
+                  value={adminUsername}
+                  onChange={(e) => setAdminUsername(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">E-mail *</span>
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-600">Senha * (mínimo 6 caracteres)</span>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                />
+              </label>
+            </div>
+
+            {signupError && <p className="text-sm text-red-600">{signupError}</p>}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSignupOpen(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Voltar
+              </button>
+              <button
+                type="submit"
+                disabled={signupBusy}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {signupBusy ? 'Criando…' : 'Criar conta'}
+              </button>
+            </div>
+          </form>
+        </>
+      ) : (
+        /* Tela de pagamento */
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl">
+                ✓
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">Conta criada!</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Plano selecionado:{' '}
+                <strong>
+                  {SIGNUP_PLANS.find((p) => p.key === selectedPlan)?.name} —{' '}
+                  {SIGNUP_PLANS.find((p) => p.key === selectedPlan)?.price}/mês
+                </strong>
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Finalize o pagamento da mensalidade para ativar o acesso.
+              </p>
+          
+              {paymentUrl ? (
+                <a
+                  href={paymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-brand px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+                >
+                  Ir para o pagamento (Asaas)
+                </a>
+              ) : (
+                <p className="mt-6 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Link de pagamento em configuração. Entre em contato com o suporte.
+                </p>
+              )}
+    
+              <button
+                type="button"
+                onClick={() => {
+                  setSignupOpen(false);
+                  setSignupStep('form');
+                }}
+                className="mt-3 w-full text-sm text-slate-500 hover:text-brand hover:underline"
+              >
+                Voltar ao login
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
       </div>
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
