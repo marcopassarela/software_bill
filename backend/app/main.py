@@ -851,7 +851,7 @@ def movements(
 
 
 @app.post("/stock/{kind}")
-@limiter.limit("30/minute")
+# @limiter.limit("30/minute")
 def stock(
     kind: str,
     body: Movement,
