@@ -182,6 +182,23 @@ def company_condition(
 
     return model.company_id == company.id
 
+def normalize_cpf(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    digits = "".join(c for c in str(value) if c.isdigit())
+
+    if not digits:
+        return None
+
+    if len(digits) != 11:
+        raise HTTPException(
+            status_code=422,
+            detail="CPF deve conter 11 dígitos.",
+        )
+
+    return digits
+
 
 # ============================================================
 # ERROS
@@ -457,29 +474,30 @@ def model_data(
     }
 
 
-def normalize_cpf(
+def normalize_company_document(
     value: Any,
 ) -> str | None:
-
     if value is None:
         return None
 
     digits = "".join(
-        c
-        for c in str(value)
+        c for c in str(value)
         if c.isdigit()
     )
 
     if not digits:
         return None
 
-    if len(digits) != 11:
-        raise HTTPException(
-            422,
-            "CPF deve ter 11 dígitos",
-        )
+    if len(digits) == 11:
+        return digits
 
-    return digits
+    if len(digits) == 14:
+        return digits
+
+    raise HTTPException(
+        status_code=422,
+        detail="Informe um CPF com 11 dígitos ou um CNPJ com 14 dígitos.",
+    )
 
 
 # ============================================================
@@ -493,10 +511,6 @@ def health():
     }
 
 
-# ============================================================
-# CADASTRO DE EMPRESA (self-service signup)
-# ============================================================
-
 class RegisterCompanyBody(BaseModel):
     plan: str = "essencial"
     company_name: str = Field(min_length=1, max_length=160)
@@ -508,6 +522,31 @@ class RegisterCompanyBody(BaseModel):
     admin_password: str = Field(min_length=6, max_length=200)
 
 
+def normalize_company_document(
+    value: Any,
+) -> str | None:
+    if value is None:
+        return None
+
+    digits = "".join(
+        c for c in str(value)
+        if c.isdigit()
+    )
+
+    if not digits:
+        return None
+
+    if len(digits) not in (11, 14):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Informe um CPF com 11 dígitos "
+                "ou um CNPJ com 14 dígitos."
+            ),
+        )
+
+    return digits
+
 @app.post("/auth/register-company")
 @limiter.limit("5/minute")
 def register_company(
@@ -515,40 +554,162 @@ def register_company(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    plan_key = (body.plan or "essencial").strip().lower()
+    company_document = normalize_company_document(
+        body.company_document
+    )
+
+    if not company_document:
+        raise HTTPException(
+            status_code=422,
+            detail="CPF ou CNPJ da empresa é obrigatório.",
+        )
+
+    duplicate_document = db.scalar(
+        select(Company).where(
+            Company.document == company_document
+        )
+    )
+
+    if duplicate_document:
+        document_type = (
+            "CPF"
+            if len(company_document) == 11
+            else "CNPJ"
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Este {document_type} já está cadastrado "
+                "em uma empresa."
+            ),
+        )
+    
+    def normalize_company_document(value: Any) -> str | None:
+        if value is None:
+            return None
+
+        digits = "".join(
+            c for c in str(value)
+            if c.isdigit()
+        )
+
+        if not digits:
+            return None
+
+        if len(digits) not in (11, 14):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Informe um CPF com 11 dígitos "
+                    "ou um CNPJ com 14 dígitos."
+                ),
+            )
+
+        return digits
+
+    # ---------------------------------------------------------
+    # CPF/CNPJ da empresa
+    # ---------------------------------------------------------
+    company_document = normalize_company_document(
+        body.company_document
+    )
+
+    if not company_document:
+        raise HTTPException(
+            status_code=422,
+            detail="CPF ou CNPJ da empresa é obrigatório.",
+        )
+
+    # Verifica se o CPF/CNPJ já pertence a uma empresa
+    existing_company = db.scalar(
+        select(Company).where(
+            Company.document == company_document
+        )
+    )
+
+    if existing_company:
+        document_type = (
+            "CPF"
+            if len(company_document) == 11
+            else "CNPJ"
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Este {document_type} já está cadastrado "
+                "em uma empresa."
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # Plano
+    # ---------------------------------------------------------
+    plan_key = (
+        body.plan or "essencial"
+    ).strip().lower()
+
     if plan_key not in PLAN_LIMITS:
         plan_key = "essencial"
 
+    # ---------------------------------------------------------
+    # Usuário administrador
+    # ---------------------------------------------------------
     username = body.admin_username.strip().lower()
+
     if not username:
-        raise HTTPException(422, "Usuário é obrigatório")
+        raise HTTPException(
+            422,
+            "Usuário é obrigatório",
+        )
 
     email = body.admin_email.strip().lower()
+
     if "@" not in email:
-        raise HTTPException(422, "E-mail inválido")
+        raise HTTPException(
+            422,
+            "E-mail inválido",
+        )
 
+    # O username precisa ser único no sistema
     duplicate_username = db.scalar(
-        select(User).where(func.lower(User.username) == username)
+        select(User).where(
+            func.lower(User.username) == username
+        )
     )
-    if duplicate_username:
-        raise HTTPException(409, "Este nome de usuário já está em uso")
 
+    if duplicate_username:
+        raise HTTPException(
+            409,
+            "Este nome de usuário já está em uso",
+        )
+
+    # ---------------------------------------------------------
+    # Cria empresa
+    # ---------------------------------------------------------
     company = Company(
         name=body.company_name.strip(),
-        document=(body.company_document or "").strip() or None,
+        document=company_document,
         phone=(body.company_phone or "").strip() or None,
         email=email,
         plan=plan_key,
     )
+
     db.add(company)
+
     try:
         db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
-            409, "Não foi possível criar a empresa. Tente novamente."
+            409,
+            "Este CPF/CNPJ já está cadastrado ou não foi possível criar a empresa.",
         ) from exc
 
+    # ---------------------------------------------------------
+    # Cria proprietário da empresa
+    # ---------------------------------------------------------
     admin = User(
         company_id=company.id,
         name=body.admin_name.strip(),
@@ -559,23 +720,46 @@ def register_company(
         is_owner=True,
         must_change_password=False,
     )
+
     db.add(admin)
+
     try:
         db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
-            409, "Nome de usuário ou e-mail já está em uso"
+            409,
+            "Nome de usuário ou e-mail já está em uso",
         ) from exc
 
-    audit(db, admin, "CRIAÇÃO_DE_EMPRESA", "company", company.id, request)
-    audit(db, admin, "CRIAÇÃO_DE_USUÁRIO", "users", admin.id, request)
+    # ---------------------------------------------------------
+    # Auditoria
+    # ---------------------------------------------------------
+    audit(
+        db,
+        admin,
+        "CRIAÇÃO_DE_EMPRESA",
+        "company",
+        company.id,
+        request,
+    )
+
+    audit(
+        db,
+        admin,
+        "CRIAÇÃO_DE_USUÁRIO",
+        "users",
+        admin.id,
+        request,
+    )
+
     db.commit()
 
     return {
         "ok": True,
         "company": serialize(company),
         "user": serialize_user(admin, company),
+
         # Integração de cobrança (Asaas) ainda não conectada.
         "payment_url": None,
     }

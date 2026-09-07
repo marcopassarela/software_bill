@@ -1,6 +1,7 @@
 import enum
 
-from datetime import datetime, date
+from datetime import date as date_type, datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 from sqlalchemy import (
     Boolean,
@@ -74,9 +75,10 @@ class Company(Base):
     )
 
     document: Mapped[str | None] = mapped_column(
-        String(24),
-        nullable=True,
-        index=True,
+    String(14),
+    nullable=True,
+    unique=True,
+    index=True,
     )
 
     email: Mapped[str | None] = mapped_column(
@@ -1172,10 +1174,10 @@ class RouteSlot(Base):
         nullable=False,
     )
 
-    date: Mapped[date] = mapped_column(
-        Date,
-        index=True,
-        nullable=False,
+    date: Mapped[date_type] = mapped_column(
+    Date,
+    index=True,
+    nullable=False,
     )
 
     region_code: Mapped[str] = mapped_column(
