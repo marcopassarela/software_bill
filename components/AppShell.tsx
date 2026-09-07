@@ -588,14 +588,10 @@ export default function AppShell({
   const isMainAdmin = !!user.is_main_admin;
 
     const allowed = (key: string) => {
-    if (
-      (key === 'production' || key === 'assembly') &&
-      user?.current_unit === 'filial'
-    ) {
-      return false;
-    }
     if (isMainAdmin) return true;
-    const perms = rawPerms ? String(rawPerms).split(',').filter(Boolean) : null;
+    const perms = user.permissions
+      ? String(user.permissions).split(',').filter(Boolean)
+      : null;
     if (perms) {
       if (perms.includes(key)) return true;
       if (key === 'production' && perms.includes('assembly')) return true;
@@ -619,17 +615,6 @@ export default function AppShell({
     });
     return first ? first[0] : '';
   });
-
-  // Filial não pode ficar em Produção
-  useEffect(() => {
-    if (user?.current_unit === 'filial' && page === 'production') {
-      const first = items.find(([k]) => {
-        if (k === 'critical') return isMainAdmin;
-        return allowed(k);
-      });
-      setPage(first ? first[0] : '');
-    }
-  }, [user?.current_unit, page]);
 
   // Se não tem acesso à página atual, vai para a primeira liberada
   useEffect(() => {
@@ -1430,8 +1415,7 @@ function AccountPanel({
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
-  const [unitBusy, setUnitBusy] = useState(false);
-  const [tab, setTab] = useState<'conta' | 'unidade' | 'senha' | 'foto'>('conta');
+  const [tab, setTab] = useState<'conta' | 'senha' | 'foto'>('conta');
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1536,9 +1520,6 @@ function AccountPanel({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
           <p className="truncate text-xs text-slate-500">@{user.username}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-600">
-            {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
-          </p>
         </div>
       </div>
 
@@ -1546,7 +1527,6 @@ function AccountPanel({
         {(
           [
             ['conta', 'Conta'],
-            ['unidade', 'Unidade'],
             ['senha', 'Senha'],
             ['foto', 'Foto'],
           ] as const
@@ -3235,6 +3215,29 @@ function EditUserForm({
     setValues((s: any) => ({ ...s, [key]: v }));
   }
 
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const data: any = {
+      name: values.name,
+      username: values.username,
+      email: (values.email || '').trim().toLowerCase(),
+      role: values.role,
+      permissions: values.permissions
+        ? expandPermissions(
+            String(values.permissions).split(',').filter(Boolean)
+          ).join(',')
+        : null,
+      active: values.active === 'Sim',
+    };
+    if (values.password) data.password = values.password;
+    try {
+      await onSubmit(data);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" autoComplete="off">
       {USER_EDIT_FIELDS.map((f) => {
@@ -3284,24 +3287,16 @@ function EditUserForm({
 
       <div className="sm:col-span-2 space-y-4">
         <div className="rounded-xl border border-slate-200 p-3">
+          <p className="mb-2 text-sm font-semibold text-slate-800">
+            Permissões
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            Abas e botões liberados para este usuário.
+          </p>
           <PermissionsField
             value={values.permissions}
             onChange={(v) => set('permissions', v)}
             startOpen={!!user.permissions}
-          />
-        </div>
-        <div className="rounded-xl border border-slate-200 p-3">
-          <p className="mb-2 text-sm font-semibold text-slate-800">
-            Permissões na Filial
-          </p>
-          <p className="mb-2 text-xs text-slate-500">
-            Liberado pela Matriz. Vale quando o usuário estiver na Filial.
-            Produção não se aplica à Filial.
-          </p>
-          <PermissionsField
-            value={values.permissions_filial}
-            onChange={(v) => set('permissions_filial', v)}
-            startOpen={!!user.permissions_filial}
           />
         </div>
       </div>
@@ -3528,14 +3523,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     extras: true,
   });
 
-  // As permissões são específicas da unidade ativa. Antes este componente
-  // sempre lia user.permissions (Matriz), fazendo a agenda da Filial aparecer
-  // sem os botões/campos liberados em permissions_filial.
-  const activePermissions =
-    user?.current_unit === 'filial'
-      ? user.permissions_filial || user.permissions
-      : user.permissions;
-  const perms = String(activePermissions || '')
+  const perms = String(user.permissions || '')
     .split(',')
     .map((p: string) => p.trim())
     .filter(Boolean);
