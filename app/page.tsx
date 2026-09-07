@@ -497,34 +497,6 @@ export default function Home() {
             autoComplete="current-password"
             className="..."
           />
-      
-          <div className="mt-4">
-            <p className="mb-2 text-sm font-medium text-slate-700">Unidade</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setUnit('matriz')}
-                className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
-                  unit === 'matriz'
-                    ? 'border-brand bg-brand text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                1 — Matriz
-              </button>
-              <button
-                type="button"
-                onClick={() => setUnit('filial')}
-                className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${
-                  unit === 'filial'
-                    ? 'border-brand bg-brand text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                2 — Filial
-              </button>
-            </div>
-          </div>
 
           <button
             type="submit"
