@@ -51,7 +51,6 @@ export default function Home() {
   const [resetPass, setResetPass] = useState('');
   const [resetPass2, setResetPass2] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
-  const [unit, setUnit] = useState<'matriz' | 'filial'>('matriz');
 
   useEffect(() => {
     function handleSessionExpired() {

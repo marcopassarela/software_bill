@@ -183,7 +183,6 @@ class Movement(BaseModel):
     vehicle_id: int | None = None
     observation: str | None = None
     invoice: str | None = None
-    unit_value: float | None = None
 
 
 class MovementEdit(BaseModel):
@@ -195,7 +194,6 @@ class MovementEdit(BaseModel):
     vehicle_id: int | None = None
     observation: str | None = None
     invoice: str | None = None
-    unit_value: float | None = None
 
 
 class MovementDelete(BaseModel):
@@ -404,7 +402,6 @@ def login(
     db.commit()
     response.set_cookie(
     "gl_session",
-    token_for(u), 
     httponly=True,
     secure=settings.cookie_secure,
     samesite="lax",
@@ -888,7 +885,6 @@ def stock(
         vehicle_id=body.vehicle_id,
         observation=body.observation,
         invoice=body.invoice,
-        unit_value=body.unit_value,
     )
     db.add(m)
     db.flush()
@@ -927,7 +923,6 @@ def edit_movement(
         ("vehicle_id", body.vehicle_id),
         ("observation", body.observation),
         ("invoice", body.invoice),
-        ("unit_value", body.unit_value),
     ):
         if val is not None:
             setattr(m, field, val)
@@ -2308,10 +2303,6 @@ class ResetPasswordBody(BaseModel):
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-def session_unit(user: User) -> str:
-    return "matriz"
-
 
 def _send_reset_email(to_email: str, reset_link: str) -> bool:
     host = os.environ.get("SMTP_HOST")
