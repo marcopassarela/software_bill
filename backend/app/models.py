@@ -278,6 +278,15 @@ class User(Base):
         nullable=True,
     )
 
+    # Marca o usuário que criou/é o dono da empresa (não pode ser
+    # excluído, bloqueado ou rebaixado por outro admin da mesma empresa).
+    is_owner: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+
 
 # ============================================================
 # LOG DE AUDITORIA

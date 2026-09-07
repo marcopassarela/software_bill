@@ -494,6 +494,94 @@ def health():
 
 
 # ============================================================
+# CADASTRO DE EMPRESA (self-service signup)
+# ============================================================
+
+class RegisterCompanyBody(BaseModel):
+    plan: str = "essencial"
+    company_name: str = Field(min_length=1, max_length=160)
+    company_document: str | None = None
+    company_phone: str | None = None
+    admin_name: str = Field(min_length=1, max_length=120)
+    admin_username: str = Field(min_length=1, max_length=60)
+    admin_email: str = Field(min_length=5, max_length=160)
+    admin_password: str = Field(min_length=6, max_length=200)
+
+
+@app.post("/auth/register-company")
+@limiter.limit("5/minute")
+def register_company(
+    body: RegisterCompanyBody,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    plan_key = (body.plan or "essencial").strip().lower()
+    if plan_key not in PLAN_LIMITS:
+        plan_key = "essencial"
+
+    username = body.admin_username.strip().lower()
+    if not username:
+        raise HTTPException(422, "Usuário é obrigatório")
+
+    email = body.admin_email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(422, "E-mail inválido")
+
+    duplicate_username = db.scalar(
+        select(User).where(func.lower(User.username) == username)
+    )
+    if duplicate_username:
+        raise HTTPException(409, "Este nome de usuário já está em uso")
+
+    company = Company(
+        name=body.company_name.strip(),
+        document=(body.company_document or "").strip() or None,
+        phone=(body.company_phone or "").strip() or None,
+        email=email,
+        plan=plan_key,
+    )
+    db.add(company)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            409, "Não foi possível criar a empresa. Tente novamente."
+        ) from exc
+
+    admin = User(
+        company_id=company.id,
+        name=body.admin_name.strip(),
+        username=username,
+        email=email,
+        password_hash=hash_password(body.admin_password),
+        role=Role.ADMIN,
+        is_owner=True,
+        must_change_password=False,
+    )
+    db.add(admin)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            409, "Nome de usuário ou e-mail já está em uso"
+        ) from exc
+
+    audit(db, admin, "CRIAÇÃO_DE_EMPRESA", "company", company.id, request)
+    audit(db, admin, "CRIAÇÃO_DE_USUÁRIO", "users", admin.id, request)
+    db.commit()
+
+    return {
+        "ok": True,
+        "company": serialize(company),
+        "user": serialize_user(admin, company),
+        # Integração de cobrança (Asaas) ainda não conectada.
+        "payment_url": None,
+    }
+
+
+# ============================================================
 # LOGIN
 # ============================================================
 
@@ -3014,6 +3102,99 @@ def edit_resource(
     db.commit()
 
     return serialize(x)
+
+
+@app.delete("/{resource}/{record_id}")
+def delete_resource(
+    resource: str,
+    record_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+
+    if resource not in RESOURCES:
+        raise HTTPException(404)
+
+    model, module = RESOURCES[
+        resource
+    ]
+
+    require(module, write=True)(user)
+
+    company = get_current_company(
+        user,
+        db,
+    )
+
+    if not hasattr(
+        model,
+        "company_id",
+    ):
+        raise HTTPException(
+            500,
+            f"Recurso {resource} não possui company_id.",
+        )
+
+    x = db.scalar(
+        select(model).where(
+            model.id == record_id,
+            model.company_id
+            == company.id,
+        )
+    )
+
+    if not x:
+        raise HTTPException(
+            404,
+            "Registro não encontrado",
+        )
+
+    if resource == "products":
+
+        movement_count = db.scalar(
+            select(func.count())
+            .select_from(StockMovement)
+            .where(
+                StockMovement.product_id == record_id,
+                StockMovement.company_id == company.id,
+            )
+        ) or 0
+
+        if movement_count:
+            raise HTTPException(
+                409,
+                "Não é possível excluir: este produto possui movimentações de estoque registradas.",
+            )
+
+    try:
+
+        db.delete(x)
+        db.flush()
+
+    except IntegrityError as exc:
+
+        db.rollback()
+
+        raise HTTPException(
+            409,
+            "Não é possível excluir: este registro possui outros dados vinculados.",
+        ) from exc
+
+    audit(
+        db,
+        user,
+        "EXCLUSÃO",
+        module,
+        record_id,
+        request,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True
+    }
 
 
 # ============================================================
