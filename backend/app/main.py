@@ -1,12 +1,6 @@
 import re
-import hashlib
-import os
-import secrets
-import smtplib
 from datetime import datetime, date, timedelta, timezone
 from typing import Any
-from email.message import EmailMessage
-
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,16 +8,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
-from .jobs import purge_old_audit_logs
 from .security import (
     audit,
     current_user,
@@ -43,39 +33,19 @@ import secrets
 import smtplib
 from email.message import EmailMessage
 
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-
 app = FastAPI(title="Gestão Logística API", version="1.0.0")
 settings = get_settings()
-
-# ---------- Rate Limit ----------
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["120/minute"],
-)
+limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
-
-# ---------- Headers de Segurança ----------
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        return response
-
-app.add_middleware(SecurityHeadersMiddleware)
-
-# ---------- CORS ----------
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda r, e: Response(
+        '{"detail":"Muitas tentativas nesta rede. Aguarde 1 minuto e tente novamente."}',
+        429,
+        headers={"Retry-After": "60"},
+        media_type="application/json",
+    ),
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
@@ -83,14 +53,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ---------- Handler de erro seguro ----------
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Erro interno do servidor"},
-    )
 
 PLAN_LIMITS = {
     "essencial": {"name": "Plano Essencial", "price": 39.90, "users": 1},
@@ -101,11 +63,7 @@ PLAN_LIMITS = {
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    # Nunca mostre o erro real para o usuário em produção
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Erro interno do servidor"},
-    )
+    return JSONResponse(status_code=500, content={"detail": f"Erro interno: {exc}"})
 
 
 def update_maintenance_status(db: Session):
@@ -127,23 +85,12 @@ def seed():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         update_maintenance_status(db)
-        deleted = purge_old_audit_logs(db)
-        if deleted:
-            print(f"[purge] {deleted} audit logs antigos removidos")
-
-@app.post("/admin/purge-audit")
-def admin_purge_audit(
-    days: int = 90,
-    admin: User = Depends(main_admin),
-    db: Session = Depends(get_db),
-):
-    deleted = purge_old_audit_logs(db, days=days)
-    return {"deleted": deleted, "retention_days": days}
 
 
 class Login(BaseModel):
     username: str
     password: str
+    unit: str = "matriz"
     latitude: float | None = None
     longitude: float | None = None
 
@@ -164,6 +111,8 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=1)
     role: Role
     permissions: str | None = None
+    units_access: str | None = "matriz,filial"
+    permissions_filial: str | None = None
 
 
 class Payload(BaseModel):
@@ -183,6 +132,7 @@ class Movement(BaseModel):
     vehicle_id: int | None = None
     observation: str | None = None
     invoice: str | None = None
+    unit_value: float | None = None
 
 
 class MovementEdit(BaseModel):
@@ -194,58 +144,13 @@ class MovementEdit(BaseModel):
     vehicle_id: int | None = None
     observation: str | None = None
     invoice: str | None = None
+    unit_value: float | None = None
 
 
 class MovementDelete(BaseModel):
     password: str
 
-from datetime import datetime, timedelta, timezone
-from fastapi import Request, HTTPException
-
-# Configurações de bloqueio
-MAX_FAILED_LOGINS = 8          # tentativas
-BLOCK_WINDOW_MINUTES = 15      # janela de tempo
-BLOCK_DURATION_MINUTES = 30    # tempo de bloqueio
-
-
-def get_client_ip(request: Request) -> str | None:
-    """Pega o IP real (considera proxy da Vercel)."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return None
-
-
-def is_ip_blocked(db: Session, ip: str | None) -> bool:
-    """Verifica se o IP está bloqueado por excesso de tentativas."""
-    if not ip:
-        return False
-
-    window_start = datetime.now(timezone.utc) - timedelta(minutes=BLOCK_WINDOW_MINUTES)
-
-    failed_count = db.scalar(
-        select(func.count())
-        .select_from(AuditLog)
-        .where(
-            AuditLog.action == "LOGIN_INVÁLIDO",
-            AuditLog.ip == ip,
-            AuditLog.created_at >= window_start,
-        )
-    ) or 0
-
-    return failed_count >= MAX_FAILED_LOGINS
-
-
-def check_ip_block(request: Request, db: Session):
-    """Levanta 429 se o IP estiver bloqueado."""
-    ip = get_client_ip(request)
-    if is_ip_blocked(db, ip):
-        raise HTTPException(
-            status_code=429,
-            detail=f"Muitas tentativas de login. Tente novamente em {BLOCK_DURATION_MINUTES} minutos.",
-        )
+from datetime import datetime, timezone
 
 def user_is_blocked(u: User, db: Session) -> bool:
     """True se o usuário não pode usar o sistema agora."""
@@ -286,12 +191,21 @@ def serialize(o):
     }
 
 
-def serialize_user(o):
+def serialize_user(o, unit: str | None = None):
     d = serialize(o)
+    d["permissions_filial"] = getattr(o, "permissions_filial", None) or ""
     d.pop("password_hash", None)
     # avatar pode ser grande; front usa avatar_data se existir
     d["is_main_admin"] = o.id == 1
     d["has_avatar"] = bool(getattr(o, "avatar_data", None))
+    sess = unit if unit is not None else getattr(o, "_session_unit", None)
+    if not sess:
+        sess = "matriz"
+    sess = str(sess).strip().lower()
+    if sess not in ("matriz", "filial"):
+        sess = "matriz"
+    d["current_unit"] = sess
+    d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
     plan_key = getattr(o, "plan", None) or "essencial"
     plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
     d["plan"] = plan_key if plan_key in PLAN_LIMITS else "essencial"
@@ -299,6 +213,52 @@ def serialize_user(o):
     d["plan_price"] = plan["price"]
     d["plan_user_limit"] = plan["users"]
     return d
+
+def require_matriz(user: User):
+    if session_unit(user) != "matriz":
+        raise HTTPException(
+            403,
+            "O módulo Produção está disponível apenas na Matriz.",
+        )
+
+
+def _parse_units_access(raw) -> str:
+    if raw is None:
+        return "matriz,filial"
+    parts = [
+        p.strip().lower()
+        for p in str(raw).split(",")
+        if p.strip().lower() in ("matriz", "filial")
+    ]
+    # unique preserve order
+    seen = []
+    for p in parts:
+        if p not in seen:
+            seen.append(p)
+    return ",".join(seen) if seen else "matriz"
+
+
+
+
+def session_unit(user: User) -> str:
+    """Unidade ativa na sessão (JWT)."""
+    u = getattr(user, "_session_unit", None) or "matriz"
+    u = str(u).strip().lower()
+    return u if u in ("matriz", "filial") else "matriz"
+
+
+def assert_week_unit(w: "ScheduleWeek", user: User):
+    """Garante que a semana pertence à unidade logada."""
+    wu = (getattr(w, "unit", None) or "matriz").strip().lower()
+    if wu != session_unit(user):
+        raise HTTPException(404, "Semana não encontrada nesta unidade")
+
+
+def assert_slot_unit(slot: "RouteSlot", user: User, db: Session):
+    w = db.get(ScheduleWeek, slot.week_id)
+    if not w:
+        raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(w, user)
     return w
 
 
@@ -332,15 +292,15 @@ def health():
 
 
 @app.post("/auth/login")
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 def login(
     body: Login,
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
-    check_ip_block(request, db)
-    u = db.scalar(select(User).where(User.username == body.username))
+    login_username = (body.username or "").strip().lower()
+    u = db.scalar(select(User).where(func.lower(User.username) == login_username))
     if not u:
         audit(
             db,
@@ -349,14 +309,35 @@ def login(
             "auth",
             request=request,
             details="Tentativa de login inválida: Usuário inexistente",
-            username_attempted=(body.username or "").strip()[:120],
+            username_attempted=login_username[:120],
             latitude=getattr(body, "latitude", None),
             longitude=getattr(body, "longitude", None),
         )
         db.commit()
         raise HTTPException(401, "Usuário ou senha inválidos")
 
+    locked_until = getattr(u, "login_locked_until", None)
+    if locked_until:
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if now < locked_until:
+            seconds = max(1, int((locked_until - now).total_seconds()))
+            minutes = max(1, (seconds + 59) // 60)
+            raise HTTPException(
+                429,
+                f"Este usuário foi temporariamente protegido após várias tentativas. "
+                f"Tente novamente em aproximadamente {minutes} minuto(s).",
+                headers={"Retry-After": str(seconds)},
+            )
+        u.login_locked_until = None
+        u.login_failures = 0
+
     if not verify_password(body.password, u.password_hash):
+        u.login_failures = int(getattr(u, "login_failures", 0) or 0) + 1
+        if u.login_failures >= 8:
+            u.login_locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
+            u.login_failures = 0
         audit(
             db,
             u,
@@ -364,7 +345,7 @@ def login(
             "auth",
             request=request,
             details="Tentativa de login inválida: Senha inválida",
-            username_attempted=body.username.strip()[:120],
+            username_attempted=login_username[:120],
             latitude=getattr(body, "latitude", None),
             longitude=getattr(body, "longitude", None),
         )
@@ -388,6 +369,8 @@ def login(
         db.commit()
         raise HTTPException(status_code=403, detail=block_detail(u))
 
+    u.login_failures = 0
+    u.login_locked_until = None
     audit(
         db,
         u,
@@ -400,14 +383,68 @@ def login(
         longitude=getattr(body, "longitude", None),
     )
     db.commit()
+    unit = (getattr(body, "unit", None) or "matriz")
+    if isinstance(unit, str):
+        unit = unit.strip().lower()
+    else:
+        unit = "matriz"
+    if unit not in ("matriz", "filial"):
+        raise HTTPException(400, "Unidade inválida")
+
+    access = _parse_units_access(getattr(u, "units_access", None))
+    allowed = {x.strip() for x in access.split(",") if x.strip()}
+    if u.id == 1:
+        allowed = {"matriz", "filial"}
+    if unit not in allowed:
+        raise HTTPException(
+            403,
+            "Seu usuário não tem acesso a esta unidade. Fale com o administrador.",
+        )
+
     response.set_cookie(
-    "gl_session",
-    httponly=True,
-    secure=settings.cookie_secure,
-    samesite="lax",
-    max_age=settings.access_token_minutes * 60,
-    path="/"),
-    return {"user": serialize_user(u)}
+        "gl_session",
+        token_for(u, unit=unit),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    u._session_unit = unit
+    return {"user": serialize_user(u, unit=unit)}
+
+
+
+@app.post("/auth/switch-unit")
+def switch_unit(
+    body: dict,
+    response: Response,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    unit = str((body or {}).get("unit") or "").strip().lower()
+    if unit not in ("matriz", "filial"):
+        raise HTTPException(400, "Unidade inválida")
+    access = _parse_units_access(getattr(user, "units_access", None))
+    allowed = {x.strip() for x in access.split(",") if x.strip()}
+    if user.id == 1:
+        allowed = {"matriz", "filial"}
+    if unit not in allowed:
+        raise HTTPException(403, "Sem permissão para esta unidade")
+    response.set_cookie(
+        "gl_session",
+        token_for(user, unit=unit),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    user._session_unit = unit
+    audit(db, user, "TROCA_UNIDADE", "auth", user.id, request)
+    db.commit()
+    return serialize_user(user, unit=unit)
 
 
 @app.post("/auth/logout")
@@ -429,7 +466,6 @@ def me(user: User = Depends(current_user)):
 
 
 @app.post("/auth/change-password")
-@limiter.limit("5/minute")
 def change_password(
     body: PasswordChange,
     request: Request,
@@ -517,7 +553,6 @@ def users(_: User = Depends(main_admin), db: Session = Depends(get_db)):
 
 
 @app.post("/users")
-@limiter.limit("10/minute")
 def create_user(
     body: UserCreate,
     request: Request,
@@ -533,17 +568,25 @@ def create_user(
             f"O {plan['name']} permite no máximo {plan['users']} usuário(s). "
             "Faça upgrade do plano para cadastrar outro usuário.",
         )
+    username = (body.username or "").strip().lower()
+    if not username:
+        raise HTTPException(422, "Nome de usuário é obrigatório")
+    duplicate = db.scalar(select(User).where(func.lower(User.username) == username))
+    if duplicate:
+        raise HTTPException(409, "Nome de usuário já está em uso")
     email = (body.email or "").strip().lower()
     if "@" not in email:
         raise HTTPException(422, "E-mail inválido")
     u = User(
         name=body.name,
-        username=body.username,
+        username=username,
         email=email,
         password_hash=hash_password(body.password),
         role=body.role,
         permissions=body.permissions,
+        units_access=_parse_units_access(getattr(body, "units_access", None)),
         must_change_password=True,
+        permissions_filial=body.permissions_filial,
     )
     db.add(u)
     try:
@@ -569,6 +612,16 @@ def update_user(
         raise HTTPException(404, "Usuário não encontrado")
     if "email" in body.data and body.data["email"] is not None:
         body.data["email"] = str(body.data["email"]).strip().lower()
+    if "username" in body.data and body.data["username"] is not None:
+        username = str(body.data["username"]).strip().lower()
+        duplicate = db.scalar(
+            select(User).where(func.lower(User.username) == username, User.id != user_id)
+        )
+        if duplicate:
+            raise HTTPException(409, "Nome de usuário já está em uso")
+        body.data["username"] = username
+    if "units_access" in body.data and body.data["units_access"] is not None:
+        body.data["units_access"] = _parse_units_access(body.data["units_access"])
     for k in (
         "name",
         "username",
@@ -576,6 +629,8 @@ def update_user(
         "role",
         "active",
         "permissions",
+        "permissions_filial",
+        "units_access",
     ):
         if k in body.data:
             setattr(u, k, body.data[k])
@@ -753,105 +808,121 @@ def logs(
 
 
 @app.get("/dashboard")
-@limiter.limit("30/minute")
-def dashboard(
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
+def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
     require("dashboard")(user)
-    today = date.today()
-
     update_maintenance_status(db)
+    today = datetime.now().date()
+    unit = session_unit(user)
+    count = lambda q: db.scalar(q) or 0
 
-    # Uma única query agregada para manutenção
-    maint = db.execute(
-        select(
-            func.count().filter(Maintenance.status == "Em andamento").label("in_progress"),
-            func.count().filter(
-                func.date(Maintenance.date) == today,
-                Maintenance.status.in_(["Agendado", "Em andamento"])
-            ).label("today"),
-            func.count().filter(
-                func.date(Maintenance.date) < today,
-                Maintenance.status.notin_(["Concluído"])
-            ).label("overdue"),
-            func.count().filter(Maintenance.status == "Concluído").label("completed"),
-        )
-    ).one()
-
-    vehicles_in_maintenance = db.scalar(
+    vehicles_in_maintenance = count(
         select(func.count(func.distinct(Maintenance.vehicle_id)))
-        .where(Maintenance.status == "Em andamento")
-    ) or 0
-
-    routes_today = db.scalar(
-        select(func.count())
-        .select_from(RouteSlot)
-        .where(RouteSlot.date == today)
-    ) or 0
-
-    products_stats = db.execute(
-        select(
-            func.count().label("total"),
-            func.count().filter(Product.quantity <= Product.minimum_stock).label("low"),
+        .select_from(Maintenance)
+        .where(
+            Maintenance.status == "Em andamento",
+            Maintenance.org_unit == unit,
         )
-    ).one()
-
-    fuel_cost = float(
-        db.scalar(
-            select(func.coalesce(func.sum(FuelRecord.total_value), 0))
-        ) or 0
     )
-
-    available = db.scalar(
+    maintenance_today = count(
         select(func.count())
-        .where(Vehicle.status == "Disponível")
-    ) or 0
-
+        .select_from(Maintenance)
+        .where(
+            func.date(Maintenance.date) == today,
+            Maintenance.status.in_(["Agendado", "Em andamento"]),
+            Maintenance.org_unit == unit,
+        )
+    )
+    maintenance_overdue = count(
+        select(func.count())
+        .select_from(Maintenance)
+        .where(
+            func.date(Maintenance.date) < today,
+            Maintenance.status.notin_(["Concluído"]),
+            Maintenance.org_unit == unit,
+        )
+    )
+    maintenance_completed = count(
+        select(func.count())
+        .select_from(Maintenance)
+        .where(
+            Maintenance.status == "Concluído",
+            Maintenance.org_unit == unit,
+        )
+    )
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
             select(Maintenance)
-            .where(Maintenance.status == "Em andamento")
+            .where(
+                Maintenance.status == "Em andamento",
+                Maintenance.org_unit == unit,
+            )
             .order_by(Maintenance.date)
-            .limit(10)          # reduzi de 20 → 10
+            .limit(20)
         ).all()
     ]
 
+    # rotas do dia na agenda (schedule) desta unidade
+    routes_today = count(
+        select(func.count())
+        .select_from(RouteSlot)
+        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+        .where(
+            RouteSlot.date == today,
+            ScheduleWeek.unit == unit,
+        )
+    )
+
     return {
-        "available": available,
+        "unit": unit,
+        "available": count(
+            select(func.count())
+            .select_from(Vehicle)
+            .where(Vehicle.status == "Disponível", Vehicle.org_unit == unit)
+        ),
         "maintenance": vehicles_in_maintenance,
-        "maintenance_completed": maint.completed,
-        "maintenance_today": maint.today,
-        "maintenance_overdue": maint.overdue,
+        "maintenance_completed": maintenance_completed,
+        "maintenance_today": maintenance_today,
+        "maintenance_overdue": maintenance_overdue,
         "routes_today": routes_today,
-        "products": products_stats.total,
-        "low_stock": products_stats.low,
-        "fuel_cost": fuel_cost,
+        "products": count(
+            select(func.count()).select_from(Product).where(Product.org_unit == unit)
+        ),
+        "low_stock": count(
+            select(func.count())
+            .select_from(Product)
+            .where(
+                Product.org_unit == unit,
+                Product.quantity <= Product.minimum_stock,
+            )
+        ),
+        "fuel_cost": float(
+            db.scalar(
+                select(func.coalesce(func.sum(FuelRecord.total_value), 0)).where(
+                    FuelRecord.org_unit == unit
+                )
+            )
+            or 0
+        ),
         "maintenance_alerts": maintenance_alerts,
     }
 
 
 @app.get("/stock/movements")
-def movements(
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
+def movements(user: User = Depends(current_user), db: Session = Depends(get_db)):
     require("stock")(user)
-    rows = db.scalars(
-        select(StockMovement)
-        .order_by(StockMovement.occurred_at.desc())
-        .limit(limit)
-        .offset(offset)
-    ).all()
-    return [serialize(x) for x in rows]
+    return [
+        serialize(x)
+        for x in db.scalars(
+            select(StockMovement)
+            .where(StockMovement.org_unit == session_unit(user))
+            .order_by(StockMovement.occurred_at.desc())
+            .limit(500)
+        ).all()
+    ]
 
 
 @app.post("/stock/{kind}")
-# @limiter.limit("30/minute")
 def stock(
     kind: str,
     body: Movement,
@@ -866,6 +937,8 @@ def stock(
         select(Product).where(Product.id == body.product_id).with_for_update()
     )
     if not product:
+        raise HTTPException(404, "Produto não encontrado")
+    if (getattr(product, "org_unit", None) or "matriz") != session_unit(user):
         raise HTTPException(404, "Produto não encontrado")
     current_qty = float(product.quantity)
     if kind == "output" and current_qty < body.quantity:
@@ -885,6 +958,8 @@ def stock(
         vehicle_id=body.vehicle_id,
         observation=body.observation,
         invoice=body.invoice,
+        unit_value=body.unit_value,
+        org_unit=session_unit(user),
     )
     db.add(m)
     db.flush()
@@ -923,6 +998,7 @@ def edit_movement(
         ("vehicle_id", body.vehicle_id),
         ("observation", body.observation),
         ("invoice", body.invoice),
+        ("unit_value", body.unit_value),
     ):
         if val is not None:
             setattr(m, field, val)
@@ -1164,7 +1240,10 @@ def list_resource(
     if resource == "maintenance":
         update_maintenance_status(db)
 
+    # settings / customers sem isolamento por unidade
     q = select(model)
+    if hasattr(model, "org_unit") and resource != "settings":
+        q = q.where(model.org_unit == session_unit(user))
     return [serialize(x) for x in db.scalars(q.limit(500)).all()]
 
 
@@ -1189,6 +1268,8 @@ def add_resource(
             cnh = (data.get("cnh") or "").strip()
             data["cnh"] = cnh or None
 
+    if hasattr(model, "org_unit"):
+        data["org_unit"] = session_unit(user)
     x = model(**model_data(model, data))
     db.add(x)
     try:
@@ -1198,7 +1279,7 @@ def add_resource(
         if resource == "vehicles" and "plate" in data:
             raise HTTPException(
                 409,
-                f"A placa {data['plate']} já está cadastrada.",
+                f"A placa {data['plate']} já está cadastrada nesta unidade.",
             ) from exc
         raise HTTPException(409, "Já existe um registro com os mesmos dados.") from exc
     audit(db, user, "CADASTRO", module, x.id if hasattr(x, "id") else None, request)
@@ -1220,6 +1301,10 @@ def edit_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
     x = db.get(model, record_id)
+    if not x:
+        raise HTTPException(404)
+    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
+        raise HTTPException(404)
     if not x:
         raise HTTPException(404)
 
@@ -1252,6 +1337,10 @@ def delete_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
     x = db.get(model, record_id)
+    if not x:
+        raise HTTPException(404)
+    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
+        raise HTTPException(404)
     if not x:
         raise HTTPException(404)
 
@@ -1431,9 +1520,15 @@ def list_schedule_weeks(
     db: Session = Depends(get_db),
 ):
     require("schedule")(user)
-    q = select(ScheduleWeek).order_by(ScheduleWeek.start_date)
+    unit = session_unit(user)
+    q = (
+        select(ScheduleWeek)
+        .where(ScheduleWeek.unit == unit)
+        .order_by(ScheduleWeek.start_date)
+    )
     if status == "ativa":
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
+    # semanas antigas sem coluna preenchida tratadas como matriz no SQL default
     weeks = db.scalars(q).all()
     return [serialize_week(w, db) for w in weeks]
 
@@ -1450,6 +1545,7 @@ def create_schedule_week(
         start_date=body.start_date,
         label=body.label,
         status=WeekStatus.ATIVA,
+        unit=session_unit(user),
     )
     db.add(w)
     db.flush()
@@ -1468,7 +1564,12 @@ def delete_schedule_week(
 ):
     """Exclui permanentemente a semana com permissão explícita e senha válida."""
     if user.id != 1:
-        permissions = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
+        raw_permissions = (
+            getattr(user, "permissions_filial", None) or user.permissions
+            if session_unit(user) == "filial"
+            else user.permissions
+        )
+        permissions = {p.strip() for p in (raw_permissions or "").split(",") if p.strip()}
         if "schedule_delete" not in permissions:
             raise HTTPException(
                 403,
@@ -1484,6 +1585,7 @@ def delete_schedule_week(
     w = db.get(ScheduleWeek, week_id)
     if not w:
         raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(w, user)
     db.delete(w)
     audit(db, user, "EXCLUSÃO_SEMANA", "schedule", week_id, request)
     db.commit()
@@ -1498,7 +1600,12 @@ def archive_schedule_week(
     db: Session = Depends(get_db),
 ):
     if user.id != 1:
-        permissions = [p.strip() for p in (user.permissions or "").split(",") if p.strip()]
+        raw_permissions = (
+            getattr(user, "permissions_filial", None) or user.permissions
+            if session_unit(user) == "filial"
+            else user.permissions
+        )
+        permissions = [p.strip() for p in (raw_permissions or "").split(",") if p.strip()]
 
         if "schedule_archive" not in permissions:
             raise HTTPException(
@@ -1510,6 +1617,7 @@ def archive_schedule_week(
 
     if not w:
         raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(w, user)
 
     w.status = WeekStatus.ARQUIVADA
     w.archived_at = func.now()
@@ -1537,6 +1645,7 @@ def create_route_slot(
     week = db.get(ScheduleWeek, body.week_id)
     if not week:
         raise HTTPException(404, "Semana não encontrada")
+    assert_week_unit(week, user)
     if week.status != WeekStatus.ATIVA:
         raise HTTPException(409, "Não é possível adicionar rota em semana arquivada")
 
@@ -1570,6 +1679,7 @@ def update_route_slot(
     rs = db.get(RouteSlot, slot_id)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
+    assert_slot_unit(rs, user, db)
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(rs, k, v)
     audit(db, user, "ALTERAÇÃO", "schedule", slot_id, request)
@@ -1586,6 +1696,9 @@ def delete_route_slot(
 ):
     require("schedule", write=True)(user)
     rs = db.get(RouteSlot, slot_id)
+    if not rs:
+        raise HTTPException(404, "Rota não encontrada")
+    assert_slot_unit(rs, user, db)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
     db.delete(rs)
@@ -2132,6 +2245,7 @@ def create_production_batch(
         if qty <= 0 and em <= 0:
             continue
         rec = ProductionRecord(
+        org_unit=session_unit(user),
             kind=kind,
             production_date=body.production_date,
             model=line.model.strip(),
@@ -2165,6 +2279,7 @@ def production_by_day(
 
     q = (
         select(ProductionRecord)
+        .where(ProductionRecord.org_unit == session_unit(user))
         .order_by(
             ProductionRecord.production_date.desc(),
             ProductionRecord.kind,
@@ -2303,6 +2418,7 @@ class ResetPasswordBody(BaseModel):
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
 
 def _send_reset_email(to_email: str, reset_link: str) -> bool:
     host = os.environ.get("SMTP_HOST")
@@ -2479,75 +2595,3 @@ def reset_password(
     audit(db, u, "RESET_PASSWORD", "auth", request=request)
     db.commit()
     return {"ok": True, "detail": "Senha alterada. Faça login."}
-
-class CompanyRegister(BaseModel):
-    plan: str = Field(pattern="^(essencial|profissional|empresarial)$")
-    company_name: str = Field(min_length=2, max_length=160)
-    company_document: str | None = None
-    company_phone: str | None = None
-    admin_name: str = Field(min_length=2, max_length=120)
-    admin_username: str = Field(min_length=3, max_length=60)
-    admin_email: str = Field(min_length=5, max_length=160)
-    admin_password: str = Field(min_length=6, max_length=200)
-
-
-@app.post("/auth/register-company")
-@limiter.limit("5/minute")
-def register_company(
-    body: CompanyRegister,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    email = body.admin_email.strip().lower()
-    username = body.admin_username.strip().lower()
-
-    if "@" not in email:
-        raise HTTPException(422, "E-mail inválido")
-
-    exists = db.scalar(
-        select(User).where(
-            (User.username == username) | (User.email == email)
-        )
-    )
-    if exists:
-        raise HTTPException(409, "Usuário ou e-mail já cadastrado")
-
-    u = User(
-        name=body.admin_name.strip(),
-        username=username,
-        email=email,
-        password_hash=hash_password(body.admin_password),
-        role=Role.ADMIN,
-        active=True,
-        must_change_password=False,
-        plan=body.plan,
-        permissions=None,
-    )
-    db.add(u)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(409, "Usuário ou e-mail já cadastrado")
-
-    audit(
-        db,
-        u,
-        "CADASTRO_EMPRESA",
-        "auth",
-        u.id,
-        request,
-        details=f"Empresa: {body.company_name} | Plano: {body.plan}",
-    )
-    db.commit()
-
-    # TODO: integrar Asaas de verdade (criar cliente + assinatura)
-    # Por enquanto retorna null — na próxima etapa geramos o payment_url
-    payment_url = None
-
-    return {
-        "ok": True,
-        "user_id": u.id,
-        "plan": body.plan,
-        "payment_url": payment_url,
-    }
