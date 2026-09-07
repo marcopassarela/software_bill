@@ -126,15 +126,6 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
             detail="Sessão encerrada. Faça login novamente.",
         )
 
-    unit = (data.get("unit") or "matriz")
-    if isinstance(unit, str):
-        unit = unit.strip().lower()
-    else:
-        unit = "matriz"
-    if unit not in ("matriz", "filial"):
-        unit = "matriz"
-    # unidade da sessão (login) — usada em serialize_user / filtros futuros
-    user._session_unit = unit
     return user
 
 
@@ -143,17 +134,6 @@ def require(module: str, write: bool = False):
         has_custom_permissions = bool(user.permissions)
         if has_custom_permissions:
             grants = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
-        else:
-            grants = set(MODULES.get(user.role, set()))
-        unit = getattr(user, "_session_unit", None) or "matriz"
-        if str(unit).strip().lower() == "filial":
-            raw = getattr(user, "permissions_filial", None) or user.permissions
-        else:
-            raw = user.permissions
-
-        has_custom_permissions = bool(raw)
-        if has_custom_permissions:
-            grants = {p.strip() for p in (raw or "").split(",") if p.strip()}
         else:
             grants = set(MODULES.get(user.role, set()))
 

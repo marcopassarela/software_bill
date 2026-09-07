@@ -143,7 +143,6 @@ def admin_purge_audit(
 class Login(BaseModel):
     username: str
     password: str
-    unit: str = "matriz"
     latitude: float | None = None
     longitude: float | None = None
 
@@ -164,8 +163,6 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=1)
     role: Role
     permissions: str | None = None
-    units_access: str | None = "matriz,filial"
-    permissions_filial: str | None = None
 
 
 class Payload(BaseModel):
@@ -290,21 +287,12 @@ def serialize(o):
     }
 
 
-def serialize_user(o, unit: str | None = None):
+def serialize_user(o):
     d = serialize(o)
-    d["permissions_filial"] = getattr(o, "permissions_filial", None) or ""
     d.pop("password_hash", None)
     # avatar pode ser grande; front usa avatar_data se existir
     d["is_main_admin"] = o.id == 1
     d["has_avatar"] = bool(getattr(o, "avatar_data", None))
-    sess = unit if unit is not None else getattr(o, "_session_unit", None)
-    if not sess:
-        sess = "matriz"
-    sess = str(sess).strip().lower()
-    if sess not in ("matriz", "filial"):
-        sess = "matriz"
-    d["current_unit"] = sess
-    d["units_access"] = getattr(o, "units_access", None) or "matriz,filial"
     plan_key = getattr(o, "plan", None) or "essencial"
     plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["essencial"])
     d["plan"] = plan_key if plan_key in PLAN_LIMITS else "essencial"
@@ -312,52 +300,6 @@ def serialize_user(o, unit: str | None = None):
     d["plan_price"] = plan["price"]
     d["plan_user_limit"] = plan["users"]
     return d
-
-def require_matriz(user: User):
-    if session_unit(user) != "matriz":
-        raise HTTPException(
-            403,
-            "O módulo Produção está disponível apenas na Matriz.",
-        )
-
-
-def _parse_units_access(raw) -> str:
-    if raw is None:
-        return "matriz,filial"
-    parts = [
-        p.strip().lower()
-        for p in str(raw).split(",")
-        if p.strip().lower() in ("matriz", "filial")
-    ]
-    # unique preserve order
-    seen = []
-    for p in parts:
-        if p not in seen:
-            seen.append(p)
-    return ",".join(seen) if seen else "matriz"
-
-
-
-
-def session_unit(user: User) -> str:
-    """Unidade ativa na sessão (JWT)."""
-    u = getattr(user, "_session_unit", None) or "matriz"
-    u = str(u).strip().lower()
-    return u if u in ("matriz", "filial") else "matriz"
-
-
-def assert_week_unit(w: "ScheduleWeek", user: User):
-    """Garante que a semana pertence à unidade logada."""
-    wu = (getattr(w, "unit", None) or "matriz").strip().lower()
-    if wu != session_unit(user):
-        raise HTTPException(404, "Semana não encontrada nesta unidade")
-
-
-def assert_slot_unit(slot: "RouteSlot", user: User, db: Session):
-    w = db.get(ScheduleWeek, slot.week_id)
-    if not w:
-        raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(w, user)
     return w
 
 
@@ -459,68 +401,16 @@ def login(
         longitude=getattr(body, "longitude", None),
     )
     db.commit()
-    unit = (getattr(body, "unit", None) or "matriz")
-    if isinstance(unit, str):
-        unit = unit.strip().lower()
-    else:
-        unit = "matriz"
-    if unit not in ("matriz", "filial"):
-        raise HTTPException(400, "Unidade inválida")
-
-    access = _parse_units_access(getattr(u, "units_access", None))
-    allowed = {x.strip() for x in access.split(",") if x.strip()}
-    if u.id == 1:
-        allowed = {"matriz", "filial"}
-    if unit not in allowed:
-        raise HTTPException(
-            403,
-            "Seu usuário não tem acesso a esta unidade. Fale com o administrador.",
-        )
-
     response.set_cookie(
         "gl_session",
-        token_for(u, unit=unit),
+        token_for(u),
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
         max_age=settings.access_token_minutes * 60,
         path="/",
     )
-    u._session_unit = unit
-    return {"user": serialize_user(u, unit=unit)}
-
-
-
-@app.post("/auth/switch-unit")
-def switch_unit(
-    body: dict,
-    response: Response,
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    unit = str((body or {}).get("unit") or "").strip().lower()
-    if unit not in ("matriz", "filial"):
-        raise HTTPException(400, "Unidade inválida")
-    access = _parse_units_access(getattr(user, "units_access", None))
-    allowed = {x.strip() for x in access.split(",") if x.strip()}
-    if user.id == 1:
-        allowed = {"matriz", "filial"}
-    if unit not in allowed:
-        raise HTTPException(403, "Sem permissão para esta unidade")
-    response.set_cookie(
-        "gl_session",
-        token_for(user, unit=unit),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.access_token_minutes * 60,
-        path="/",
-    )
-    user._session_unit = unit
-    audit(db, user, "TROCA_UNIDADE", "auth", user.id, request)
-    db.commit()
-    return serialize_user(user, unit=unit)
+    return {"user": serialize_user(u)}
 
 
 @app.post("/auth/logout")
@@ -656,9 +546,7 @@ def create_user(
         password_hash=hash_password(body.password),
         role=body.role,
         permissions=body.permissions,
-        units_access=_parse_units_access(getattr(body, "units_access", None)),
         must_change_password=True,
-        permissions_filial=body.permissions_filial,
     )
     db.add(u)
     try:
@@ -684,8 +572,6 @@ def update_user(
         raise HTTPException(404, "Usuário não encontrado")
     if "email" in body.data and body.data["email"] is not None:
         body.data["email"] = str(body.data["email"]).strip().lower()
-    if "units_access" in body.data and body.data["units_access"] is not None:
-        body.data["units_access"] = _parse_units_access(body.data["units_access"])
     for k in (
         "name",
         "username",
@@ -693,8 +579,6 @@ def update_user(
         "role",
         "active",
         "permissions",
-        "permissions_filial",
-        "units_access",
     ):
         if k in body.data:
             setattr(u, k, body.data[k])
@@ -879,7 +763,6 @@ def dashboard(
     db: Session = Depends(get_db),
 ):
     require("dashboard")(user)
-    unit = session_unit(user)
     today = date.today()
 
     update_maintenance_status(db)
@@ -898,22 +781,17 @@ def dashboard(
             ).label("overdue"),
             func.count().filter(Maintenance.status == "Concluído").label("completed"),
         )
-        .where(Maintenance.org_unit == unit)
     ).one()
 
     vehicles_in_maintenance = db.scalar(
         select(func.count(func.distinct(Maintenance.vehicle_id)))
-        .where(
-            Maintenance.status == "Em andamento",
-            Maintenance.org_unit == unit,
-        )
+        .where(Maintenance.status == "Em andamento")
     ) or 0
 
     routes_today = db.scalar(
         select(func.count())
         .select_from(RouteSlot)
-        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
-        .where(RouteSlot.date == today, ScheduleWeek.unit == unit)
+        .where(RouteSlot.date == today)
     ) or 0
 
     products_stats = db.execute(
@@ -921,36 +799,30 @@ def dashboard(
             func.count().label("total"),
             func.count().filter(Product.quantity <= Product.minimum_stock).label("low"),
         )
-        .where(Product.org_unit == unit)
     ).one()
 
     fuel_cost = float(
         db.scalar(
             select(func.coalesce(func.sum(FuelRecord.total_value), 0))
-            .where(FuelRecord.org_unit == unit)
         ) or 0
     )
 
     available = db.scalar(
         select(func.count())
-        .where(Vehicle.status == "Disponível", Vehicle.org_unit == unit)
+        .where(Vehicle.status == "Disponível")
     ) or 0
 
     maintenance_alerts = [
         serialize(m)
         for m in db.scalars(
             select(Maintenance)
-            .where(
-                Maintenance.status == "Em andamento",
-                Maintenance.org_unit == unit,
-            )
+            .where(Maintenance.status == "Em andamento")
             .order_by(Maintenance.date)
             .limit(10)          # reduzi de 20 → 10
         ).all()
     ]
 
     return {
-        "unit": unit,
         "available": available,
         "maintenance": vehicles_in_maintenance,
         "maintenance_completed": maint.completed,
@@ -963,40 +835,6 @@ def dashboard(
         "maintenance_alerts": maintenance_alerts,
     }
 
-    return {
-        "unit": unit,
-        "available": count(
-            select(func.count())
-            .select_from(Vehicle)
-            .where(Vehicle.status == "Disponível", Vehicle.org_unit == unit)
-        ),
-        "maintenance": vehicles_in_maintenance,
-        "maintenance_completed": maintenance_completed,
-        "maintenance_today": maintenance_today,
-        "maintenance_overdue": maintenance_overdue,
-        "routes_today": routes_today,
-        "products": count(
-            select(func.count()).select_from(Product).where(Product.org_unit == unit)
-        ),
-        "low_stock": count(
-            select(func.count())
-            .select_from(Product)
-            .where(
-                Product.org_unit == unit,
-                Product.quantity <= Product.minimum_stock,
-            )
-        ),
-        "fuel_cost": float(
-            db.scalar(
-                select(func.coalesce(func.sum(FuelRecord.total_value), 0)).where(
-                    FuelRecord.org_unit == unit
-                )
-            )
-            or 0
-        ),
-        "maintenance_alerts": maintenance_alerts,
-    }
-
 
 @app.get("/stock/movements")
 def movements(
@@ -1006,10 +844,8 @@ def movements(
     db: Session = Depends(get_db),
 ):
     require("stock")(user)
-    unit = session_unit(user)
     rows = db.scalars(
         select(StockMovement)
-        .where(StockMovement.org_unit == unit)
         .order_by(StockMovement.occurred_at.desc())
         .limit(limit)
         .offset(offset)
@@ -1034,8 +870,6 @@ def stock(
     )
     if not product:
         raise HTTPException(404, "Produto não encontrado")
-    if (getattr(product, "org_unit", None) or "matriz") != session_unit(user):
-        raise HTTPException(404, "Produto não encontrado")
     current_qty = float(product.quantity)
     if kind == "output" and current_qty < body.quantity:
         raise HTTPException(409, "Estoque insuficiente")
@@ -1055,7 +889,6 @@ def stock(
         observation=body.observation,
         invoice=body.invoice,
         unit_value=body.unit_value,
-        org_unit=session_unit(user),
     )
     db.add(m)
     db.flush()
@@ -1336,10 +1169,7 @@ def list_resource(
     if resource == "maintenance":
         update_maintenance_status(db)
 
-    # settings / customers sem isolamento por unidade
     q = select(model)
-    if hasattr(model, "org_unit") and resource != "settings":
-        q = q.where(model.org_unit == session_unit(user))
     return [serialize(x) for x in db.scalars(q.limit(500)).all()]
 
 
@@ -1364,8 +1194,6 @@ def add_resource(
             cnh = (data.get("cnh") or "").strip()
             data["cnh"] = cnh or None
 
-    if hasattr(model, "org_unit"):
-        data["org_unit"] = session_unit(user)
     x = model(**model_data(model, data))
     db.add(x)
     try:
@@ -1375,7 +1203,7 @@ def add_resource(
         if resource == "vehicles" and "plate" in data:
             raise HTTPException(
                 409,
-                f"A placa {data['plate']} já está cadastrada nesta unidade.",
+                f"A placa {data['plate']} já está cadastrada.",
             ) from exc
         raise HTTPException(409, "Já existe um registro com os mesmos dados.") from exc
     audit(db, user, "CADASTRO", module, x.id if hasattr(x, "id") else None, request)
@@ -1397,10 +1225,6 @@ def edit_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
     x = db.get(model, record_id)
-    if not x:
-        raise HTTPException(404)
-    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
-        raise HTTPException(404)
     if not x:
         raise HTTPException(404)
 
@@ -1433,10 +1257,6 @@ def delete_resource(
     model, module = RESOURCES[resource]
     require(module)(user)
     x = db.get(model, record_id)
-    if not x:
-        raise HTTPException(404)
-    if hasattr(x, "org_unit") and (getattr(x, "org_unit", None) or "matriz") != session_unit(user):
-        raise HTTPException(404)
     if not x:
         raise HTTPException(404)
 
@@ -1616,15 +1436,9 @@ def list_schedule_weeks(
     db: Session = Depends(get_db),
 ):
     require("schedule")(user)
-    unit = session_unit(user)
-    q = (
-        select(ScheduleWeek)
-        .where(ScheduleWeek.unit == unit)
-        .order_by(ScheduleWeek.start_date)
-    )
+    q = select(ScheduleWeek).order_by(ScheduleWeek.start_date)
     if status == "ativa":
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
-    # semanas antigas sem coluna preenchida tratadas como matriz no SQL default
     weeks = db.scalars(q).all()
     return [serialize_week(w, db) for w in weeks]
 
@@ -1641,7 +1455,6 @@ def create_schedule_week(
         start_date=body.start_date,
         label=body.label,
         status=WeekStatus.ATIVA,
-        unit=session_unit(user),
     )
     db.add(w)
     db.flush()
@@ -1660,12 +1473,7 @@ def delete_schedule_week(
 ):
     """Exclui permanentemente a semana com permissão explícita e senha válida."""
     if user.id != 1:
-        raw_permissions = (
-            getattr(user, "permissions_filial", None) or user.permissions
-            if session_unit(user) == "filial"
-            else user.permissions
-        )
-        permissions = {p.strip() for p in (raw_permissions or "").split(",") if p.strip()}
+        permissions = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
         if "schedule_delete" not in permissions:
             raise HTTPException(
                 403,
@@ -1681,7 +1489,6 @@ def delete_schedule_week(
     w = db.get(ScheduleWeek, week_id)
     if not w:
         raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(w, user)
     db.delete(w)
     audit(db, user, "EXCLUSÃO_SEMANA", "schedule", week_id, request)
     db.commit()
@@ -1696,12 +1503,7 @@ def archive_schedule_week(
     db: Session = Depends(get_db),
 ):
     if user.id != 1:
-        raw_permissions = (
-            getattr(user, "permissions_filial", None) or user.permissions
-            if session_unit(user) == "filial"
-            else user.permissions
-        )
-        permissions = [p.strip() for p in (raw_permissions or "").split(",") if p.strip()]
+        permissions = [p.strip() for p in (user.permissions or "").split(",") if p.strip()]
 
         if "schedule_archive" not in permissions:
             raise HTTPException(
@@ -1713,7 +1515,6 @@ def archive_schedule_week(
 
     if not w:
         raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(w, user)
 
     w.status = WeekStatus.ARQUIVADA
     w.archived_at = func.now()
@@ -1741,7 +1542,6 @@ def create_route_slot(
     week = db.get(ScheduleWeek, body.week_id)
     if not week:
         raise HTTPException(404, "Semana não encontrada")
-    assert_week_unit(week, user)
     if week.status != WeekStatus.ATIVA:
         raise HTTPException(409, "Não é possível adicionar rota em semana arquivada")
 
@@ -1775,7 +1575,6 @@ def update_route_slot(
     rs = db.get(RouteSlot, slot_id)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
-    assert_slot_unit(rs, user, db)
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(rs, k, v)
     audit(db, user, "ALTERAÇÃO", "schedule", slot_id, request)
@@ -1792,9 +1591,6 @@ def delete_route_slot(
 ):
     require("schedule", write=True)(user)
     rs = db.get(RouteSlot, slot_id)
-    if not rs:
-        raise HTTPException(404, "Rota não encontrada")
-    assert_slot_unit(rs, user, db)
     if not rs:
         raise HTTPException(404, "Rota não encontrada")
     db.delete(rs)
@@ -2341,7 +2137,6 @@ def create_production_batch(
         if qty <= 0 and em <= 0:
             continue
         rec = ProductionRecord(
-        org_unit=session_unit(user),
             kind=kind,
             production_date=body.production_date,
             model=line.model.strip(),
@@ -2375,7 +2170,6 @@ def production_by_day(
 
     q = (
         select(ProductionRecord)
-        .where(ProductionRecord.org_unit == session_unit(user))
         .order_by(
             ProductionRecord.production_date.desc(),
             ProductionRecord.kind,
@@ -2733,7 +2527,6 @@ def register_company(
         active=True,
         must_change_password=False,
         plan=body.plan,
-        units_access="matriz,filial",
         permissions=None,
     )
     db.add(u)

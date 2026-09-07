@@ -46,8 +46,6 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    permissions_filial: Mapped[str | None] = mapped_column(Text, nullable=True)
-    units_access: Mapped[str | None] = mapped_column(String(40), default="matriz,filial")
     plan: Mapped[str] = mapped_column(String(20), default="essencial", server_default="essencial")
     token_version: Mapped[int] = mapped_column(
         Integer,
@@ -108,11 +106,10 @@ class Customer(Base):
 class Vehicle(Base):
     __tablename__ = "vehicles"
     __table_args__ = (
-        UniqueConstraint("org_unit", "plate", name="uq_vehicles_org_unit_plate"),
+        UniqueConstraint("plate", name="uq_vehicles_plate"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     plate: Mapped[str] = mapped_column(String(12), index=True)
     brand: Mapped[str] = mapped_column(String(80))
     model: Mapped[str] = mapped_column(String(100))
@@ -130,7 +127,6 @@ class Driver(Base):
     __tablename__ = "drivers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     name: Mapped[str] = mapped_column(String(140))
     cpf: Mapped[str | None] = mapped_column(String(14), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30))
@@ -180,7 +176,6 @@ class Maintenance(Base):
     __tablename__ = "maintenance"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
     type: Mapped[str] = mapped_column(String(30))
     description: Mapped[str] = mapped_column(Text)
@@ -199,7 +194,6 @@ class FuelRecord(Base):
     __tablename__ = "fuel_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     date: Mapped[datetime] = mapped_column(DateTime)
@@ -215,7 +209,6 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), index=True)
     model: Mapped[str | None] = mapped_column(String(100))
@@ -232,7 +225,6 @@ class StockMovement(Base):
     __tablename__ = "stock_movements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     type: Mapped[str] = mapped_column(String(12))
     quantity: Mapped[float] = mapped_column(Numeric(12, 2))
@@ -280,8 +272,6 @@ class ScheduleWeek(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     start_date: Mapped[date] = mapped_column(Date)
     label: Mapped[str | None] = mapped_column(String(60))
-    # matriz | filial — agenda separada por unidade
-    unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     status: Mapped[WeekStatus] = mapped_column(Enum(WeekStatus), default=WeekStatus.ATIVA)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -347,7 +337,6 @@ class ProductionRecord(Base):
     __tablename__ = "production_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    org_unit: Mapped[str] = mapped_column(String(20), default="matriz", index=True)
     # "fabricacao" | "montagem"
     kind: Mapped[str] = mapped_column(String(20), index=True)
     production_date: Mapped[date] = mapped_column(Date, index=True)
