@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import APIKeyCookie
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
+
 from .config import get_settings
 from .database import get_db
 from .models import User, Role
@@ -29,11 +30,6 @@ MODULES = {
     Role.MONTAGEM: {"dashboard", "production", "assembly"},
 }
 
-# Módulos onde view e edição são diferentes: só os perfis listados aqui podem
-# criar/editar/excluir. Quem tem o módulo em MODULES mas não está aqui só
-# consegue ler (GET). Perfis com permissões customizadas (user.permissions
-# preenchido) continuam com acesso total de leitura/escrita aos módulos
-# liberados, como já era antes.
 WRITE_ONLY_ROLES = {
     "schedule": {Role.ADMIN, Role.MANAGER},
 }
@@ -58,6 +54,7 @@ def token_for(user: User):
         s.auth_secret,
         algorithm="HS256",
     )
+
 
 def clear_block(u: User):
     u.active = True
@@ -113,7 +110,6 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
     was_inactive = not user.active
     still_blocked = apply_auto_unblock(user)
     if was_inactive and not still_blocked:
-        # auto-liberou scheduled
         db.commit()
     if still_blocked:
         raise HTTPException(status_code=403, detail=block_detail(user))
@@ -126,6 +122,7 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
             detail="Sessão encerrada. Faça login novamente.",
         )
 
+    user._session_unit = "matriz"
     return user
 
 
@@ -137,7 +134,6 @@ def require(module: str, write: bool = False):
         else:
             grants = set(MODULES.get(user.role, set()))
 
-        # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders"
         if module == "orders":
             if "*" in grants or "orders" in grants:
                 pass
@@ -148,7 +144,6 @@ def require(module: str, write: bool = False):
                         detail="Sem permissão para este módulo",
                     )
             else:
-                # leitura (lista)
                 if "orders_list" not in grants and "orders_create" not in grants:
                     raise HTTPException(
                         status_code=403,
@@ -163,6 +158,7 @@ def require(module: str, write: bool = False):
             )
         ):
             raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
+
         if (
             write
             and module == "schedule"
@@ -182,6 +178,7 @@ def require(module: str, write: bool = False):
                 status_code=403,
                 detail="Você só pode consultar este módulo, não editar",
             )
+
         if user.must_change_password and module != "auth":
             raise HTTPException(
                 status_code=403,
@@ -191,16 +188,13 @@ def require(module: str, write: bool = False):
 
     return check
 
-user._session_unit = "matriz"
-    return user
 
 def main_admin(user: User = Depends(current_user)):
     if user.id != 1 or user.role not in (Role.ADMIN, Role.MONTAGEM):
         raise HTTPException(
             status_code=403,
-            detail="Apenas o Administrador Principal pode executar esta ação"
+            detail="Apenas o Administrador Principal pode executar esta ação",
         )
-
     return user
 
 
@@ -220,17 +214,15 @@ def audit(
 
     headers = request.headers if request else {}
 
-    # Usa a localização autorizada pelo navegador quando existir.
-    # Se não existir, utiliza a localização aproximada fornecida pela Vercel.
     client_latitude = (
         str(latitude)
         if latitude is not None
-        else headers.get('x-vercel-ip-latitude')
+        else headers.get("x-vercel-ip-latitude")
     )
     client_longitude = (
         str(longitude)
         if longitude is not None
-        else headers.get('x-vercel-ip-longitude')
+        else headers.get("x-vercel-ip-longitude")
     )
 
     db.add(
@@ -240,9 +232,9 @@ def audit(
             module=module,
             record_id=str(record_id) if record_id else None,
             ip=request.client.host if request and request.client else None,
-            country=headers.get('x-vercel-ip-country'),
-            region=headers.get('x-vercel-ip-country-region'),
-            city=headers.get('x-vercel-ip-city'),
+            country=headers.get("x-vercel-ip-country"),
+            region=headers.get("x-vercel-ip-country-region"),
+            city=headers.get("x-vercel-ip-city"),
             latitude=client_latitude,
             longitude=client_longitude,
             username_attempted=username_attempted,
