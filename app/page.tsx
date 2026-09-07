@@ -534,6 +534,15 @@ export default function Home() {
           >
             {busy ? 'Entrando…' : 'Entrar'}
           </button>
+
+          <button
+            type="button"
+            onClick={() => (window.location.href = '/cadastro')}
+            className="mt-3 w-full rounded-lg border border-brand bg-white p-2.5 text-sm font-semibold text-brand hover:bg-brand/5"
+          >
+            Criar conta da empresa
+          </button>
+
           <button
              type="button"
              onClick={() => {
