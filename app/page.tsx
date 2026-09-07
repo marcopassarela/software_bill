@@ -173,7 +173,6 @@ export default function Home() {
         body: JSON.stringify({
           username,
           password,
-          unit,
           latitude,
           longitude,
         }),

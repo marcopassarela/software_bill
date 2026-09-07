@@ -402,14 +402,13 @@ def login(
     )
     db.commit()
     response.set_cookie(
-        "gl_session",
-        token_for(u),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.access_token_minutes * 60,
-        path="/",
-    )
+    "gl_session",
+    token_for(u), 
+    httponly=True,
+    secure=settings.cookie_secure,
+    samesite="lax",
+    max_age=settings.access_token_minutes * 60,
+    path="/"),
     return {"user": serialize_user(u)}
 
 
