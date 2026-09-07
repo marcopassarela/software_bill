@@ -60,18 +60,18 @@ export default function CadastroPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-3">
-      <div className="w-full max-w-xl rounded-xl bg-white p-4 shadow-lg sm:p-5">
+      <div className="w-full max-w-3xl rounded-xl bg-white p-4 shadow-lg sm:p-5">
         {step === 'form' ? (
           <>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h1 className="text-lg font-bold text-slate-900">Criar conta da empresa</h1>
-                <p className="text-xs text-slate-500">Escolha o plano e preencha os dados.</p>
+                <p className="text-sm text-slate-500">Escolha o plano e preencha os dados.</p>
               </div>
               <button
                 type="button"
                 onClick={() => router.push('/')}
-                className="shrink-0 text-xs text-slate-500 hover:text-brand hover:underline"
+                className="shrink-0 text-sm text-slate-500 hover:text-brand hover:underline"
               >
                 Voltar
               </button>
@@ -91,7 +91,7 @@ export default function CadastroPage() {
                         : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <p className="text-xs font-semibold text-slate-900">{p.name}</p>
+                    <p className="text-sm font-semibold text-slate-900">{p.name}</p>
                     <p className="text-sm font-bold text-brand">{p.price}</p>
                     <p className="text-[10px] text-slate-500">
                       Até {p.users} {p.users === 1 ? 'usuário' : 'usuários'}
@@ -103,7 +103,7 @@ export default function CadastroPage() {
               {/* Empresa + Admin em 2 colunas no desktop */}
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-xs font-semibold text-slate-700">Empresa</p>
+                  <p className="text-sm font-semibold text-slate-700">Empresa</p>
                   <input
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
@@ -126,7 +126,7 @@ export default function CadastroPage() {
                 </div>
 
                 <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-xs font-semibold text-slate-700">Administrador</p>
+                  <p className="text-sm font-semibold text-slate-700">Administrador</p>
                   <input
                     value={adminName}
                     onChange={(e) => setAdminName(e.target.value)}
@@ -161,7 +161,7 @@ export default function CadastroPage() {
                 </div>
               </div>
 
-              {error && <p className="text-xs text-red-600">{error}</p>}
+              {error && <p className="text-sm text-red-600">{error}</p>}
 
               <div className="flex justify-end gap-2 pt-1">
                 <button
@@ -190,7 +190,7 @@ export default function CadastroPage() {
             <p className="mt-1 text-sm text-slate-600">
               Plano: <strong>{selected.name} — {selected.price}/mês</strong>
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-sm text-slate-500">
               Finalize o pagamento da mensalidade para ativar o acesso.
             </p>
 
@@ -204,7 +204,7 @@ export default function CadastroPage() {
                 Ir para o pagamento (Asaas)
               </a>
             ) : (
-              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 Link de pagamento em configuração. Em breve integração com Asaas.
               </p>
             )}
@@ -212,7 +212,7 @@ export default function CadastroPage() {
             <button
               type="button"
               onClick={() => router.push('/')}
-              className="mt-3 text-xs text-slate-500 hover:text-brand hover:underline"
+              className="mt-3 text-sm text-slate-500 hover:text-brand hover:underline"
             >
               Ir para o login
             </button>
