@@ -346,7 +346,6 @@ const FIELDS: Record<string, FieldDef[]> = {
     { key: 'name', label: 'Nome', type: 'text', required: true },
     { key: 'model', label: 'Modelo', type: 'text' },
     { key: 'category', label: 'Categoria', type: 'text' },
-    { key: 'unit', label: 'Unidade', type: 'text' },
     { key: 'minimum_stock', label: 'Estoque mínimo', type: 'number', step: '0.01' },
     { key: 'location', label: 'Localização', type: 'text' },
     { key: 'supplier', label: 'Fornecedor', type: 'text' },
@@ -467,7 +466,6 @@ const LABELS: Record<string, string> = {
   location: 'Localização',
   supplier: 'Fornecedor',
   unit_value: 'Valor unitário',
-  unit: 'Unidade',
   quantity: 'Quantidade',
   key: 'Chave',
   created_at: 'Criado em',
@@ -578,77 +576,87 @@ function statusClasses(v: string): string {
 
 export default function AppShell({
   user,
-  onLogout,
-  onUserUpdate,
-}: {
-  user: any;
-  onLogout: () => void;
-  onUserUpdate: (u: any) => void;
-}) {
+    onLogout,
+    onUserUpdate,
+    }: {
+    user: any;
+    onLogout: () => void;
+    onUserUpdate: (u: any) => void;
+  }) {
   const isMainAdmin = !!user?.is_main_admin;
 
   const isCompanyAdmin =
   isMainAdmin ||
   String(user?.role || '').toUpperCase() === 'ADMINISTRADOR';
 
-    const allowed = (key: string) => {
+  const allowed = (key: string) => {
+  if (isMainAdmin) return true;
+
+  const rawPerms = user?.permissions;
+  const perms = rawPerms
+    ? String(rawPerms).split(',').filter(Boolean)
+    : null;
+
+  if (perms) {
+    if (perms.includes(key)) return true;
+
+    if (key === 'production' && perms.includes('assembly')) {
+      return true;
+    }
+
     if (
-      (key === 'production' || key === 'assembly') &&
-      user?.current_unit === 'filial'
+      key === 'orders' &&
+      (perms.includes('orders_create') ||
+        perms.includes('orders_list'))
     ) {
-      return false;
+      return true;
     }
-    if (isMainAdmin) return true;
-    const rawPerms =
-      user?.current_unit === 'filial'
-        ? user.permissions_filial || user.permissions
-        : user.permissions;
-    const perms = rawPerms ? String(rawPerms).split(',').filter(Boolean) : null;
-    if (perms) {
-      if (perms.includes(key)) return true;
-      if (key === 'production' && perms.includes('assembly')) return true;
-      if (
-        key === 'orders' &&
-        (perms.includes('orders_create') || perms.includes('orders_list'))
-      )
-        return true;
-      return false;
-    }
-    const roleMods = moduleAccess[user.role] || [];
-    if (roleMods.includes('*') || roleMods.includes(key)) return true;
-    if (key === 'production' && roleMods.includes('assembly')) return true;
+
     return false;
+  }
+
+  const roleMods = moduleAccess[user.role] || [];
+
+  if (roleMods.includes('*') || roleMods.includes(key)) {
+    return true;
+  }
+
+  if (key === 'production' && roleMods.includes('assembly')) {
+    return true;
+  }
+
+  return false;
+
   };
 
   const [page, setPage] = useState<string>(() => {
-    const first = items.find(([k]) => {
-      if (k === 'critical') return isMainAdmin;
-      return allowed(k);
-    });
-    return first ? first[0] : '';
+  const first = items.find(([k]) => {
+  if (k === 'critical') return isMainAdmin;
+  return allowed(k);
   });
 
-  // Filial não pode ficar em Produção
-  useEffect(() => {
-    if (user?.current_unit === 'filial' && page === 'production') {
-      const first = items.find(([k]) => {
-        if (k === 'critical') return isMainAdmin;
-        return allowed(k);
-      });
-      setPage(first ? first[0] : '');
-    }
-  }, [user?.current_unit, page]);
+  return first ? first[0] : '';
 
-  // Se não tem acesso à página atual, vai para a primeira liberada
+  });
+
+  // Se o usuário não tiver acesso à página atual,
+  // direciona para a primeira página permitida.
   useEffect(() => {
-    if (isMainAdmin) return;
-    const ok = page && (page === 'critical' ? isMainAdmin : allowed(page));
-    if (ok) return;
-    const first = items.find(([k]) => {
-      if (k === 'critical') return false;
-      return allowed(k);
-    });
-    setPage(first ? first[0] : '');
+  if (isMainAdmin) return;
+
+  const ok =
+    page &&
+    (page === 'critical' ? isMainAdmin : allowed(page));
+
+  if (ok) return;
+
+  const first = items.find(([k]) => {
+    if (k === 'critical') return false;
+    return allowed(k);
+  });
+
+  setPage(first ? first[0] : '');
+
   }, [user, page]);
 
   const [rows, setRows] = useState<any[]>([]);
@@ -1171,9 +1179,6 @@ export default function AppShell({
             <h1 className="text-2xl font-bold">
               {page ? titleFor(page) : 'Sem acesso'}
             </h1>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-              {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
-            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative" ref={accountMenuRef}>
@@ -1476,25 +1481,6 @@ function AccountPanel({
     }
   }
 
-  async function switchUnit(next: 'matriz' | 'filial') {
-    if (user?.current_unit === next) return;
-    setUnitBusy(true);
-    setUnitErr('');
-    setUnitMsg('');
-    try {
-      const updated = await request('/auth/switch-unit', {
-        method: 'POST',
-        body: JSON.stringify({ unit: next }),
-      });
-      onUserUpdate(updated);
-      setUnitMsg(next === 'filial' ? 'Unidade: Filial' : 'Unidade: Matriz');
-    } catch (e: any) {
-      setUnitErr(e.message || 'Não foi possível trocar a unidade');
-    } finally {
-      setUnitBusy(false);
-    }
-  }
-
   const unitsAccess = String(user?.units_access || 'matriz,filial')
     .split(',')
     .map((s: string) => s.trim())
@@ -1585,7 +1571,6 @@ function AccountPanel({
           <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
           <p className="truncate text-xs text-slate-500">@{user.username}</p>
           <p className="mt-0.5 text-[11px] font-medium text-slate-600">
-            {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
           </p>
         </div>
       </div>
@@ -1594,7 +1579,6 @@ function AccountPanel({
         {(
           [
             ['conta', 'Conta'],
-            ['unidade', 'Unidade'],
             ['senha', 'Senha'],
             ['foto', 'Foto'],
           ] as const
@@ -1655,37 +1639,9 @@ function AccountPanel({
             {unitMsg && <p className="text-xs text-green-600">{unitMsg}</p>}
             {canSwitch ? (
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled={unitBusy || user?.current_unit === 'matriz'}
-                  onClick={() => switchUnit('matriz')}
-                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-                    user?.current_unit !== 'filial'
-                      ? 'border-brand bg-brand text-white'
-                      : 'border-slate-200 bg-white text-slate-700'
-                  } disabled:opacity-60`}
-                >
-                  1 — Matriz
-                </button>
-                <button
-                  type="button"
-                  disabled={unitBusy || user?.current_unit === 'filial'}
-                  onClick={() => switchUnit('filial')}
-                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-                    user?.current_unit === 'filial'
-                      ? 'border-brand bg-brand text-white'
-                      : 'border-slate-200 bg-white text-slate-700'
-                  } disabled:opacity-60`}
-                >
-                  2 — Filial
-                </button>
               </div>
             ) : (
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
-                <span className="mt-0.5 block text-slate-500">
-                  Seu usuário só tem acesso a esta unidade.
-                </span>
               </p>
             )}
           </div>
@@ -3406,71 +3362,7 @@ function EditUserForm({
         </Wrapper>
         );
       })}
-      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="mb-2 text-sm font-medium text-slate-700">Acesso às unidades</p>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={unitsAccess.includes('matriz')}
-              onChange={(e) => {
-                const s = new Set(unitsAccess);
-                if (e.target.checked) s.add('matriz');
-                else s.delete('matriz');
-                setUnitsAccess(Array.from(s));
-              }}
-            />
-            1 — Matriz
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={unitsAccess.includes('filial')}
-              onChange={(e) => {
-                const s = new Set(unitsAccess);
-                if (e.target.checked) s.add('filial');
-                else s.delete('filial');
-                setUnitsAccess(Array.from(s));
-              }}
-            />
-            2 — Filial
-          </label>
-        </div>
-                <p className="mt-1 text-xs text-slate-500">
-          Define em qual unidade este usuário pode entrar no login.
-        </p>
-      </div>
-
-      <div className="sm:col-span-2 space-y-4">
-        <div className="rounded-xl border border-slate-200 p-3">
-          <p className="mb-2 text-sm font-semibold text-slate-800">
-            Permissões na Matriz
-          </p>
-          <p className="mb-2 text-xs text-slate-500">
-            Abas e botões quando o usuário estiver na unidade Matriz.
-          </p>
-          <PermissionsField
-            value={values.permissions}
-            onChange={(v) => set('permissions', v)}
-            startOpen={!!user.permissions}
-          />
-        </div>
-        <div className="rounded-xl border border-slate-200 p-3">
-          <p className="mb-2 text-sm font-semibold text-slate-800">
-            Permissões na Filial
-          </p>
-          <p className="mb-2 text-xs text-slate-500">
-            Liberado pela Matriz. Vale quando o usuário estiver na Filial.
-            Produção não se aplica à Filial.
-          </p>
-          <PermissionsField
-            value={values.permissions_filial}
-            onChange={(v) => set('permissions_filial', v)}
-            startOpen={!!user.permissions_filial}
-          />
-        </div>
-      </div>
-
+      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3"></div>
       <div className="sm:col-span-2">
         <button
           disabled={saving}
@@ -3693,41 +3585,31 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     extras: true,
   });
 
-  // As permissões são específicas da unidade ativa. Antes este componente
-  // sempre lia user.permissions (Matriz), fazendo a agenda da Filial aparecer
-  // sem os botões/campos liberados em permissions_filial.
-  const activePermissions =
-    user?.current_unit === 'filial'
-      ? user.permissions_filial || user.permissions
-      : user.permissions;
+  const activePermissions = user?.permissions;
   const perms = String(activePermissions || '')
-    .split(',')
-    .map((p: string) => p.trim())
-    .filter(Boolean);
-  const isMainAdmin = !!user?.is_main_admin;
+  .split(',')
+  .map((p: string) => p.trim())
+  .filter(Boolean);
 
+  const isMainAdmin = !!user?.is_main_admin;
   const isCompanyAdmin =
   isMainAdmin ||
   String(user?.role || '').toUpperCase() === 'ADMINISTRADOR';
-  // Apenas o Administrador Principal (id 1) tem acesso total automático ao
-  // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
-  // depende exclusivamente das permissões específicas marcadas no cadastro
-  // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
-  // schedule_archive).
+
   const canEdit = isMainAdmin || perms.includes('schedule_edit');
   const canWrite = canEdit;
   const canNewWeek =
-    isMainAdmin || perms.includes('schedule_week');
+  isMainAdmin || perms.includes('schedule_week');
   const canNewRoute =
-    isMainAdmin || perms.includes('schedule_route');
+  isMainAdmin || perms.includes('schedule_route');
   const canPrint =
-    isMainAdmin || perms.includes('schedule_print');
+  isMainAdmin || perms.includes('schedule_print');
   const canDelete =
-    isMainAdmin || perms.includes('schedule_delete');
+  isMainAdmin || perms.includes('schedule_delete');
   const canArchive =
-    isMainAdmin || perms.includes('schedule_archive');
+  isMainAdmin || perms.includes('schedule_archive');
   const canExport =
-    isMainAdmin || perms.includes('schedule_export');
+  isMainAdmin || perms.includes('schedule_export');
 
     async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
