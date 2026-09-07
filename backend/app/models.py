@@ -34,19 +34,108 @@ class Company(Base):
     __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(160), default="Minha empresa")
-    legal_name: Mapped[str | None] = mapped_column(String(180), nullable=True)
-    document: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
-    email: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    city: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    state: Mapped[str | None] = mapped_column(String(2), nullable=True)
-    zip_code: Mapped[str | None] = mapped_column(String(12), nullable=True)
-    logo: Mapped[str | None] = mapped_column(Text, nullable=True)
-    plan: Mapped[str] = mapped_column(String(20), default="essencial", server_default="essencial")
-    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    name: Mapped[str] = mapped_column(
+        String(160),
+        nullable=False,
+        default="Minha empresa"
+    )
+
+    legal_name: Mapped[str | None] = mapped_column(
+        String(180),
+        nullable=True
+    )
+
+    document: Mapped[str | None] = mapped_column(
+        String(24),
+        nullable=True,
+        index=True
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(160),
+        nullable=True
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True
+    )
+
+    address: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
+    city: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True
+    )
+
+    state: Mapped[str | None] = mapped_column(
+        String(2),
+        nullable=True
+    )
+
+    zip_code: Mapped[str | None] = mapped_column(
+        String(12),
+        nullable=True
+    )
+
+    logo: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+    )
+
+    # =========================================================
+    # PLANO DA EMPRESA
+    # =========================================================
+
+    plan: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="essencial",
+        server_default="essencial"
+    )
+
+    # =========================================================
+    # STATUS DA ASSINATURA
+    # =========================================================
+
+    subscription_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="active",
+        server_default="active"
+    )
+
+    subscription_id: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+        index=True
+    )
+
+    current_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 
 
 class User(Base):
