@@ -1239,7 +1239,7 @@ export default function AppShell({
             rows={rows}
             loading={loading}
             create={create}
-            isAdmin={isMainAdmin}
+            isAdmin={isMainAdmin || user.role === 'ADMINISTRADOR'}
             lookups={lookups}
             editingUser={editingUser}
             setEditingUser={setEditingUser}
