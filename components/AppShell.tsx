@@ -585,7 +585,11 @@ export default function AppShell({
   onLogout: () => void;
   onUserUpdate: (u: any) => void;
 }) {
-  const isMainAdmin = !!user.is_main_admin;
+  const isMainAdmin = !!user?.is_main_admin;
+
+  const isCompanyAdmin =
+  isMainAdmin ||
+  String(user?.role || '').toUpperCase() === 'ADMINISTRADOR';
 
     const allowed = (key: string) => {
     if (
@@ -3700,7 +3704,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     .split(',')
     .map((p: string) => p.trim())
     .filter(Boolean);
-  const isMainAdmin = !!user.is_main_admin;
+  const isMainAdmin = !!user?.is_main_admin;
+
+  const isCompanyAdmin =
+  isMainAdmin ||
+  String(user?.role || '').toUpperCase() === 'ADMINISTRADOR';
   // Apenas o Administrador Principal (id 1) tem acesso total automático ao
   // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
   // depende exclusivamente das permissões específicas marcadas no cadastro
