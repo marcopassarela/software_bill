@@ -1138,7 +1138,7 @@ export default function AppShell({
       <main className="min-w-0 flex-1 p-4 md:p-8">
 
         <header className="mb-7 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <div className="relative" ref={accountMenuRef}>
               <button
                 type="button"
