@@ -5542,12 +5542,20 @@ class ProductionBatchIn(BaseModel):
     production_date: date
     lines: list[ProductionLineIn]
     notes: str | None = None
-    # Caixas provisórias (somente montagem)
-    provisional_boxes: float = 0
+    # Caixas provisórias (somente montagem) — monofásica / bifásica / trifásica
+    provisional_lines: list[ProductionLineIn] = []
     provisional_destination: str | None = None  # matriz_tubarao | filial_biguacu
+    # compatibilidade com versão antiga (quantidade única)
+    provisional_boxes: float = 0
 
 
-CAIXA_PROVISORIA_MODEL = "CAIXA PROVISÓRIA"
+CAIXA_PROVISORIA_PREFIX = "CAIXA PROVISÓRIA"
+CAIXA_PROVISORIA_MODELS = {
+    "CAIXA PROVISÓRIA MONOFÁSICA",
+    "CAIXA PROVISÓRIA BIFÁSICA",
+    "CAIXA PROVISÓRIA TRIFÁSICA",
+    "CAIXA PROVISÓRIA",  # legado
+}
 PROVISIONAL_DESTINATIONS = {
     "matriz_tubarao": "Matriz — Tubarão",
     "filial_biguacu": "Filial — Biguaçu",
@@ -5656,21 +5664,31 @@ def create_production_batch(
             "Sem permissão de Montagem",
         )
 
-    prov_boxes = float(getattr(body, "provisional_boxes", 0) or 0)
     prov_dest = (getattr(body, "provisional_destination", None) or "").strip().lower() or None
+    prov_lines = list(getattr(body, "provisional_lines", None) or [])
+    # compat: quantidade única antiga vira monofásica
+    legacy_boxes = float(getattr(body, "provisional_boxes", 0) or 0)
+    if legacy_boxes > 0 and not prov_lines:
+        prov_lines = [
+            ProductionLineIn(
+                model="CAIXA PROVISÓRIA MONOFÁSICA",
+                quantity=legacy_boxes,
+            )
+        ]
+    prov_total = sum(float(l.quantity or 0) for l in prov_lines)
 
     has_lines = any(
         float(l.quantity or 0) > 0
         or (kind == "montagem" and float(l.emergency_altered or 0) > 0)
         for l in (body.lines or [])
     )
-    if not has_lines and not (kind == "montagem" and prov_boxes > 0):
+    if not has_lines and not (kind == "montagem" and prov_total > 0):
         raise HTTPException(
             400,
             "Informe ao menos um modelo ou caixas provisórias",
         )
 
-    if kind == "montagem" and prov_boxes > 0:
+    if kind == "montagem" and prov_total > 0:
         if prov_dest not in PROVISIONAL_DESTINATIONS:
             raise HTTPException(
                 400,
@@ -5700,7 +5718,7 @@ def create_production_batch(
                     ProductionRecord.company_id == company.id,
                     ProductionRecord.production_date == body.production_date,
                     ProductionRecord.kind == "montagem",
-                    ProductionRecord.model != CAIXA_PROVISORIA_MODEL,
+                    ProductionRecord.model.notin_(list(CAIXA_PROVISORIA_MODELS)),
                 )
             )
             or 0
@@ -5708,7 +5726,7 @@ def create_production_batch(
         new_mont = sum(
             float(l.quantity or 0)
             for l in (body.lines or [])
-            if (l.model or "").strip() != CAIXA_PROVISORIA_MODEL
+            if (l.model or "").strip() not in CAIXA_PROVISORIA_MODELS
         )
         if existing_mont + new_mont > fab_total + 1e-9:
             raise HTTPException(
@@ -5741,7 +5759,7 @@ def create_production_batch(
             continue
 
         model_name = line.model.strip()
-        if model_name == CAIXA_PROVISORIA_MODEL:
+        if model_name in CAIXA_PROVISORIA_MODELS or model_name.startswith(CAIXA_PROVISORIA_PREFIX):
             continue  # tratado abaixo
 
         rec = ProductionRecord(
@@ -5762,25 +5780,40 @@ def create_production_batch(
             serialize(rec)
         )
 
-    if kind == "montagem" and prov_boxes > 0:
-        rec = ProductionRecord(
-            company_id=company.id,
-            kind="montagem",
-            production_date=body.production_date,
-            model=CAIXA_PROVISORIA_MODEL,
-            quantity=prov_boxes,
-            emergency_altered=0,
-            notes=(
-                f"{body.notes} | DEST:{prov_dest}"
-                if body.notes
-                else f"DEST:{prov_dest}"
-            ),
-            user_id=user.id,
-        )
-        # fix notes expression - use clearer
-        db.add(rec)
-        db.flush()
-        created.append(serialize(rec))
+    if kind == "montagem" and prov_total > 0:
+        for pl in prov_lines:
+            pq = float(pl.quantity or 0)
+            if pq <= 0:
+                continue
+            model_name = (pl.model or "").strip().upper()
+            if not model_name.startswith(CAIXA_PROVISORIA_PREFIX):
+                # normaliza nomes curtos
+                mapping = {
+                    "MONOFASICA": "CAIXA PROVISÓRIA MONOFÁSICA",
+                    "MONOFÁSICA": "CAIXA PROVISÓRIA MONOFÁSICA",
+                    "BIFASICA": "CAIXA PROVISÓRIA BIFÁSICA",
+                    "BIFÁSICA": "CAIXA PROVISÓRIA BIFÁSICA",
+                    "TRIFASICA": "CAIXA PROVISÓRIA TRIFÁSICA",
+                    "TRIFÁSICA": "CAIXA PROVISÓRIA TRIFÁSICA",
+                }
+                model_name = mapping.get(model_name, f"CAIXA PROVISÓRIA {model_name}")
+            rec = ProductionRecord(
+                company_id=company.id,
+                kind="montagem",
+                production_date=body.production_date,
+                model=model_name,
+                quantity=pq,
+                emergency_altered=0,
+                notes=(
+                    f"{body.notes} | DEST:{prov_dest}"
+                    if body.notes
+                    else f"DEST:{prov_dest}"
+                ),
+                user_id=user.id,
+            )
+            db.add(rec)
+            db.flush()
+            created.append(serialize(rec))
 
     if not created:
         raise HTTPException(
@@ -5924,8 +5957,12 @@ def production_by_day(
             ] += item["quantity"]
 
         else:
-            # Caixa provisória: não conta como poste montado
-            if (r.model or "") == CAIXA_PROVISORIA_MODEL:
+            # Caixa provisória (mono/bi/tri): não conta como poste montado
+            model_name = (r.model or "").strip()
+            if (
+                model_name in CAIXA_PROVISORIA_MODELS
+                or model_name.startswith(CAIXA_PROVISORIA_PREFIX)
+            ):
                 days[key]["provisional_boxes"] += item["quantity"]
                 notes = r.notes or ""
                 dest = None
@@ -6056,20 +6093,33 @@ def purge_production(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
-    if user.role not in (
-        Role.ADMIN,
-        Role.MANAGER,
+    role_val = (
+        user.role.value
+        if hasattr(user.role, "value")
+        else str(user.role or "")
+    ).strip().upper()
+    allowed_roles = {
+        "ADMINISTRADOR",
+        "GERENTE",
+        "ADMIN",
+        "MANAGER",
+    }
+    if (
+        role_val not in allowed_roles
+        and not getattr(user, "is_owner", False)
+        and not getattr(user, "is_main_admin", False)
     ):
         raise HTTPException(
             403,
-            "Apenas administrador ou gerente",
+            "Apenas administrador ou gerente podem apagar o dia",
         )
 
     if (
         body.confirm_text
         .strip()
         .upper()
+        .replace("Ç", "C")
+        .replace("ç", "C")
         != "APAGAR PRODUCAO"
     ):
         raise HTTPException(
@@ -6077,10 +6127,8 @@ def purge_production(
             "Digite APAGAR PRODUCAO para confirmar",
         )
 
-    if not verify_password(
-        body.password,
-        user.password_hash,
-    ):
+    pwd = (body.password or "").strip()
+    if not pwd or not verify_password(pwd, user.password_hash):
         raise HTTPException(
             403,
             "Senha incorreta",

@@ -84,7 +84,9 @@ export default function ProductionModule({ user }: { user: any }) {
   const [notes, setNotes] = useState('');
   const [qty, setQty] = useState<Record<string, string>>({});
   const [emerg, setEmerg] = useState<Record<string, string>>({});
-  const [provBoxes, setProvBoxes] = useState('');
+  const [provMono, setProvMono] = useState('');
+  const [provBi, setProvBi] = useState('');
+  const [provTri, setProvTri] = useState('');
   const [provDest, setProvDest] = useState<'matriz_tubarao' | 'filial_biguacu' | ''>('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,6 +98,7 @@ export default function ProductionModule({ user }: { user: any }) {
   const [purgePassword, setPurgePassword] = useState('');
   const [purgeBusy, setPurgeBusy] = useState(false);
   const [purgeDate, setPurgeDate] = useState('');
+  const [purgeError, setPurgeError] = useState('');
   const [showPrintDay, setShowPrintDay] = useState(false);
   const [printDate, setPrintDate] = useState('');
   const [printScope, setPrintScope] = useState<PrintScope>('all');
@@ -136,7 +139,8 @@ export default function ProductionModule({ user }: { user: any }) {
       setError('Informe a data.');
       return;
     }
-    const boxes = Number(provBoxes || 0);
+    const boxes =
+      Number(provMono || 0) + Number(provBi || 0) + Number(provTri || 0);
     if (!linesPreview.length && !(tab === 'montagem' && boxes > 0)) {
       setError('Informe a quantidade de pelo menos um modelo.');
       return;
@@ -160,15 +164,27 @@ export default function ProductionModule({ user }: { user: any }) {
           production_date: date,
           notes: notes || null,
           lines: linesPreview,
-          provisional_boxes: kind === 'montagem' ? Number(provBoxes || 0) : 0,
+          provisional_lines:
+            kind === 'montagem'
+              ? [
+                  { model: 'CAIXA PROVISÓRIA MONOFÁSICA', quantity: Number(provMono || 0) },
+                  { model: 'CAIXA PROVISÓRIA BIFÁSICA', quantity: Number(provBi || 0) },
+                  { model: 'CAIXA PROVISÓRIA TRIFÁSICA', quantity: Number(provTri || 0) },
+                ].filter((l) => l.quantity > 0)
+              : [],
           provisional_destination:
-            kind === 'montagem' && Number(provBoxes || 0) > 0 ? provDest : null,
+            kind === 'montagem' &&
+            Number(provMono || 0) + Number(provBi || 0) + Number(provTri || 0) > 0
+              ? provDest
+              : null,
         }),
       });
       setConfirmOpen(false);
       setQty({});
       setEmerg({});
-      setProvBoxes('');
+      setProvMono('');
+      setProvBi('');
+      setProvTri('');
       setProvDest('');
       setNotes('');
       setOkMsg('Lançamento registrado.');
@@ -440,19 +456,21 @@ export default function ProductionModule({ user }: { user: any }) {
   function openPurgeDay(dayIso: string) {
     setPurgeDate(dayIso);
     setPurgePassword('');
+    setPurgeError('');
     setPurgeOpen(true);
   }
 
   async function confirmPurge() {
     if (!purgeDate) return;
     setPurgeBusy(true);
+    setPurgeError('');
     setError('');
     try {
       const dia = purgeDate;
       const res = await request('/production/purge', {
         method: 'POST',
         body: JSON.stringify({
-          password: purgePassword,
+          password: (purgePassword || '').trim(),
           date_from: dia,
           date_to: dia,
           confirm_text: 'APAGAR PRODUCAO',
@@ -460,12 +478,13 @@ export default function ProductionModule({ user }: { user: any }) {
       });
       setPurgeOpen(false);
       setPurgeDate('');
+      setPurgePassword('');
       setOkMsg(
         `Apagados ${res.deleted} registros do dia ${dia.split('-').reverse().join('/')}.`
       );
       loadDays();
     } catch (e: any) {
-      setError(e.message);
+      setPurgeError(e?.message || 'Não foi possível apagar o dia.');
     } finally {
       setPurgeBusy(false);
     }
@@ -544,17 +563,41 @@ export default function ProductionModule({ user }: { user: any }) {
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
             <p className="text-sm font-semibold text-slate-800">Caixas provisórias</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              Quantidade feita no dia e para onde foi (Matriz Tubarão ou Filial Biguaçu).
+              Informe a quantidade por modelo e o destino (Matriz Tubarão ou Filial Biguaçu).
             </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <label className="text-sm">
-                <span className="mb-1 block text-slate-600">Quantidade</span>
+                <span className="mb-1 block text-slate-600">Monofásica</span>
                 <input
                   type="number"
                   min={0}
                   step={1}
-                  value={provBoxes}
-                  onChange={(e) => setProvBoxes(e.target.value.replace(/\D/g, ''))}
+                  value={provMono}
+                  onChange={(e) => setProvMono(e.target.value.replace(/\D/g, ''))}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                  placeholder="0"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-600">Bifásica</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={provBi}
+                  onChange={(e) => setProvBi(e.target.value.replace(/\D/g, ''))}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                  placeholder="0"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-600">Trifásica</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={provTri}
+                  onChange={(e) => setProvTri(e.target.value.replace(/\D/g, ''))}
                   className="w-full rounded-lg border border-slate-200 bg-white p-2"
                   placeholder="0"
                 />
@@ -568,7 +611,7 @@ export default function ProductionModule({ user }: { user: any }) {
                   }
                   className="w-full rounded-lg border border-slate-200 bg-white p-2"
                 >
-                  <option value="">Selecione</option>
+                  <option value="">Selecione…</option>
                   <option value="matriz_tubarao">Matriz — Tubarão</option>
                   <option value="filial_biguacu">Filial — Biguaçu</option>
                 </select>
@@ -891,18 +934,28 @@ export default function ProductionModule({ user }: { user: any }) {
                   </span>
                 </li>
               ))}
-              {tab === 'montagem' && Number(provBoxes || 0) > 0 && (
-                <li className="flex justify-between border-b py-1 text-amber-800">
-                  <span>
-                    Caixas provisórias →{' '}
-                    {provDest === 'filial_biguacu'
-                      ? 'Filial Biguaçu'
-                      : provDest === 'matriz_tubarao'
-                      ? 'Matriz Tubarão'
-                      : '—'}
-                  </span>
-                  <span className="tabular-nums font-semibold">{Number(provBoxes)}</span>
-                </li>
+              {tab === 'montagem' &&
+                Number(provMono || 0) + Number(provBi || 0) + Number(provTri || 0) > 0 && (
+                <>
+                  {Number(provMono || 0) > 0 && (
+                    <li className="flex justify-between border-b py-1 text-amber-800">
+                      <span>Caixa prov. monofásica → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span className="tabular-nums font-semibold">{Number(provMono)}</span>
+                    </li>
+                  )}
+                  {Number(provBi || 0) > 0 && (
+                    <li className="flex justify-between border-b py-1 text-amber-800">
+                      <span>Caixa prov. bifásica → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span className="tabular-nums font-semibold">{Number(provBi)}</span>
+                    </li>
+                  )}
+                  {Number(provTri || 0) > 0 && (
+                    <li className="flex justify-between border-b py-1 text-amber-800">
+                      <span>Caixa prov. trifásica → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span className="tabular-nums font-semibold">{Number(provTri)}</span>
+                    </li>
+                  )}
+                </>
               )}
             </ul>
             <div className="mt-5 flex justify-end gap-2">
@@ -992,14 +1045,23 @@ export default function ProductionModule({ user }: { user: any }) {
               . Use Backup Excel antes se ainda precisar dos dados.
             </p>
             <label className="mt-4 block text-sm">
-              <span className="mb-1 block text-slate-600">Sua senha *</span>
+              <span className="mb-1 block text-slate-600">Sua senha de login *</span>
               <input
                 type="password"
                 value={purgePassword}
                 onChange={(e) => setPurgePassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && purgePassword && !purgeBusy) confirmPurge();
+                }}
                 className="w-full rounded-lg border p-2"
+                autoComplete="current-password"
               />
             </label>
+            {purgeError && (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                {purgeError}
+              </p>
+            )}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
