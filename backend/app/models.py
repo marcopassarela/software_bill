@@ -1,7 +1,7 @@
 import enum
 
-from datetime import date as date_type, datetime, timezone, timedelta
-from datetime import date, datetime, timezone, timedelta
+from datetime import date as date_type
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import (
     Boolean,
@@ -1118,7 +1118,7 @@ class ScheduleWeek(Base):
         index=True,
     )
 
-    start_date: Mapped[date] = mapped_column(
+    start_date: Mapped[date_type] = mapped_column(
         Date,
         nullable=False,
     )
@@ -1410,7 +1410,7 @@ class ProductionRecord(Base):
         nullable=False,
     )
 
-    production_date: Mapped[date] = mapped_column(
+    production_date: Mapped[date_type] = mapped_column(
         Date,
         index=True,
         nullable=False,
@@ -1552,14 +1552,14 @@ class Order(Base):
         nullable=False,
     )
 
-    order_date: Mapped[date] = mapped_column(
+    order_date: Mapped[date_type] = mapped_column(
         Date,
         index=True,
         nullable=False,
     )
 
     # Data de saída
-    ship_date: Mapped[date | None] = mapped_column(
+    ship_date: Mapped[date_type | None] = mapped_column(
         Date,
         index=True,
         nullable=True,
