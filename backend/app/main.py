@@ -3270,15 +3270,14 @@ def edit_resource(
         db.flush()
 
     except IntegrityError as exc:
+    db.rollback()
 
-        db.rollback()
+    print("ERRO AO CADASTRAR:", repr(exc))
 
-        raise HTTPException(
-            409,
-            "Já existe um registro com esses dados.",
-        ) from exc
-
-    db.commit()
+    raise HTTPException(
+        status_code=409,
+        detail=str(exc.orig),
+    ) from exc
 
     return serialize(x)
 
