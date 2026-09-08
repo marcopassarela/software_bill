@@ -3179,25 +3179,15 @@ def edit_resource(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     if resource not in RESOURCES:
         raise HTTPException(404)
 
-    model, module = RESOURCES[
-        resource
-    ]
-
+    model, module = RESOURCES[resource]
     require(module)(user)
 
-    company = get_current_company(
-        user,
-        db,
-    )
+    company = get_current_company(user, db)
 
-    if not hasattr(
-        model,
-        "company_id",
-    ):
+    if not hasattr(model, "company_id"):
         raise HTTPException(
             500,
             f"Recurso {resource} não possui company_id.",
@@ -3206,8 +3196,7 @@ def edit_resource(
     x = db.scalar(
         select(model).where(
             model.id == record_id,
-            model.company_id
-            == company.id,
+            model.company_id == company.id,
         )
     )
 
@@ -3217,69 +3206,121 @@ def edit_resource(
             "Registro não encontrado",
         )
 
-    data = dict(
-        body.data
-    )
+    data = dict(body.data)
 
     # Nunca permitir troca de empresa
-    data.pop(
-        "company_id",
-        None,
-    )
+    data.pop("company_id", None)
 
+    # ==========================================================
+    # MOTORISTAS
+    # ==========================================================
     if resource == "drivers":
-
         if "cpf" in data:
-            data["cpf"] = normalize_cpf(
-                data.get("cpf")
-            )
+            data["cpf"] = normalize_cpf(data.get("cpf"))
 
         if "cnh" in data:
+            cnh = (data.get("cnh") or "").strip()
+            data["cnh"] = cnh or None
 
-            cnh = (
-                data.get("cnh")
-                or ""
-            ).strip()
+    # ==========================================================
+    # VEÍCULOS
+    # ==========================================================
+    if resource == "vehicles":
+        # Nunca permitir alteração do ID
+        data.pop("id", None)
 
-            data["cnh"] = (
-                cnh or None
+        if "plate" in data:
+            plate = str(data.get("plate") or "").strip().upper()
+
+            if not plate:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A placa do veículo é obrigatória.",
+                )
+
+            # Procurar placa duplicada somente na empresa atual.
+            # O próprio veículo que está sendo editado é ignorado.
+            existing_vehicle = (
+                db.query(model)
+                .filter(
+                    model.company_id == company.id,
+                    model.plate == plate,
+                    model.id != record_id,
+                )
+                .first()
             )
 
+            if existing_vehicle:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A placa {plate} já está cadastrada nesta empresa.",
+                )
+
+            data["plate"] = plate
+
+    # ==========================================================
+    # PRODUTOS
+    # ==========================================================
+    if resource == "products":
+        if data.get("code"):
+            data["code"] = str(data["code"]).strip()
+
+    # ==========================================================
+    # APLICAR ALTERAÇÕES
+    # ==========================================================
     for k, v in model_data(
         model,
         data,
     ).items():
-
         setattr(
             x,
             k,
             v,
         )
 
-    audit(
-        db,
-        user,
-        "ALTERAÇÃO",
-        module,
-        record_id,
-        request,
-    )
-
     try:
-
         db.flush()
 
+        audit(
+            db,
+            user,
+            "ALTERAÇÃO",
+            module,
+            record_id,
+            request,
+        )
+
+        db.commit()
+
     except IntegrityError as exc:
-    db.rollback()
+        db.rollback()
 
-    print("ERRO AO CADASTRAR:", repr(exc))
+        # Não afirmar que é placa duplicada sem confirmação.
+        if resource == "vehicles":
+            raise HTTPException(
+                status_code=409,
+                detail="Não foi possível alterar o veículo. Verifique os dados informados e tente novamente.",
+            ) from exc
 
-    raise HTTPException(
-        status_code=409,
-        detail=str(exc.orig),
-    ) from exc
+        if resource == "drivers" and "email" in data:
+            raise HTTPException(
+                status_code=409,
+                detail="Este e-mail já está cadastrado nesta empresa.",
+            ) from exc
+
+        if resource == "products" and "code" in data:
+            raise HTTPException(
+                status_code=409,
+                detail="Este código de produto já está cadastrado nesta empresa.",
+            ) from exc
+
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe um registro com os mesmos dados.",
+        ) from exc
 
     return serialize(x)
+
 
 
 @app.delete("/{resource}/{record_id}")
