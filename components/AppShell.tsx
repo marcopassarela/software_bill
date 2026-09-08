@@ -420,6 +420,7 @@ const USER_EDIT_FIELDS: FieldDef[] = [
     label: 'Nova senha (deixe em branco para manter a atual)',
     type: 'text',
   },
+  { key: 'permissions', label: 'Permissões específicas (abas e botões)', type: 'modules' },
 ];
 
 const LABELS: Record<string, string> = {
@@ -3292,7 +3293,7 @@ function EditUserForm({
             <PermissionsField
               value={values[f.key]}
               onChange={(v) => set(f.key, v)}
-              startOpen={!!user.permissions}
+              startOpen={true}
             />
           ) : f.type === 'select' ? (
             <select
