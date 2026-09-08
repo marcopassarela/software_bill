@@ -3029,6 +3029,7 @@ def list_resource(
         for x in db.scalars(q).all()
     ]
 
+
 @app.post("/{resource}")
 def add_resource(
     resource: str,
@@ -5541,6 +5542,16 @@ class ProductionBatchIn(BaseModel):
     production_date: date
     lines: list[ProductionLineIn]
     notes: str | None = None
+    # Caixas provisórias (somente montagem)
+    provisional_boxes: float = 0
+    provisional_destination: str | None = None  # matriz_tubarao | filial_biguacu
+
+
+CAIXA_PROVISORIA_MODEL = "CAIXA PROVISÓRIA"
+PROVISIONAL_DESTINATIONS = {
+    "matriz_tubarao": "Matriz — Tubarão",
+    "filial_biguacu": "Filial — Biguaçu",
+}
 
 
 def _can_prod(
@@ -5645,20 +5656,73 @@ def create_production_batch(
             "Sem permissão de Montagem",
         )
 
-    if not body.lines:
+    prov_boxes = float(getattr(body, "provisional_boxes", 0) or 0)
+    prov_dest = (getattr(body, "provisional_destination", None) or "").strip().lower() or None
+
+    has_lines = any(
+        float(l.quantity or 0) > 0
+        or (kind == "montagem" and float(l.emergency_altered or 0) > 0)
+        for l in (body.lines or [])
+    )
+    if not has_lines and not (kind == "montagem" and prov_boxes > 0):
         raise HTTPException(
             400,
-            "Informe ao menos um modelo",
+            "Informe ao menos um modelo ou caixas provisórias",
         )
+
+    if kind == "montagem" and prov_boxes > 0:
+        if prov_dest not in PROVISIONAL_DESTINATIONS:
+            raise HTTPException(
+                400,
+                "Informe o destino das caixas provisórias: Matriz (Tubarão) ou Filial (Biguaçu).",
+            )
 
     company = get_current_company(
         user,
         db,
     )
 
+    # Segurança: montagem de postes do dia não pode ultrapassar a fabricação do dia
+    if kind == "montagem":
+        fab_total = float(
+            db.scalar(
+                select(func.coalesce(func.sum(ProductionRecord.quantity), 0)).where(
+                    ProductionRecord.company_id == company.id,
+                    ProductionRecord.production_date == body.production_date,
+                    ProductionRecord.kind == "fabricacao",
+                )
+            )
+            or 0
+        )
+        existing_mont = float(
+            db.scalar(
+                select(func.coalesce(func.sum(ProductionRecord.quantity), 0)).where(
+                    ProductionRecord.company_id == company.id,
+                    ProductionRecord.production_date == body.production_date,
+                    ProductionRecord.kind == "montagem",
+                    ProductionRecord.model != CAIXA_PROVISORIA_MODEL,
+                )
+            )
+            or 0
+        )
+        new_mont = sum(
+            float(l.quantity or 0)
+            for l in (body.lines or [])
+            if (l.model or "").strip() != CAIXA_PROVISORIA_MODEL
+        )
+        if existing_mont + new_mont > fab_total + 1e-9:
+            raise HTTPException(
+                400,
+                (
+                    f"Montagem não pode ultrapassar a fabricação do dia. "
+                    f"Fabricação: {fab_total:g} · Já montado: {existing_mont:g} · "
+                    f"Neste lançamento: {new_mont:g} · Máximo restante: {max(0, fab_total - existing_mont):g}."
+                ),
+            )
+
     created = []
 
-    for line in body.lines:
+    for line in body.lines or []:
 
         qty = float(
             line.quantity or 0
@@ -5676,11 +5740,15 @@ def create_production_batch(
         if qty <= 0 and em <= 0:
             continue
 
+        model_name = line.model.strip()
+        if model_name == CAIXA_PROVISORIA_MODEL:
+            continue  # tratado abaixo
+
         rec = ProductionRecord(
             company_id=company.id,
             kind=kind,
             production_date=body.production_date,
-            model=line.model.strip(),
+            model=model_name,
             quantity=qty,
             emergency_altered=em,
             notes=body.notes,
@@ -5693,6 +5761,26 @@ def create_production_batch(
         created.append(
             serialize(rec)
         )
+
+    if kind == "montagem" and prov_boxes > 0:
+        rec = ProductionRecord(
+            company_id=company.id,
+            kind="montagem",
+            production_date=body.production_date,
+            model=CAIXA_PROVISORIA_MODEL,
+            quantity=prov_boxes,
+            emergency_altered=0,
+            notes=(
+                f"{body.notes} | DEST:{prov_dest}"
+                if body.notes
+                else f"DEST:{prov_dest}"
+            ),
+            user_id=user.id,
+        )
+        # fix notes expression - use clearer
+        db.add(rec)
+        db.flush()
+        created.append(serialize(rec))
 
     if not created:
         raise HTTPException(
@@ -5807,6 +5895,9 @@ def production_by_day(
                 "fabricacao_total": 0.0,
                 "montagem_total": 0.0,
                 "emergency_total": 0.0,
+                "provisional_boxes": 0.0,
+                "provisional_destination": None,
+                "provisional_destination_label": None,
             }
 
         item = {
@@ -5833,20 +5924,26 @@ def production_by_day(
             ] += item["quantity"]
 
         else:
-
-            days[key][
-                "montagem"
-            ].append(item)
-
-            days[key][
-                "montagem_total"
-            ] += item["quantity"]
-
-            days[key][
-                "emergency_total"
-            ] += item[
-                "emergency_altered"
-            ]
+            # Caixa provisória: não conta como poste montado
+            if (r.model or "") == CAIXA_PROVISORIA_MODEL:
+                days[key]["provisional_boxes"] += item["quantity"]
+                notes = r.notes or ""
+                dest = None
+                if "DEST:" in notes:
+                    dest = notes.split("DEST:")[-1].strip().split()[0].strip()
+                if dest in PROVISIONAL_DESTINATIONS:
+                    days[key]["provisional_destination"] = dest
+                    days[key]["provisional_destination_label"] = PROVISIONAL_DESTINATIONS[dest]
+                days[key]["montagem"].append({
+                    **item,
+                    "is_provisional": True,
+                    "destination": dest,
+                    "destination_label": PROVISIONAL_DESTINATIONS.get(dest) if dest else None,
+                })
+            else:
+                days[key]["montagem"].append(item)
+                days[key]["montagem_total"] += item["quantity"]
+                days[key]["emergency_total"] += item["emergency_altered"]
 
     return sorted(
         days.values(),

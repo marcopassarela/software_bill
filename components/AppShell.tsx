@@ -866,9 +866,6 @@ export default function AppShell({
   async function create(data: any) {
     setError('');
     try {
-      if (page === 'users' && !data.units_access) {
-        data = { ...data, units_access: 'matriz,filial' };
-      }
       if (page === 'entry' || page === 'output')
         await request('/stock/' + page, { method: 'POST', body: JSON.stringify(data) });
       else
@@ -1454,10 +1451,7 @@ function AccountPanel({
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
-  const [unitBusy, setUnitBusy] = useState(false);
-  const [unitMsg, setUnitMsg] = useState('');
-  const [unitErr, setUnitErr] = useState('');
-  const [tab, setTab] = useState<'conta' | 'unidade' | 'senha' | 'foto'>('conta');
+  const [tab, setTab] = useState<'conta' | 'senha' | 'foto'>('conta');
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1480,14 +1474,6 @@ function AccountPanel({
       setSavingName(false);
     }
   }
-
-  const unitsAccess = String(user?.units_access || 'matriz,filial')
-    .split(',')
-    .map((s: string) => s.trim())
-    .filter(Boolean);
-  const canMatriz = !!user?.is_main_admin || unitsAccess.includes('matriz');
-  const canFilial = !!user?.is_main_admin || unitsAccess.includes('filial');
-  const canSwitch = canMatriz && canFilial;
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -1631,20 +1617,6 @@ function AccountPanel({
               {savingName ? 'Salvando…' : 'Salvar dados'}
             </button>
           </form>
-        )}
-
-        {tab === 'unidade' && (
-          <div className="space-y-2">
-            {unitErr && <p className="text-xs text-red-600">{unitErr}</p>}
-            {unitMsg && <p className="text-xs text-green-600">{unitMsg}</p>}
-            {canSwitch ? (
-              <div className="grid grid-cols-2 gap-2">
-              </div>
-            ) : (
-              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
-              </p>
-            )}
-          </div>
         )}
 
         {tab === 'senha' && (
@@ -3271,16 +3243,9 @@ function EditUserForm({
     email: user.email || '',
     role: user.role || '',
     permissions: user.permissions || '',
-    permissions_filial: user.permissions_filial || '',
     active: user.active ? 'Sim' : 'Não',
     password: '',
   });
-  const [unitsAccess, setUnitsAccess] = useState<string[]>(
-    String(user.units_access || 'matriz,filial')
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter(Boolean)
-  );
   const [saving, setSaving] = useState(false);
 
   function set(key: string, v: string) {
@@ -3300,13 +3265,7 @@ function EditUserForm({
             String(values.permissions).split(',').filter(Boolean)
           ).join(',')
         : null,
-      permissions_filial: values.permissions_filial
-        ? expandPermissions(
-            String(values.permissions_filial).split(',').filter(Boolean)
-          ).join(',')
-        : null,
       active: values.active === 'Sim',
-      units_access: (unitsAccess.length ? unitsAccess : ['matriz']).join(','),
     };
     if (values.password) data.password = values.password;
     try {
@@ -3362,7 +3321,6 @@ function EditUserForm({
         </Wrapper>
         );
       })}
-      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3"></div>
       <div className="sm:col-span-2">
         <button
           disabled={saving}

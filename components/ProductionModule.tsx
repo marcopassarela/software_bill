@@ -84,6 +84,8 @@ export default function ProductionModule({ user }: { user: any }) {
   const [notes, setNotes] = useState('');
   const [qty, setQty] = useState<Record<string, string>>({});
   const [emerg, setEmerg] = useState<Record<string, string>>({});
+  const [provBoxes, setProvBoxes] = useState('');
+  const [provDest, setProvDest] = useState<'matriz_tubarao' | 'filial_biguacu' | ''>('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [days, setDays] = useState<any[]>([]);
@@ -134,8 +136,13 @@ export default function ProductionModule({ user }: { user: any }) {
       setError('Informe a data.');
       return;
     }
-    if (!linesPreview.length) {
+    const boxes = Number(provBoxes || 0);
+    if (!linesPreview.length && !(tab === 'montagem' && boxes > 0)) {
       setError('Informe a quantidade de pelo menos um modelo.');
+      return;
+    }
+    if (tab === 'montagem' && boxes > 0 && !provDest) {
+      setError('Informe o destino das caixas provisórias (Matriz Tubarão ou Filial Biguaçu).');
       return;
     }
     setConfirmOpen(true);
@@ -153,11 +160,16 @@ export default function ProductionModule({ user }: { user: any }) {
           production_date: date,
           notes: notes || null,
           lines: linesPreview,
+          provisional_boxes: kind === 'montagem' ? Number(provBoxes || 0) : 0,
+          provisional_destination:
+            kind === 'montagem' && Number(provBoxes || 0) > 0 ? provDest : null,
         }),
       });
       setConfirmOpen(false);
       setQty({});
       setEmerg({});
+      setProvBoxes('');
+      setProvDest('');
       setNotes('');
       setOkMsg('Lançamento registrado.');
       setTab('dia');
@@ -178,10 +190,121 @@ export default function ProductionModule({ user }: { user: any }) {
     }
     if (scope === 'all' || scope === 'montagem') {
       (day.montagem || []).forEach((x: any) => {
-        rows.push(['Montagem', x.model, x.quantity, x.emergency_altered || 0]);
+        if (x.is_provisional) {
+          rows.push([
+            'Caixa provisória',
+            x.destination_label || x.model,
+            x.quantity,
+            0,
+          ]);
+        } else {
+          rows.push(['Montagem', x.model, x.quantity, x.emergency_altered || 0]);
+        }
       });
     }
     return rows;
+  }
+
+  function monthSummaryBackup(format: 'pdf' | 'xlsx') {
+    setError('');
+    if (!days.length) {
+      setError('Filtre o período (ex.: o mês) antes de gerar o resumo.');
+      return;
+    }
+    let fab = 0;
+    let mont = 0;
+    let emerg = 0;
+    let boxes = 0;
+    const byDest: Record<string, number> = {};
+    const byModel: Record<string, { fab: number; mont: number }> = {};
+
+    days.forEach((day: any) => {
+      fab += Number(day.fabricacao_total || 0);
+      mont += Number(day.montagem_total || 0);
+      emerg += Number(day.emergency_total || 0);
+      boxes += Number(day.provisional_boxes || 0);
+      const destLabel = day.provisional_destination_label || '—';
+      if (Number(day.provisional_boxes || 0) > 0) {
+        byDest[destLabel] = (byDest[destLabel] || 0) + Number(day.provisional_boxes || 0);
+      }
+      (day.fabricacao || []).forEach((x: any) => {
+        if (!byModel[x.model]) byModel[x.model] = { fab: 0, mont: 0 };
+        byModel[x.model].fab += Number(x.quantity || 0);
+      });
+      (day.montagem || [])
+        .filter((x: any) => !x.is_provisional)
+        .forEach((x: any) => {
+          if (!byModel[x.model]) byModel[x.model] = { fab: 0, mont: 0 };
+          byModel[x.model].mont += Number(x.quantity || 0);
+        });
+    });
+
+    const periodo = `${filterFrom || '…'} a ${filterTo || '…'}`;
+
+    if (format === 'xlsx') {
+      const summary = [
+        { Indicador: 'Período', Valor: periodo },
+        { Indicador: 'Total fabricação (postes)', Valor: fab },
+        { Indicador: 'Total montagem (postes)', Valor: mont },
+        { Indicador: 'Alterações emergência', Valor: emerg },
+        { Indicador: 'Caixas provisórias (total)', Valor: boxes },
+        ...Object.entries(byDest).map(([k, v]) => ({
+          Indicador: `Caixas → ${k}`,
+          Valor: v,
+        })),
+      ];
+      const models = Object.entries(byModel).map(([model, v]) => ({
+        Modelo: model,
+        Fabricacao: v.fab,
+        Montagem: v.mont,
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Resumo');
+      if (models.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(models), 'Por modelo');
+      }
+      XLSX.writeFile(wb, `resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`);
+      setOkMsg('Resumo do mês (Excel) gerado.');
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const margin = 14;
+    let y = 14;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGISTICAS BILL — Resumo de producao', margin, y);
+    y += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`Periodo: ${periodo}`, margin, y);
+    y += 6;
+    doc.text(`Fabricacao (postes): ${fab}`, margin, y);
+    y += 5;
+    doc.text(`Montagem (postes): ${mont}`, margin, y);
+    y += 5;
+    doc.text(`Alteracoes emergencia: ${emerg}`, margin, y);
+    y += 5;
+    doc.text(`Caixas provisorias: ${boxes}`, margin, y);
+    y += 5;
+    Object.entries(byDest).forEach(([k, v]) => {
+      doc.text(`  ${k}: ${v}`, margin, y);
+      y += 5;
+    });
+    y += 4;
+    const body = Object.entries(byModel).map(([model, v]) => [model, v.fab, v.mont]);
+    if (body.length) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Modelo', 'Fabricacao', 'Montagem']],
+        body,
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 1.2 },
+        headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+      });
+    }
+    doc.save(`resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`);
+    setOkMsg('Resumo do mes (PDF) gerado.');
   }
 
   function printSelectedDay() {
@@ -416,6 +539,44 @@ export default function ProductionModule({ user }: { user: any }) {
             </tbody>
           </table>
         </div>
+
+        {kind === 'montagem' && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+            <p className="text-sm font-semibold text-slate-800">Caixas provisórias</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Quantidade feita no dia e para onde foi (Matriz Tubarão ou Filial Biguaçu).
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-600">Quantidade</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={provBoxes}
+                  onChange={(e) => setProvBoxes(e.target.value.replace(/\D/g, ''))}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                  placeholder="0"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-600">Destino</span>
+                <select
+                  value={provDest}
+                  onChange={(e) =>
+                    setProvDest(e.target.value as 'matriz_tubarao' | 'filial_biguacu' | '')
+                  }
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2"
+                >
+                  <option value="">Selecione</option>
+                  <option value="matriz_tubarao">Matriz — Tubarão</option>
+                  <option value="filial_biguacu">Filial — Biguaçu</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        )}
+
         <label className="mt-4 block text-sm">
           <span className="mb-1 block text-slate-600">Observação</span>
           <textarea
@@ -574,6 +735,22 @@ export default function ProductionModule({ user }: { user: any }) {
                 <FileDown size={15} />
                 Backup PDF (período)
               </button>
+              <button
+                type="button"
+                onClick={() => monthSummaryBackup('pdf')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-800 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              >
+                <FileDown size={15} />
+                Resumo do mês (PDF)
+              </button>
+              <button
+                type="button"
+                onClick={() => monthSummaryBackup('xlsx')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 px-3.5 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+              >
+                <FileSpreadsheet size={15} />
+                Resumo do mês (Excel)
+              </button>
             </div>
           </div>
 
@@ -660,6 +837,22 @@ export default function ProductionModule({ user }: { user: any }) {
                               </span>
                             </li>
                           ))}
+                          {(d.montagem || [])
+                            .filter((x: any) => x.is_provisional)
+                            .map((x: any, i: number) => (
+                              <li
+                                key={`prov-${i}`}
+                                className="flex items-center justify-between gap-2 py-1.5 text-amber-800"
+                              >
+                                <span>
+                                  Caixas provisórias
+                                  {x.destination_label ? ` → ${x.destination_label}` : ''}
+                                </span>
+                                <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums">
+                                  {x.quantity}
+                                </span>
+                              </li>
+                            ))}
                           {!d.montagem?.length && (
                             <li className="py-1.5 text-slate-400">Sem lançamento</li>
                           )}
@@ -698,6 +891,19 @@ export default function ProductionModule({ user }: { user: any }) {
                   </span>
                 </li>
               ))}
+              {tab === 'montagem' && Number(provBoxes || 0) > 0 && (
+                <li className="flex justify-between border-b py-1 text-amber-800">
+                  <span>
+                    Caixas provisórias →{' '}
+                    {provDest === 'filial_biguacu'
+                      ? 'Filial Biguaçu'
+                      : provDest === 'matriz_tubarao'
+                      ? 'Matriz Tubarão'
+                      : '—'}
+                  </span>
+                  <span className="tabular-nums font-semibold">{Number(provBoxes)}</span>
+                </li>
+              )}
             </ul>
             <div className="mt-5 flex justify-end gap-2">
               <button
