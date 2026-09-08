@@ -3039,24 +3039,26 @@ def add_resource(
     db: Session = Depends(get_db),
 ):
     if resource not in RESOURCES:
-        raise HTTPException(404)
+        raise HTTPException(
+            status_code=404,
+            detail="Recurso não encontrado.",
+        )
 
     model, module = RESOURCES[resource]
+
     require(module)(user)
 
     company = get_current_company(user, db)
 
     if not hasattr(model, "company_id"):
         raise HTTPException(
-            500,
-            f"Recurso {resource} não possui company_id.",
+            status_code=500,
+            detail=f"Recurso {resource} não possui company_id.",
         )
 
     data = dict(body.data)
 
-    # Nunca aceitar tenant vindo do frontend
     data.pop("company_id", None)
-    data["company_id"] = company.id
 
     if resource == "drivers":
         if "cpf" in data:
@@ -3066,10 +3068,8 @@ def add_resource(
             cnh = (data.get("cnh") or "").strip()
             data["cnh"] = cnh or None
 
-    # ==========================================================
-    # VEÍCULOS
-    # ==========================================================
     if resource == "vehicles":
+
         # Nunca permitir que o frontend escolha o ID
         data.pop("id", None)
 
@@ -3082,7 +3082,7 @@ def add_resource(
                 detail="A placa do veículo é obrigatória.",
             )
 
-        # Verificar duplicidade SOMENTE dentro da empresa atual
+        # Verificar duplicidade somente dentro da empresa atual
         existing_vehicle = (
             db.query(model)
             .filter(
@@ -3100,19 +3100,18 @@ def add_resource(
 
         data["plate"] = plate
 
-    # ==========================================================
-    # PRODUTOS
-    # ==========================================================
     if resource == "products":
         if data.get("code"):
             data["code"] = str(data["code"]).strip()
 
-    x = model(
-        **model_data(
-            model,
-            data,
-        )
+    model_values = model_data(
+        model,
+        data,
     )
+
+    model_values["company_id"] = company.id
+
+    x = model(**model_values)
 
     db.add(x)
 
@@ -3122,31 +3121,19 @@ def add_resource(
     except IntegrityError as exc:
         db.rollback()
 
-        print("========================================")
-        print("ERRO REAL AO CADASTRAR VEÍCULO:")
-        print(repr(exc))
-        print("ORIGINAL:")
-        print(repr(exc.orig))
-        print("========================================")
+        if resource == "vehicles":
+            raise HTTPException(
+                status_code=409,
+                detail=f"A placa {data.get('plate')} já está cadastrada nesta empresa.",
+            ) from exc
 
-        raise HTTPException(
-            status_code=409,
-            detail=f"Erro no banco: {exc.orig}",
-        ) from exc
-
-        if (
-            resource == "drivers"
-            and "email" in data
-        ):
+        if resource == "drivers" and data.get("email"):
             raise HTTPException(
                 status_code=409,
                 detail="Este e-mail já está cadastrado nesta empresa.",
             ) from exc
 
-        if (
-            resource == "products"
-            and "code" in data
-        ):
+        if resource == "products" and data.get("code"):
             raise HTTPException(
                 status_code=409,
                 detail="Este código de produto já está cadastrado nesta empresa.",
@@ -3154,7 +3141,7 @@ def add_resource(
 
         raise HTTPException(
             status_code=409,
-            detail="Já existe um registro com os mesmos dados.",
+            detail="Não foi possível cadastrar o registro. Verifique os dados informados.",
         ) from exc
 
     audit(
