@@ -3122,13 +3122,17 @@ def add_resource(
     except IntegrityError as exc:
         db.rollback()
 
-        # NÃO afirmar que é placa duplicada sem ter certeza.
-        # O banco pode ter rejeitado por outra constraint.
-        if resource == "vehicles":
-            raise HTTPException(
-                status_code=409,
-                detail="Não foi possível cadastrar o veículo. Verifique os dados informados e tente novamente.",
-            ) from exc
+        print("========================================")
+        print("ERRO REAL AO CADASTRAR VEÍCULO:")
+        print(repr(exc))
+        print("ORIGINAL:")
+        print(repr(exc.orig))
+        print("========================================")
+
+        raise HTTPException(
+            status_code=409,
+            detail=f"Erro no banco: {exc.orig}",
+        ) from exc
 
         if (
             resource == "drivers"
