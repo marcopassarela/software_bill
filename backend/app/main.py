@@ -3038,75 +3038,74 @@ def add_resource(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     if resource not in RESOURCES:
         raise HTTPException(404)
 
-    model, module = RESOURCES[
-        resource
-    ]
-
+    model, module = RESOURCES[resource]
     require(module)(user)
 
-    company = get_current_company(
-        user,
-        db,
-    )
+    company = get_current_company(user, db)
 
-    if not hasattr(
-        model,
-        "company_id",
-    ):
+    if not hasattr(model, "company_id"):
         raise HTTPException(
             500,
             f"Recurso {resource} não possui company_id.",
         )
 
-    data = dict(
-        body.data
-    )
+    data = dict(body.data)
 
     # Nunca aceitar tenant vindo do frontend
-    data.pop(
-        "company_id",
-        None,
-    )
-
-    data["company_id"] = (
-        company.id
-    )
+    data.pop("company_id", None)
+    data["company_id"] = company.id
 
     if resource == "drivers":
-
         if "cpf" in data:
-            data["cpf"] = normalize_cpf(
-                data.get("cpf")
-            )
+            data["cpf"] = normalize_cpf(data.get("cpf"))
 
         if "cnh" in data:
+            cnh = (data.get("cnh") or "").strip()
+            data["cnh"] = cnh or None
 
-            cnh = (
-                data.get("cnh")
-                or ""
-            ).strip()
-
-            data["cnh"] = (
-                cnh or None
-            )
-
-    # Relações também precisam pertencer à empresa
+    # ==========================================================
+    # VEÍCULOS
+    # ==========================================================
     if resource == "vehicles":
+        # Nunca permitir que o frontend escolha o ID
+        data.pop("id", None)
 
-        if data.get("id"):
-            data.pop("id", None)
+        # Normalizar placa
+        plate = str(data.get("plate") or "").strip().upper()
 
-    if resource == "products":
-
-        if data.get("code"):
-            data["code"] = (
-                str(data["code"])
-                .strip()
+        if not plate:
+            raise HTTPException(
+                status_code=400,
+                detail="A placa do veículo é obrigatória.",
             )
+
+        # Verificar duplicidade SOMENTE dentro da empresa atual
+        existing_vehicle = (
+            db.query(model)
+            .filter(
+                model.company_id == company.id,
+                model.plate == plate,
+            )
+            .first()
+        )
+
+        if existing_vehicle:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A placa {plate} já está cadastrada nesta empresa.",
+            )
+
+        data["plate"] = plate
+
+    # ==========================================================
+    # PRODUTOS
+    # ==========================================================
+    if resource == "products":
+        if data.get("code"):
+            data["code"] = str(data["code"]).strip()
 
     x = model(
         **model_data(
@@ -3118,20 +3117,17 @@ def add_resource(
     db.add(x)
 
     try:
-
         db.flush()
 
     except IntegrityError as exc:
-
         db.rollback()
 
-        if (
-            resource == "vehicles"
-            and "plate" in data
-        ):
+        # NÃO afirmar que é placa duplicada sem ter certeza.
+        # O banco pode ter rejeitado por outra constraint.
+        if resource == "vehicles":
             raise HTTPException(
-                409,
-                f"A placa {data['plate']} já está cadastrada nesta empresa.",
+                status_code=409,
+                detail="Não foi possível cadastrar o veículo. Verifique os dados informados e tente novamente.",
             ) from exc
 
         if (
@@ -3139,8 +3135,8 @@ def add_resource(
             and "email" in data
         ):
             raise HTTPException(
-                409,
-                "Este e-mail já está cadastrado nesta empresa.",
+                status_code=409,
+                detail="Este e-mail já está cadastrado nesta empresa.",
             ) from exc
 
         if (
@@ -3148,13 +3144,13 @@ def add_resource(
             and "code" in data
         ):
             raise HTTPException(
-                409,
-                "Este código de produto já está cadastrado nesta empresa.",
+                status_code=409,
+                detail="Este código de produto já está cadastrado nesta empresa.",
             ) from exc
 
         raise HTTPException(
-            409,
-            "Já existe um registro com os mesmos dados.",
+            status_code=409,
+            detail="Já existe um registro com os mesmos dados.",
         ) from exc
 
     audit(
@@ -3173,7 +3169,6 @@ def add_resource(
     db.commit()
 
     return serialize(x)
-
 
 @app.patch("/{resource}/{record_id}")
 def edit_resource(
