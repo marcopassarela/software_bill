@@ -3029,7 +3029,6 @@ def list_resource(
         for x in db.scalars(q).all()
     ]
 
-
 @app.post("/{resource}")
 def add_resource(
     resource: str,
