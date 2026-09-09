@@ -5703,41 +5703,75 @@ def create_production_batch(
         db,
     )
 
-    # Segurança: montagem de postes do dia não pode ultrapassar a fabricação do dia
+    # Segurança: montagem por modelo não pode ultrapassar a fabricação do mesmo modelo no dia
+    # Ex.: fabricou 5 monofásicos → montagem monofásico no dia <= 5 (não pode 6)
     if kind == "montagem":
-        fab_total = float(
-            db.scalar(
-                select(func.coalesce(func.sum(ProductionRecord.quantity), 0)).where(
-                    ProductionRecord.company_id == company.id,
-                    ProductionRecord.production_date == body.production_date,
-                    ProductionRecord.kind == "fabricacao",
-                )
+        # soma fabricação do dia por modelo
+        fab_rows = db.execute(
+            select(
+                ProductionRecord.model,
+                func.coalesce(func.sum(ProductionRecord.quantity), 0),
             )
-            or 0
-        )
-        existing_mont = float(
-            db.scalar(
-                select(func.coalesce(func.sum(ProductionRecord.quantity), 0)).where(
-                    ProductionRecord.company_id == company.id,
-                    ProductionRecord.production_date == body.production_date,
-                    ProductionRecord.kind == "montagem",
-                    ProductionRecord.model.notin_(list(CAIXA_PROVISORIA_MODELS)),
-                )
+            .where(
+                ProductionRecord.company_id == company.id,
+                ProductionRecord.production_date == body.production_date,
+                ProductionRecord.kind == "fabricacao",
             )
-            or 0
-        )
-        new_mont = sum(
-            float(l.quantity or 0)
-            for l in (body.lines or [])
-            if (l.model or "").strip() not in CAIXA_PROVISORIA_MODELS
-        )
-        if existing_mont + new_mont > fab_total + 1e-9:
+            .group_by(ProductionRecord.model)
+        ).all()
+        fab_by_model = {
+            str(m or "").strip(): float(q or 0) for m, q in fab_rows
+        }
+
+        # soma montagem já lançada no dia por modelo (ignora caixas provisórias)
+        mont_rows = db.execute(
+            select(
+                ProductionRecord.model,
+                func.coalesce(func.sum(ProductionRecord.quantity), 0),
+            )
+            .where(
+                ProductionRecord.company_id == company.id,
+                ProductionRecord.production_date == body.production_date,
+                ProductionRecord.kind == "montagem",
+                ProductionRecord.model.notin_(list(CAIXA_PROVISORIA_MODELS)),
+            )
+            .group_by(ProductionRecord.model)
+        ).all()
+        mont_by_model = {
+            str(m or "").strip(): float(q or 0) for m, q in mont_rows
+        }
+
+        # quantidades deste lançamento por modelo
+        new_by_model: dict[str, float] = {}
+        for l in body.lines or []:
+            model_name = (l.model or "").strip()
+            if not model_name or model_name in CAIXA_PROVISORIA_MODELS:
+                continue
+            if model_name.startswith(CAIXA_PROVISORIA_PREFIX):
+                continue
+            qty = float(l.quantity or 0)
+            if qty <= 0:
+                continue
+            new_by_model[model_name] = new_by_model.get(model_name, 0.0) + qty
+
+        violations = []
+        for model_name, new_qty in new_by_model.items():
+            fab = fab_by_model.get(model_name, 0.0)
+            already = mont_by_model.get(model_name, 0.0)
+            total_after = already + new_qty
+            if total_after > fab + 1e-9:
+                remaining = max(0.0, fab - already)
+                violations.append(
+                    f"{model_name}: fabricado {fab:g}, já montado {already:g}, "
+                    f"neste lançamento {new_qty:g} (máx. restante {remaining:g})"
+                )
+
+        if violations:
             raise HTTPException(
                 400,
                 (
-                    f"Montagem não pode ultrapassar a fabricação do dia. "
-                    f"Fabricação: {fab_total:g} · Já montado: {existing_mont:g} · "
-                    f"Neste lançamento: {new_mont:g} · Máximo restante: {max(0, fab_total - existing_mont):g}."
+                    "Montagem por modelo não pode ultrapassar a fabricação do mesmo modelo no dia. "
+                    + " | ".join(violations)
                 ),
             )
 
