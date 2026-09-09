@@ -107,6 +107,12 @@ export default function ProductionModule({ user }: { user: any }) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [printDate, setPrintDate] = useState('');
   const [printScope, setPrintScope] = useState<PrintScope>('all');
+  const [printOpts, setPrintOpts] = useState({
+    emergencia: true,
+    observacoes: true,
+    caixasProv: true,
+  });
+  const [purgeKind, setPurgeKind] = useState<'all' | 'fabricacao' | 'montagem'>('all');
 
   const loadDays = useCallback(async () => {
     setLoadingDays(true);
@@ -220,14 +226,41 @@ export default function ProductionModule({ user }: { user: any }) {
 
   function buildDayRows(day: any, scope: PrintScope) {
     const rows: (string | number)[][] = [];
+    const withEmerg = printOpts.emergencia;
+    const withNotes = printOpts.observacoes;
+    const withProv = printOpts.caixasProv;
+
+    const noteText = (x: any) => {
+      if (!withNotes) return '';
+      const parts: string[] = [];
+      if (x.emergency_reason) parts.push(`Motivo: ${x.emergency_reason}`);
+      if (x.notes) {
+        // remove prefixos técnicos se existirem
+        const n = String(x.notes)
+          .replace(/EMERG:[^|]*/gi, '')
+          .replace(/\|?\s*DEST:[^|]*/gi, '')
+          .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+          .trim();
+        if (n) parts.push(n);
+      }
+      return parts.join(' · ');
+    };
+
     if (scope === 'all' || scope === 'fabricacao') {
       (day.fabricacao || []).forEach((x: any) => {
-        rows.push(['Fabricação', x.model, x.quantity, x.emergency_altered || 0]);
+        rows.push([
+          'Fabricação',
+          x.model,
+          x.quantity,
+          withEmerg ? x.emergency_altered || 0 : '—',
+          noteText(x) || '—',
+        ]);
       });
     }
     if (scope === 'all' || scope === 'montagem') {
       (day.montagem || []).forEach((x: any) => {
         if (x.is_provisional) {
+          if (!withProv) return;
           const tipo = (x.model || 'Caixa provisória')
             .replace(/^CAIXA PROVISÓRIA\s*/i, '')
             .replace(/^CAIXA PROVISORIA\s*/i, '')
@@ -236,10 +269,17 @@ export default function ProductionModule({ user }: { user: any }) {
             `Caixa prov. ${tipo}`,
             x.destination_label || x.destination || '—',
             x.quantity,
-            0,
+            '—',
+            noteText(x) || '—',
           ]);
         } else {
-          rows.push(['Montagem', x.model, x.quantity, x.emergency_altered || 0]);
+          rows.push([
+            'Montagem',
+            x.model,
+            x.quantity,
+            withEmerg ? x.emergency_altered || 0 : '—',
+            noteText(x) || '—',
+          ]);
         }
       });
     }
@@ -388,11 +428,18 @@ export default function ProductionModule({ user }: { user: any }) {
 
     autoTable(doc, {
       startY: y,
-      head: [['Tipo', 'Modelo', 'Quantidade', 'Emergência']],
+      head: [['Tipo', 'Modelo / Destino', 'Qtd', 'Emerg.', 'Observações']],
       body: rows,
       margin: { left: margin, right: margin },
       styles: { fontSize: 8, cellPadding: 1.2 },
       headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 28 },
+        1: { cellWidth: 45 },
+        2: { cellWidth: 14 },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 'auto' as any },
+      },
     });
 
     doc.save(`Producao_${printDate}_${printScope}.pdf`);
@@ -482,6 +529,7 @@ export default function ProductionModule({ user }: { user: any }) {
     setPurgeDate(dayIso);
     setPurgePassword('');
     setPurgeError('');
+    setPurgeKind('all');
     setPurgeOpen(true);
   }
 
@@ -499,13 +547,20 @@ export default function ProductionModule({ user }: { user: any }) {
           date_from: dia,
           date_to: dia,
           confirm_text: 'APAGAR PRODUCAO',
+          kind: purgeKind,
         }),
       });
       setPurgeOpen(false);
       setPurgeDate('');
       setPurgePassword('');
+      const kindLabel =
+        purgeKind === 'fabricacao'
+          ? 'fabricação'
+          : purgeKind === 'montagem'
+          ? 'montagem'
+          : 'produção';
       setOkMsg(
-        `Apagados ${res.deleted} registros do dia ${dia.split('-').reverse().join('/')}.`
+        `Apagados ${res.deleted} registro(s) de ${kindLabel} do dia ${dia.split('-').reverse().join('/')}.`
       );
       loadDays();
     } catch (e: any) {
@@ -1114,7 +1169,7 @@ export default function ProductionModule({ user }: { user: any }) {
               </select>
             </label>
             <label className="mt-3 block text-sm">
-              <span className="mb-1 block text-slate-600">Conteúdo</span>
+              <span className="mb-1 block text-slate-600">Tipo *</span>
               <select
                 value={printScope}
                 onChange={(e) => setPrintScope(e.target.value as PrintScope)}
@@ -1125,6 +1180,41 @@ export default function ProductionModule({ user }: { user: any }) {
                 <option value="montagem">Só montagem</option>
               </select>
             </label>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-2 text-sm font-medium text-slate-700">Incluir no PDF</p>
+              <div className="space-y-2 text-sm text-slate-700">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={printOpts.emergencia}
+                    onChange={(e) =>
+                      setPrintOpts((s) => ({ ...s, emergencia: e.target.checked }))
+                    }
+                  />
+                  Postes alterados (emergência)
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={printOpts.observacoes}
+                    onChange={(e) =>
+                      setPrintOpts((s) => ({ ...s, observacoes: e.target.checked }))
+                    }
+                  />
+                  Observações / motivo da emergência
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={printOpts.caixasProv}
+                    onChange={(e) =>
+                      setPrintOpts((s) => ({ ...s, caixasProv: e.target.checked }))
+                    }
+                  />
+                  Caixas provisórias (mono / bi / tri)
+                </label>
+              </div>
+            </div>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
@@ -1186,12 +1276,26 @@ export default function ProductionModule({ user }: { user: any }) {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-red-700">Apagar produção do dia</h3>
             <p className="mt-2 text-sm text-slate-600">
-              Será apagado somente o dia{' '}
+              Dia{' '}
               <strong>
                 {purgeDate ? purgeDate.split('-').reverse().join('/') : '—'}
               </strong>
               . Use Backup Excel antes se ainda precisar dos dados.
             </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">O que apagar *</span>
+              <select
+                value={purgeKind}
+                onChange={(e) =>
+                  setPurgeKind(e.target.value as 'all' | 'fabricacao' | 'montagem')
+                }
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="all">Tudo do dia (fabricação + montagem)</option>
+                <option value="fabricacao">Somente fabricação</option>
+                <option value="montagem">Somente montagem (inclui caixas provisórias)</option>
+              </select>
+            </label>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">Sua senha de login *</span>
               <input
