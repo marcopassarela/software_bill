@@ -5536,6 +5536,9 @@ class ProductionLineIn(BaseModel):
         ge=0,
     )
 
+    # Obrigatório no backend quando emergency_altered > 0 (montagem)
+    emergency_reason: str | None = None
+
 
 class ProductionBatchIn(BaseModel):
     kind: str
@@ -5762,6 +5765,20 @@ def create_production_batch(
         if model_name in CAIXA_PROVISORIA_MODELS or model_name.startswith(CAIXA_PROVISORIA_PREFIX):
             continue  # tratado abaixo
 
+        emerg_reason = (getattr(line, "emergency_reason", None) or "").strip()
+        if kind == "montagem" and em > 0 and not emerg_reason:
+            raise HTTPException(
+                400,
+                f'Informe o motivo da alteração de emergência do modelo "{model_name}".',
+            )
+
+        line_notes = body.notes
+        if kind == "montagem" and em > 0 and emerg_reason:
+            line_notes = (
+                f"EMERG:{emerg_reason}"
+                + (f" | {body.notes}" if body.notes else "")
+            )
+
         rec = ProductionRecord(
             company_id=company.id,
             kind=kind,
@@ -5769,7 +5786,7 @@ def create_production_batch(
             model=model_name,
             quantity=qty,
             emergency_altered=em,
-            notes=body.notes,
+            notes=line_notes,
             user_id=user.id,
         )
 
@@ -5933,6 +5950,10 @@ def production_by_day(
                 "provisional_destination_label": None,
             }
 
+        notes_raw = r.notes or ""
+        emerg_reason = None
+        if "EMERG:" in notes_raw:
+            emerg_reason = notes_raw.split("EMERG:", 1)[-1].split("|", 1)[0].strip()
         item = {
             "id": r.id,
             "model": r.model,
@@ -5942,6 +5963,7 @@ def production_by_day(
             "emergency_altered": float(
                 r.emergency_altered or 0
             ),
+            "emergency_reason": emerg_reason,
             "user_id": r.user_id,
             "notes": r.notes,
         }

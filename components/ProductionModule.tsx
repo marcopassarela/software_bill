@@ -3,7 +3,7 @@
 import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { request } from '@/lib/api';
 import {
   Calendar,
@@ -84,6 +84,7 @@ export default function ProductionModule({ user }: { user: any }) {
   const [notes, setNotes] = useState('');
   const [qty, setQty] = useState<Record<string, string>>({});
   const [emerg, setEmerg] = useState<Record<string, string>>({});
+  const [emergReason, setEmergReason] = useState<Record<string, string>>({});
   const [provMono, setProvMono] = useState('');
   const [provBi, setProvBi] = useState('');
   const [provTri, setProvTri] = useState('');
@@ -129,14 +130,24 @@ export default function ProductionModule({ user }: { user: any }) {
       model,
       quantity: Number(qty[model] || 0),
       emergency_altered: Number(emerg[model] || 0),
+      emergency_reason: (emergReason[model] || '').trim(),
     })).filter((l) => l.quantity > 0 || l.emergency_altered > 0);
-  }, [qty, emerg]);
+  }, [qty, emerg, emergReason]);
 
   function openConfirm() {
     setError('');
     setOkMsg('');
     if (!date) {
       setError('Informe a data.');
+      return;
+    }
+    const missingReason = linesPreview.find(
+      (l) => l.emergency_altered > 0 && !l.emergency_reason
+    );
+    if (missingReason) {
+      setError(
+        `Informe o motivo da alteração de emergência do modelo "${missingReason.model}".`
+      );
       return;
     }
     const boxes =
@@ -182,6 +193,7 @@ export default function ProductionModule({ user }: { user: any }) {
       setConfirmOpen(false);
       setQty({});
       setEmerg({});
+      setEmergReason({});
       setProvMono('');
       setProvBi('');
       setProvTri('');
@@ -523,7 +535,8 @@ export default function ProductionModule({ user }: { user: any }) {
             </thead>
             <tbody>
               {PRODUCTION_MODELS.map((model) => (
-                <tr key={model} className="border-t">
+                <Fragment key={model}>
+                <tr className="border-t">
                   <td className="px-3 py-2 font-medium text-slate-800">{model}</td>
                   <td className="px-3 py-2">
                     <input
@@ -545,15 +558,45 @@ export default function ProductionModule({ user }: { user: any }) {
                         min={0}
                         step={1}
                         value={emerg[model] || ''}
-                        onChange={(e) =>
-                          setEmerg((s) => ({ ...s, [model]: e.target.value }))
-                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setEmerg((s) => ({ ...s, [model]: v }));
+                          if (!Number(v || 0)) {
+                            setEmergReason((s) => {
+                              const n = { ...s };
+                              delete n[model];
+                              return n;
+                            });
+                          }
+                        }}
                         className="w-28 rounded-lg border p-2"
                         placeholder="0"
                       />
                     </td>
                   )}
                 </tr>
+                {kind === 'montagem' && Number(emerg[model] || 0) > 0 && (
+                  <tr className="border-t bg-amber-50/80">
+                    <td colSpan={3} className="px-3 py-2">
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium text-amber-900">
+                          Motivo da alteração — {model} *
+                        </span>
+                        <textarea
+                          value={emergReason[model] || ''}
+                          onChange={(e) =>
+                            setEmergReason((s) => ({ ...s, [model]: e.target.value }))
+                          }
+                          required
+                          rows={2}
+                          className="w-full rounded-lg border border-amber-300 bg-white p-2 text-sm"
+                          placeholder="Obrigatório: explique por que estes postes foram alterados (emergência)"
+                        />
+                      </label>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -865,19 +908,28 @@ export default function ProductionModule({ user }: { user: any }) {
                           </div>
                         </div>
                         <ul className="divide-y divide-slate-200/70 text-sm">
-                          {(d.montagem || []).map((x: any) => (
-                            <li key={x.id} className="flex items-center justify-between gap-2 py-1.5">
-                              <span className="text-slate-700">
-                                {x.model}
-                                {x.emergency_altered > 0 && (
-                                  <span className="ml-1.5 text-xs text-amber-700">
-                                    (+{x.emergency_altered} alt.)
-                                  </span>
-                                )}
-                              </span>
-                              <span className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm">
-                                {x.quantity}
-                              </span>
+                          {(d.montagem || [])
+                            .filter((x: any) => !x.is_provisional)
+                            .map((x: any) => (
+                            <li key={x.id} className="py-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-700">
+                                  {x.model}
+                                  {x.emergency_altered > 0 && (
+                                    <span className="ml-1.5 text-xs text-amber-700">
+                                      (+{x.emergency_altered} alt.)
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm">
+                                  {x.quantity}
+                                </span>
+                              </div>
+                              {x.emergency_altered > 0 && x.emergency_reason && (
+                                <p className="mt-0.5 text-xs text-amber-800">
+                                  Motivo: {x.emergency_reason}
+                                </p>
+                              )}
                             </li>
                           ))}
                           {(d.montagem || [])
@@ -926,12 +978,19 @@ export default function ProductionModule({ user }: { user: any }) {
             </p>
             <ul className="mt-4 max-h-60 space-y-1 overflow-y-auto text-sm">
               {linesPreview.map((l) => (
-                <li key={l.model} className="flex justify-between border-b py-1">
-                  <span>{l.model}</span>
-                  <span className="tabular-nums">
-                    {l.quantity}
-                    {l.emergency_altered > 0 ? ` · alt. ${l.emergency_altered}` : ''}
-                  </span>
+                <li key={l.model} className="border-b py-1">
+                  <div className="flex justify-between">
+                    <span>{l.model}</span>
+                    <span className="tabular-nums">
+                      {l.quantity}
+                      {l.emergency_altered > 0 ? ` · alt. ${l.emergency_altered}` : ''}
+                    </span>
+                  </div>
+                  {l.emergency_altered > 0 && l.emergency_reason && (
+                    <p className="mt-0.5 text-xs text-amber-800">
+                      Motivo: {l.emergency_reason}
+                    </p>
+                  )}
                 </li>
               ))}
               {tab === 'montagem' &&
