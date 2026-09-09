@@ -15,6 +15,7 @@ import {
   Wrench,
   AlertTriangle,
   Inbox,
+  ChevronDown,
 } from 'lucide-react';
 
 const PRODUCTION_MODELS = [
@@ -80,6 +81,7 @@ export default function ProductionModule({ user }: { user: any }) {
   });
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
+  const [limitAlert, setLimitAlert] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -101,6 +103,7 @@ export default function ProductionModule({ user }: { user: any }) {
   const [purgeDate, setPurgeDate] = useState('');
   const [purgeError, setPurgeError] = useState('');
   const [showPrintDay, setShowPrintDay] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [printDate, setPrintDate] = useState('');
   const [printScope, setPrintScope] = useState<PrintScope>('all');
 
@@ -796,51 +799,84 @@ export default function ProductionModule({ user }: { user: any }) {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => {
-                  setPrintDate(days[0]?.date || filterFrom || '');
-                  setPrintScope('all');
-                  setShowPrintDay(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <Printer size={15} />
-                Imprimir dia (PDF)
-              </button>
-              <button
-                type="button"
-                onClick={backupExcel}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 px-3.5 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
-              >
-                <FileSpreadsheet size={15} />
-                Backup Excel
-              </button>
-              <button
-                type="button"
-                onClick={backupPdfPeriodo}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setExportMenuOpen((o) => !o)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
               >
                 <FileDown size={15} />
-                Backup PDF (período)
+                Exportar / imprimir
+                <ChevronDown size={15} className={exportMenuOpen ? 'rotate-180 transition' : 'transition'} />
               </button>
-              <button
-                type="button"
-                onClick={() => monthSummaryBackup('pdf')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-800 px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
-              >
-                <FileDown size={15} />
-                Resumo do mês (PDF)
-              </button>
-              <button
-                type="button"
-                onClick={() => monthSummaryBackup('xlsx')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 px-3.5 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
-              >
-                <FileSpreadsheet size={15} />
-                Resumo do mês (Excel)
-              </button>
+              {exportMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setExportMenuOpen(false)}
+                  />
+                  <div className="absolute left-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        setPrintDate(days[0]?.date || filterFrom || '');
+                        setPrintScope('all');
+                        setShowPrintDay(true);
+                      }}
+                    >
+                      <Printer size={15} className="text-slate-500" />
+                      Imprimir dia (PDF)
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        backupExcel();
+                      }}
+                    >
+                      <FileSpreadsheet size={15} className="text-emerald-600" />
+                      Backup Excel
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        backupPdfPeriodo();
+                      }}
+                    >
+                      <FileDown size={15} className="text-slate-500" />
+                      Backup PDF (período)
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        monthSummaryBackup('pdf');
+                      }}
+                    >
+                      <FileDown size={15} className="text-slate-700" />
+                      Resumo do mês (PDF)
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        monthSummaryBackup('xlsx');
+                      }}
+                    >
+                      <FileSpreadsheet size={15} className="text-emerald-700" />
+                      Resumo do mês (Excel)
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -1113,7 +1149,7 @@ export default function ProductionModule({ user }: { user: any }) {
                 <ul className="list-disc space-y-2 pl-4">
                   {limitAlert
                     .split(' | ')
-                    .map((part, i) => (
+                    .map((part: string, i: number) => (
                       <li key={i}>{part.trim()}</li>
                     ))}
                 </ul>
