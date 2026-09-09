@@ -3570,6 +3570,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const canExport =
   isMainAdmin || perms.includes('schedule_export');
 
+    // Guarda a última versão da agenda que já foi buscada (ver /schedule/version).
+    // Usado pelo polling de 15s para evitar rebaixar /schedule/weeks (payload
+    // pesado) quando nada mudou desde o último poll.
+    const scheduleVersionRef = useRef<number | null>(null);
+
     async function load(opts?: { silent?: boolean }) {
     const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
     const silent = !!(opts?.silent || weeks.length > 0);
@@ -3588,6 +3593,14 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           return active.id;
         });
       }
+      // Sincroniza a versão conhecida com o que acabou de ser buscado, para
+      // que o próximo tick do polling saiba que já está atualizado.
+      try {
+        const v = await request('/schedule/version');
+        scheduleVersionRef.current = v?.version ?? scheduleVersionRef.current;
+      } catch {
+        // se a checagem de versão falhar, não é crítico — o próximo poll tenta de novo
+      }
     } 
     catch (e: any) {
       setError(e.message);
@@ -3598,6 +3611,30 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       requestAnimationFrame(() => {
         window.scrollTo(0, scrollY);
       });
+    }
+  }
+
+    // Usado só pelo polling de 15s: primeiro faz uma checagem baratíssima
+    // (uma leitura de 1 linha) em /schedule/version. Só busca o payload
+    // completo (/schedule/weeks, que serializa toda a agenda) quando esse
+    // número realmente mudou em relação à última vez que carregamos.
+    async function checkForScheduleUpdates() {
+    try {
+      const v = await request('/schedule/version');
+      const newVersion = v?.version ?? null;
+      if (
+        scheduleVersionRef.current !== null &&
+        newVersion === scheduleVersionRef.current
+      ) {
+        // nada mudou: não busca /schedule/weeks
+        return;
+      }
+      // primeira checagem (ref ainda null) ou versão mudou: busca os dados completos
+      await load({ silent: true });
+    } catch {
+      // se a checagem de versão falhar (ex: rede instável), tenta o fluxo
+      // antigo como fallback, pra não deixar a agenda travada desatualizada
+      await load({ silent: true });
     }
   }
 
@@ -3616,9 +3653,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
   useEffect(() => { load(); }, [includeArchived]);
 
-  // Sincroniza agenda entre aparelhos a cada 15s e ao voltar para a aba
+  // Sincroniza agenda entre aparelhos a cada 15s e ao voltar para a aba.
+  // O loop continua rodando a cada 15s (não dá pra tirar), mas agora cada
+  // tick só faz uma checagem barata de versão — o payload pesado da agenda
+  // só é buscado quando algo realmente mudou.
   useEffect(() => {
-    const tick = () => load({ silent: true });
+    const tick = () => checkForScheduleUpdates();
     const id = window.setInterval(tick, 15000);
 
     const onVis = () => {

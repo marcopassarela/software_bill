@@ -17,7 +17,8 @@ from sqlalchemy import (
     func,
 )
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import event
+from sqlalchemy.orm import Mapped, mapped_column, Session as _OrmSession
 
 from .database import Base
 
@@ -1376,6 +1377,90 @@ class ScheduleExtra(Base):
         default=EntryStatus.NORMAL,
         nullable=False,
     )
+
+
+# ============================================================
+# VERSÃO DO AGENDAMENTO (para polling barato no frontend)
+# ============================================================
+
+
+class ScheduleVersion(Base):
+    """
+    Um contador por empresa, incrementado automaticamente sempre que
+    qualquer registro de agendamento (semana, rota, cliente ou extra)
+    é criado, alterado ou removido.
+
+    O frontend consulta GET /schedule/version a cada 15s (query muito
+    barata: leitura de uma única linha por PK) e só busca o payload
+    completo em /schedule/weeks quando esse número muda. Isso evita
+    reprocessar e retransmitir toda a agenda a cada poll quando nada
+    mudou, reduzindo bastante o consumo de compute no banco.
+    """
+
+    __tablename__ = "schedule_versions"
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+# Modelos cuja criação/edição/remoção deve contar como "mudança" na agenda.
+_SCHEDULE_WATCHED_MODELS = (
+    ScheduleWeek,
+    RouteSlot,
+    ScheduleEntry,
+    ScheduleExtra,
+)
+
+
+@event.listens_for(_OrmSession, "before_commit")
+def _bump_schedule_version_on_commit(session: _OrmSession) -> None:
+    """
+    Antes de cada commit, verifica se algum objeto de agendamento foi
+    criado/alterado/removido nesta sessão e, se sim, incrementa (ou cria)
+    o contador ScheduleVersion da(s) empresa(s) afetada(s), dentro da
+    mesma transação. Assim nenhum endpoint precisa lembrar de "avisar"
+    manualmente — qualquer escrita nessas tabelas já atualiza a versão.
+    """
+
+    touched_company_ids: set[int] = set()
+
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        if isinstance(obj, _SCHEDULE_WATCHED_MODELS):
+            company_id = getattr(obj, "company_id", None)
+            if company_id is not None:
+                touched_company_ids.add(company_id)
+
+    if not touched_company_ids:
+        return
+
+    for company_id in touched_company_ids:
+        row = session.get(ScheduleVersion, company_id)
+        if row is None:
+            session.add(
+                ScheduleVersion(
+                    company_id=company_id,
+                    version=1,
+                )
+            )
+        else:
+            row.version = (row.version or 0) + 1
 
 
 # ============================================================

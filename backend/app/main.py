@@ -3541,21 +3541,28 @@ def serialize_extra(
 def serialize_entry(
     x: ScheduleEntry,
     db: Session,
+    extras_by_entry: dict | None = None,
 ):
+    """
+    Serializa um ScheduleEntry.
+
+    Se `extras_by_entry` for passado (mapa entry_id -> lista de ScheduleExtra
+    já carregado em bloco), não faz nenhuma query extra. Sem ele, mantém o
+    comportamento antigo (uma query por entry) para não quebrar quem chamar
+    esta função isoladamente.
+    """
 
     d = serialize(x)
 
-    extras = db.scalars(
-        select(ScheduleExtra)
-        .where(
-            ScheduleExtra.id
-            == ScheduleExtra.id,
-            ScheduleExtra.entry_id
-            == x.id,
-            ScheduleExtra.company_id
-            == x.company_id,
-        )
-    ).all()
+    if extras_by_entry is not None:
+        extras = extras_by_entry.get(x.id, [])
+    else:
+        extras = db.scalars(
+            select(ScheduleExtra).where(
+                ScheduleExtra.entry_id == x.id,
+                ScheduleExtra.company_id == x.company_id,
+            )
+        ).all()
 
     d["extras"] = [
         serialize_extra(e)
@@ -3582,25 +3589,34 @@ def serialize_entry(
 def serialize_route_slot(
     x: RouteSlot,
     db: Session,
+    entries_by_slot: dict | None = None,
+    extras_by_entry: dict | None = None,
+    drivers_by_id: dict | None = None,
+    vehicles_by_id: dict | None = None,
 ):
+    """
+    Serializa um RouteSlot. Aceita mapas pré-carregados em bloco
+    (entries_by_slot, extras_by_entry, drivers_by_id, vehicles_by_id) para
+    evitar uma query separada por slot/entry/driver/vehicle. Sem eles, cai
+    de volta no comportamento antigo (uma query por lookup).
+    """
 
     d = serialize(x)
 
-    entries = db.scalars(
-        select(ScheduleEntry)
-        .where(
-            ScheduleEntry.route_slot_id
-            == x.id,
-            ScheduleEntry.company_id
-            == x.company_id,
-        )
-        .order_by(
-            ScheduleEntry.position
-        )
-    ).all()
+    if entries_by_slot is not None:
+        entries = entries_by_slot.get(x.id, [])
+    else:
+        entries = db.scalars(
+            select(ScheduleEntry)
+            .where(
+                ScheduleEntry.route_slot_id == x.id,
+                ScheduleEntry.company_id == x.company_id,
+            )
+            .order_by(ScheduleEntry.position)
+        ).all()
 
     d["entries"] = [
-        serialize_entry(e, db)
+        serialize_entry(e, db, extras_by_entry=extras_by_entry)
         for e in entries
     ]
 
@@ -3621,39 +3637,47 @@ def serialize_route_slot(
         0,
     )
 
-    driver = None
-    second_driver = None
-    vehicle = None
-
-    if x.driver_id:
-
-        driver = db.scalar(
-            select(Driver).where(
-                Driver.id == x.driver_id,
-                Driver.company_id
-                == x.company_id,
+    if drivers_by_id is not None:
+        driver = drivers_by_id.get(x.driver_id) if x.driver_id else None
+        second_driver = (
+            drivers_by_id.get(x.second_driver_id)
+            if x.second_driver_id
+            else None
+        )
+    else:
+        driver = (
+            db.scalar(
+                select(Driver).where(
+                    Driver.id == x.driver_id,
+                    Driver.company_id == x.company_id,
+                )
             )
+            if x.driver_id
+            else None
+        )
+        second_driver = (
+            db.scalar(
+                select(Driver).where(
+                    Driver.id == x.second_driver_id,
+                    Driver.company_id == x.company_id,
+                )
+            )
+            if x.second_driver_id
+            else None
         )
 
-    if x.second_driver_id:
-
-        second_driver = db.scalar(
-            select(Driver).where(
-                Driver.id
-                == x.second_driver_id,
-                Driver.company_id
-                == x.company_id,
+    if vehicles_by_id is not None:
+        vehicle = vehicles_by_id.get(x.vehicle_id) if x.vehicle_id else None
+    else:
+        vehicle = (
+            db.scalar(
+                select(Vehicle).where(
+                    Vehicle.id == x.vehicle_id,
+                    Vehicle.company_id == x.company_id,
+                )
             )
-        )
-
-    if x.vehicle_id:
-
-        vehicle = db.scalar(
-            select(Vehicle).where(
-                Vehicle.id == x.vehicle_id,
-                Vehicle.company_id
-                == x.company_id,
-            )
+            if x.vehicle_id
+            else None
         )
 
     d["driver"] = (
@@ -3680,20 +3704,29 @@ def serialize_route_slot(
 def serialize_week(
     x: ScheduleWeek,
     db: Session,
+    slots_by_week: dict | None = None,
+    entries_by_slot: dict | None = None,
+    extras_by_entry: dict | None = None,
+    drivers_by_id: dict | None = None,
+    vehicles_by_id: dict | None = None,
 ):
+    """
+    Serializa uma ScheduleWeek. Aceita mapas pré-carregados em bloco (ver
+    load_schedule_weeks_bulk) para evitar N+1 queries. Sem eles, mantém o
+    comportamento antigo (uma query por semana/rota/cliente).
+    """
 
-    slots = db.scalars(
-        select(RouteSlot)
-        .where(
-            RouteSlot.week_id == x.id,
-            RouteSlot.company_id
-            == x.company_id,
-        )
-        .order_by(
-            RouteSlot.date,
-            RouteSlot.id,
-        )
-    ).all()
+    if slots_by_week is not None:
+        slots = slots_by_week.get(x.id, [])
+    else:
+        slots = db.scalars(
+            select(RouteSlot)
+            .where(
+                RouteSlot.week_id == x.id,
+                RouteSlot.company_id == x.company_id,
+            )
+            .order_by(RouteSlot.date, RouteSlot.id)
+        ).all()
 
     d = serialize(x)
 
@@ -3701,6 +3734,10 @@ def serialize_week(
         serialize_route_slot(
             s,
             db,
+            entries_by_slot=entries_by_slot,
+            extras_by_entry=extras_by_entry,
+            drivers_by_id=drivers_by_id,
+            vehicles_by_id=vehicles_by_id,
         )
         for s in slots
     ]
@@ -3708,9 +3745,146 @@ def serialize_week(
     return d
 
 
+def load_schedule_weeks_bulk(
+    weeks: list["ScheduleWeek"],
+    company_id: int,
+    db: Session,
+):
+    """
+    Carrega em poucas queries (em vez de uma por semana/rota/cliente/extra)
+    tudo o que é necessário para serializar uma lista de ScheduleWeek, e
+    devolve os mapas prontos para passar a serialize_week.
+
+    Isso substitui o padrão N+1 que existia antes (centenas de queries por
+    chamada a GET /schedule/weeks) por um total fixo de 5 queries,
+    independente de quantas semanas/rotas/clientes existam.
+    """
+
+    week_ids = [w.id for w in weeks]
+
+    if not week_ids:
+        return {}, {}, {}, {}, {}
+
+    slots = db.scalars(
+        select(RouteSlot)
+        .where(
+            RouteSlot.week_id.in_(week_ids),
+            RouteSlot.company_id == company_id,
+        )
+        .order_by(RouteSlot.date, RouteSlot.id)
+    ).all()
+
+    slots_by_week: dict = {}
+    for s in slots:
+        slots_by_week.setdefault(s.week_id, []).append(s)
+
+    slot_ids = [s.id for s in slots]
+
+    entries = (
+        db.scalars(
+            select(ScheduleEntry)
+            .where(
+                ScheduleEntry.route_slot_id.in_(slot_ids),
+                ScheduleEntry.company_id == company_id,
+            )
+            .order_by(ScheduleEntry.position)
+        ).all()
+        if slot_ids
+        else []
+    )
+
+    entries_by_slot: dict = {}
+    for e in entries:
+        entries_by_slot.setdefault(e.route_slot_id, []).append(e)
+
+    entry_ids = [e.id for e in entries]
+
+    extras = (
+        db.scalars(
+            select(ScheduleExtra).where(
+                ScheduleExtra.entry_id.in_(entry_ids),
+                ScheduleExtra.company_id == company_id,
+            )
+        ).all()
+        if entry_ids
+        else []
+    )
+
+    extras_by_entry: dict = {}
+    for ex in extras:
+        extras_by_entry.setdefault(ex.entry_id, []).append(ex)
+
+    driver_ids = {
+        did
+        for s in slots
+        for did in (s.driver_id, s.second_driver_id)
+        if did
+    }
+
+    drivers_by_id = (
+        {
+            d.id: d
+            for d in db.scalars(
+                select(Driver).where(
+                    Driver.id.in_(driver_ids),
+                    Driver.company_id == company_id,
+                )
+            ).all()
+        }
+        if driver_ids
+        else {}
+    )
+
+    vehicle_ids = {s.vehicle_id for s in slots if s.vehicle_id}
+
+    vehicles_by_id = (
+        {
+            v.id: v
+            for v in db.scalars(
+                select(Vehicle).where(
+                    Vehicle.id.in_(vehicle_ids),
+                    Vehicle.company_id == company_id,
+                )
+            ).all()
+        }
+        if vehicle_ids
+        else {}
+    )
+
+    return (
+        slots_by_week,
+        entries_by_slot,
+        extras_by_entry,
+        drivers_by_id,
+        vehicles_by_id,
+    )
+
+
 # ============================================================
 # SEMANAS
 # ============================================================
+
+@app.get("/schedule/version")
+def get_schedule_version(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint deliberadamente barato (leitura de 1 linha por PK) para o
+    frontend usar no polling de 15s do Agendamento. Ele só busca o payload
+    completo em GET /schedule/weeks quando este número muda em relação ao
+    que já tem em memória — evita reprocessar e retransmitir a agenda
+    inteira a cada poll quando nada mudou.
+    """
+
+    require("schedule")(user)
+
+    company = get_current_company(user, db)
+
+    row = db.get(ScheduleVersion, company.id)
+
+    return {"version": row.version if row else 0}
+
 
 @app.get("/schedule/weeks")
 def list_schedule_weeks(
@@ -3748,10 +3922,23 @@ def list_schedule_weeks(
         q
     ).all()
 
+    (
+        slots_by_week,
+        entries_by_slot,
+        extras_by_entry,
+        drivers_by_id,
+        vehicles_by_id,
+    ) = load_schedule_weeks_bulk(weeks, company.id, db)
+
     return [
         serialize_week(
             w,
             db,
+            slots_by_week=slots_by_week,
+            entries_by_slot=entries_by_slot,
+            extras_by_entry=extras_by_entry,
+            drivers_by_id=drivers_by_id,
+            vehicles_by_id=vehicles_by_id,
         )
         for w in weeks
     ]
