@@ -6778,7 +6778,6 @@ def forgot_password(
         ),
     }
 
-
 @app.post("/auth/reset-password")
 @limiter.limit("10/minute")
 def reset_password(
