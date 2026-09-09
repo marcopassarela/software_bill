@@ -3889,6 +3889,7 @@ def get_schedule_version(
 @app.get("/schedule/weeks")
 def list_schedule_weeks(
     status: str | None = None,
+    include_archived: bool = False,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -3916,6 +3917,15 @@ def list_schedule_weeks(
         q = q.where(
             ScheduleWeek.status
             == WeekStatus.ATIVA
+        )
+
+    elif not include_archived:
+        # O frontend manda ?include_archived=false por padrão (checkbox
+        # "mostrar arquivadas" desmarcada); antes esse parâmetro não existia
+        # aqui e era ignorado, então semanas arquivadas sempre apareciam.
+        q = q.where(
+            ScheduleWeek.status
+            != WeekStatus.ARQUIVADA
         )
 
     weeks = db.scalars(
@@ -6777,6 +6787,7 @@ def forgot_password(
             "você receberá um e-mail com o link em alguns minutos."
         ),
     }
+
 
 @app.post("/auth/reset-password")
 @limiter.limit("10/minute")
