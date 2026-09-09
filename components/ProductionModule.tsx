@@ -81,6 +81,7 @@ export default function ProductionModule({ user }: { user: any }) {
   });
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
+  const [limitAlert, setLimitAlert] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
   const [qtyFab, setQtyFab] = useState<Record<string, string>>({});
@@ -1161,7 +1162,7 @@ export default function ProductionModule({ user }: { user: any }) {
                 <ul className="list-disc space-y-2 pl-4">
                   {limitAlert
                     .split(' | ')
-                    .map((part, i) => (
+                    .map((part: string, i: number) => (
                       <li key={i}>{part.trim()}</li>
                     ))}
                 </ul>
