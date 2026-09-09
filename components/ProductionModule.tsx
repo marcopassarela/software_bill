@@ -590,7 +590,7 @@ export default function ProductionModule({ user }: { user: any }) {
                           required
                           rows={2}
                           className="w-full rounded-lg border border-amber-300 bg-white p-2 text-sm"
-                          placeholder="Obrigatório: explique por que estes postes foram alterados (emergência)"
+                          placeholder="Obrigatório: por qual motivo esse poste foi alterado?"
                         />
                       </label>
                     </td>
