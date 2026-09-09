@@ -81,10 +81,10 @@ export default function ProductionModule({ user }: { user: any }) {
   });
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
-  const [limitAlert, setLimitAlert] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
-  const [qty, setQty] = useState<Record<string, string>>({});
+  const [qtyFab, setQtyFab] = useState<Record<string, string>>({});
+  const [qtyMont, setQtyMont] = useState<Record<string, string>>({});
   const [emerg, setEmerg] = useState<Record<string, string>>({});
   const [emergReason, setEmergReason] = useState<Record<string, string>>({});
   const [provMono, setProvMono] = useState('');
@@ -129,13 +129,14 @@ export default function ProductionModule({ user }: { user: any }) {
   }, [tab, loadDays]);
 
   const linesPreview = useMemo(() => {
+    const qtyMap = tab === 'montagem' ? qtyMont : qtyFab;
     return PRODUCTION_MODELS.map((model) => ({
       model,
-      quantity: Number(qty[model] || 0),
-      emergency_altered: Number(emerg[model] || 0),
-      emergency_reason: (emergReason[model] || '').trim(),
+      quantity: Number(qtyMap[model] || 0),
+      emergency_altered: tab === 'montagem' ? Number(emerg[model] || 0) : 0,
+      emergency_reason: tab === 'montagem' ? (emergReason[model] || '').trim() : '',
     })).filter((l) => l.quantity > 0 || l.emergency_altered > 0);
-  }, [qty, emerg, emergReason]);
+  }, [tab, qtyFab, qtyMont, emerg, emergReason]);
 
   function openConfirm() {
     setError('');
@@ -194,7 +195,8 @@ export default function ProductionModule({ user }: { user: any }) {
         }),
       });
       setConfirmOpen(false);
-      setQty({});
+      setQtyFab({});
+      setQtyMont({});
       setEmerg({});
       setEmergReason({});
       setProvMono('');
@@ -210,7 +212,6 @@ export default function ProductionModule({ user }: { user: any }) {
       // Fecha o modal de confirmação e mostra aviso claro (ex.: montagem > fabricação)
       setConfirmOpen(false);
       setLimitAlert(msg);
-      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -226,9 +227,13 @@ export default function ProductionModule({ user }: { user: any }) {
     if (scope === 'all' || scope === 'montagem') {
       (day.montagem || []).forEach((x: any) => {
         if (x.is_provisional) {
+          const tipo = (x.model || 'Caixa provisória')
+            .replace(/^CAIXA PROVISÓRIA\s*/i, '')
+            .replace(/^CAIXA PROVISORIA\s*/i, '')
+            .trim() || 'Provisória';
           rows.push([
-            'Caixa provisória',
-            x.destination_label || x.model,
+            `Caixa prov. ${tipo}`,
+            x.destination_label || x.destination || '—',
             x.quantity,
             0,
           ]);
@@ -550,10 +555,15 @@ export default function ProductionModule({ user }: { user: any }) {
                       type="number"
                       min={0}
                       step={1}
-                      value={qty[model] || ''}
-                      onChange={(e) =>
-                        setQty((s) => ({ ...s, [model]: e.target.value }))
-                      }
+                      value={(kind === 'montagem' ? qtyMont[model] : qtyFab[model]) || ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (kind === 'montagem') {
+                          setQtyMont((s) => ({ ...s, [model]: v }));
+                        } else {
+                          setQtyFab((s) => ({ ...s, [model]: v }));
+                        }
+                      }}
                       className="w-28 rounded-lg border p-2"
                       placeholder="0"
                     />
@@ -976,11 +986,13 @@ export default function ProductionModule({ user }: { user: any }) {
                             .filter((x: any) => x.is_provisional)
                             .map((x: any, i: number) => (
                               <li
-                                key={`prov-${i}`}
+                                key={`prov-${x.id || i}`}
                                 className="flex items-center justify-between gap-2 py-1.5 text-amber-800"
                               >
                                 <span>
-                                  Caixas provisórias
+                                  {(x.model || 'Caixa provisória')
+                                    .replace(/^CAIXA PROVISÓRIA\s*/i, 'Caixa prov. ')
+                                    .replace(/^CAIXA PROVISORIA\s*/i, 'Caixa prov. ')}
                                   {x.destination_label ? ` → ${x.destination_label}` : ''}
                                 </span>
                                 <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums">
@@ -1149,7 +1161,7 @@ export default function ProductionModule({ user }: { user: any }) {
                 <ul className="list-disc space-y-2 pl-4">
                   {limitAlert
                     .split(' | ')
-                    .map((part: string, i: number) => (
+                    .map((part, i) => (
                       <li key={i}>{part.trim()}</li>
                     ))}
                 </ul>
