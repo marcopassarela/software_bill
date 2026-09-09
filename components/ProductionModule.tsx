@@ -203,7 +203,11 @@ export default function ProductionModule({ user }: { user: any }) {
       setTab('dia');
       loadDays();
     } catch (e: any) {
-      setError(e.message);
+      const msg = e?.message || 'Não foi possível salvar o lançamento.';
+      // Fecha o modal de confirmação e mostra aviso claro (ex.: montagem > fabricação)
+      setConfirmOpen(false);
+      setLimitAlert(msg);
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -590,7 +594,7 @@ export default function ProductionModule({ user }: { user: any }) {
                           required
                           rows={2}
                           className="w-full rounded-lg border border-amber-300 bg-white p-2 text-sm"
-                          placeholder="Obrigatório: por qual motivo esse poste foi alterado?"
+                          placeholder="Obrigatório: explique por que estes postes foram alterados (emergência)"
                         />
                       </label>
                     </td>
@@ -1088,6 +1092,42 @@ export default function ProductionModule({ user }: { user: any }) {
                 Gerar PDF
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {limitAlert && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <AlertTriangle size={22} />
+            </div>
+            <h3 className="text-center text-lg font-semibold text-slate-900">
+              Não foi possível salvar
+            </h3>
+            <p className="mt-1 text-center text-sm text-slate-500">
+              Ajuste as quantidades e tente novamente.
+            </p>
+            <div className="mt-4 max-h-60 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+              {limitAlert.includes(' | ') ? (
+                <ul className="list-disc space-y-2 pl-4">
+                  {limitAlert
+                    .split(' | ')
+                    .map((part, i) => (
+                      <li key={i}>{part.trim()}</li>
+                    ))}
+                </ul>
+              ) : (
+                <p className="whitespace-pre-wrap">{limitAlert}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setLimitAlert(null)}
+              className="mt-5 w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white"
+            >
+              Entendi, vou corrigir
+            </button>
           </div>
         </div>
       )}
