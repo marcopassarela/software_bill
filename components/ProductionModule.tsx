@@ -36,6 +36,19 @@ const PRODUCTION_MODELS = [
   'MURETA ÁGUA',
 ];
 
+
+function labelProvisional(model?: string | null) {
+  const m = (model || '').toUpperCase();
+  if (m.includes('MONOF')) return 'Caixa prov. mono';
+  if (m.includes('BIF')) return 'Caixa prov. bi';
+  if (m.includes('TRIF')) return 'Caixa prov. tri';
+  const tipo = (model || '')
+    .replace(/^CAIXA PROVISÓRIA\s*/i, '')
+    .replace(/^CAIXA PROVISORIA\s*/i, '')
+    .trim();
+  return tipo ? `Caixa prov. ${tipo}` : 'Caixa prov.';
+}
+
 type Tab = 'fabricacao' | 'montagem' | 'dia';
 type PrintScope = 'all' | 'fabricacao' | 'montagem';
 
@@ -262,13 +275,8 @@ export default function ProductionModule({ user }: { user: any }) {
       (day.montagem || []).forEach((x: any) => {
         if (x.is_provisional) {
           if (!withProv) return;
-          const tipo = (x.model || 'Caixa provisória')
-            .replace(/^CAIXA PROVISÓRIA\s*/i, '')
-            .replace(/^CAIXA PROVISORIA\s*/i, '')
-            .trim() || 'Provisória';
-          // sempre no final da impressão
           provRows.push([
-            `Caixa prov. ${tipo}`,
+            labelProvisional(x.model),
             x.destination_label || x.destination || '—',
             x.quantity,
             '—',
@@ -1050,9 +1058,7 @@ export default function ProductionModule({ user }: { user: any }) {
                                 className="flex items-center justify-between gap-2 py-1.5 text-amber-800"
                               >
                                 <span>
-                                  {(x.model || 'Caixa provisória')
-                                    .replace(/^CAIXA PROVISÓRIA\s*/i, 'Caixa prov. ')
-                                    .replace(/^CAIXA PROVISORIA\s*/i, 'Caixa prov. ')}
+                                  {labelProvisional(x.model)}
                                   {x.destination_label ? ` → ${x.destination_label}` : ''}
                                 </span>
                                 <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums">
@@ -1110,19 +1116,19 @@ export default function ProductionModule({ user }: { user: any }) {
                 <>
                   {Number(provMono || 0) > 0 && (
                     <li className="flex justify-between border-b py-1 text-amber-800">
-                      <span>Caixa prov. monofásica → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span>Caixa prov. mono → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
                       <span className="tabular-nums font-semibold">{Number(provMono)}</span>
                     </li>
                   )}
                   {Number(provBi || 0) > 0 && (
                     <li className="flex justify-between border-b py-1 text-amber-800">
-                      <span>Caixa prov. bifásica → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span>Caixa prov. bi → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
                       <span className="tabular-nums font-semibold">{Number(provBi)}</span>
                     </li>
                   )}
                   {Number(provTri || 0) > 0 && (
                     <li className="flex justify-between border-b py-1 text-amber-800">
-                      <span>Caixa prov. trifásica → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span>Caixa prov. tri → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
                       <span className="tabular-nums font-semibold">{Number(provTri)}</span>
                     </li>
                   )}
