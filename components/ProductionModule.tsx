@@ -226,6 +226,7 @@ export default function ProductionModule({ user }: { user: any }) {
 
   function buildDayRows(day: any, scope: PrintScope) {
     const rows: (string | number)[][] = [];
+    const provRows: (string | number)[][] = [];
     const withEmerg = printOpts.emergencia;
     const withNotes = printOpts.observacoes;
     const withProv = printOpts.caixasProv;
@@ -235,7 +236,6 @@ export default function ProductionModule({ user }: { user: any }) {
       const parts: string[] = [];
       if (x.emergency_reason) parts.push(`Motivo: ${x.emergency_reason}`);
       if (x.notes) {
-        // remove prefixos técnicos se existirem
         const n = String(x.notes)
           .replace(/EMERG:[^|]*/gi, '')
           .replace(/\|?\s*DEST:[^|]*/gi, '')
@@ -257,6 +257,7 @@ export default function ProductionModule({ user }: { user: any }) {
         ]);
       });
     }
+
     if (scope === 'all' || scope === 'montagem') {
       (day.montagem || []).forEach((x: any) => {
         if (x.is_provisional) {
@@ -265,7 +266,8 @@ export default function ProductionModule({ user }: { user: any }) {
             .replace(/^CAIXA PROVISÓRIA\s*/i, '')
             .replace(/^CAIXA PROVISORIA\s*/i, '')
             .trim() || 'Provisória';
-          rows.push([
+          // sempre no final da impressão
+          provRows.push([
             `Caixa prov. ${tipo}`,
             x.destination_label || x.destination || '—',
             x.quantity,
@@ -283,7 +285,9 @@ export default function ProductionModule({ user }: { user: any }) {
         }
       });
     }
-    return rows;
+
+    // Caixas provisórias sempre por último
+    return [...rows, ...provRows];
   }
 
   function monthSummaryBackup(format: 'pdf' | 'xlsx') {
@@ -1182,36 +1186,39 @@ export default function ProductionModule({ user }: { user: any }) {
             </label>
             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="mb-2 text-sm font-medium text-slate-700">Incluir no PDF</p>
-              <div className="space-y-2 text-sm text-slate-700">
-                <label className="flex items-center gap-2">
+              <div className="grid gap-2.5 text-sm text-slate-700">
+                <label className="grid grid-cols-[18px_1fr] items-center gap-3">
                   <input
                     type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-slate-300"
                     checked={printOpts.emergencia}
                     onChange={(e) =>
                       setPrintOpts((s) => ({ ...s, emergencia: e.target.checked }))
                     }
                   />
-                  Postes alterados (emergência)
+                  <span>Postes alterados (emergência)</span>
                 </label>
-                <label className="flex items-center gap-2">
+                <label className="grid grid-cols-[18px_1fr] items-center gap-3">
                   <input
                     type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-slate-300"
                     checked={printOpts.observacoes}
                     onChange={(e) =>
                       setPrintOpts((s) => ({ ...s, observacoes: e.target.checked }))
                     }
                   />
-                  Observações / motivo da emergência
+                  <span>Observações / motivo da emergência</span>
                 </label>
-                <label className="flex items-center gap-2">
+                <label className="grid grid-cols-[18px_1fr] items-center gap-3">
                   <input
                     type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-slate-300"
                     checked={printOpts.caixasProv}
                     onChange={(e) =>
                       setPrintOpts((s) => ({ ...s, caixasProv: e.target.checked }))
                     }
                   />
-                  Caixas provisórias (mono / bi / tri)
+                  <span>Caixas provisórias (mono / bi / tri)</span>
                 </label>
               </div>
             </div>
