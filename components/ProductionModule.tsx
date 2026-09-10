@@ -107,7 +107,6 @@ export default function ProductionModule({ user }: { user: any }) {
   });
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
-  const [limitAlert, setLimitAlert] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
   const [notesProv, setNotesProv] = useState('');
@@ -244,10 +243,8 @@ export default function ProductionModule({ user }: { user: any }) {
       setTab('dia');
       loadDays();
     } catch (e: any) {
-      const msg = e?.message || 'Não foi possível salvar o lançamento.';
-      // Fecha o modal de confirmação e mostra aviso claro (ex.: montagem > fabricação)
       setConfirmOpen(false);
-      setLimitAlert(msg);
+      setError(e?.message || 'Não foi possível salvar o lançamento.');
     } finally {
       setSaving(false);
     }
@@ -382,19 +379,19 @@ export default function ProductionModule({ user }: { user: any }) {
     let y = 14;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOGISTICAS BILL — Resumo de produção', margin, y);
+    doc.text('LOGISTICAS BILL — Resumo de producao', margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(`Período: ${periodo}`, margin, y);
     y += 6;
-    doc.text(`Fabricação: ${fab}`, margin, y);
+    doc.text(`Fabricacao (postes): ${fab}`, margin, y);
     y += 5;
-    doc.text(`Montagem: ${mont}`, margin, y);
+    doc.text(`Montagem (postes): ${mont}`, margin, y);
     y += 5;
-    doc.text(`Alterações emergencia: ${emerg}`, margin, y);
+    doc.text(`Alteracoes emergencia: ${emerg}`, margin, y);
     y += 5;
-    doc.text(`Caixas provisórias: ${boxes}`, margin, y);
+    doc.text(`Caixas provisorias: ${boxes}`, margin, y);
     y += 5;
     Object.entries(byDest).forEach(([k, v]) => {
       doc.text(`  ${k}: ${v}`, margin, y);
@@ -1316,42 +1313,6 @@ export default function ProductionModule({ user }: { user: any }) {
                 Gerar PDF
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {limitAlert && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-              <AlertTriangle size={22} />
-            </div>
-            <h3 className="text-center text-lg font-semibold text-slate-900">
-              Não foi possível salvar
-            </h3>
-            <p className="mt-1 text-center text-sm text-slate-500">
-              Ajuste as quantidades e tente novamente.
-            </p>
-            <div className="mt-4 max-h-60 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-              {limitAlert.includes(' | ') ? (
-                <ul className="list-disc space-y-2 pl-4">
-                  {limitAlert
-                    .split(' | ')
-                    .map((part: string, i: number) => (
-                      <li key={i}>{part.trim()}</li>
-                    ))}
-                </ul>
-              ) : (
-                <p className="whitespace-pre-wrap">{limitAlert}</p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setLimitAlert(null)}
-              className="mt-5 w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white"
-            >
-              Entendi, vou corrigir
-            </button>
           </div>
         </div>
       )}
