@@ -139,6 +139,15 @@ export default function ProductionModule({ user }: { user: any }) {
     caixasProv: true,
   });
   const [purgeKind, setPurgeKind] = useState<'all' | 'fabricacao' | 'montagem'>('all');
+  const [showMonthSummary, setShowMonthSummary] = useState(false);
+  const [monthFormat, setMonthFormat] = useState<'pdf' | 'xlsx'>('pdf');
+  const [monthOpts, setMonthOpts] = useState({
+    totais: true,
+    porModelo: true,
+    emergencia: true,
+    caixas: true,
+    porDestino: true,
+  });
 
   const loadDays = useCallback(async () => {
     setLoadingDays(true);
@@ -348,22 +357,33 @@ export default function ProductionModule({ user }: { user: any }) {
     const periodo = formatPeriodoBR(filterFrom, filterTo);
 
     if (format === 'xlsx') {
-      const summary = [
+      const summary: { Indicador: string; Valor: string | number }[] = [
         { Indicador: 'Período', Valor: periodo },
-        { Indicador: 'Total fabricação (postes)', Valor: fab },
-        { Indicador: 'Total montagem (postes)', Valor: mont },
-        { Indicador: 'Alterações emergência', Valor: emerg },
-        { Indicador: 'Caixas provisórias (total)', Valor: boxes },
-        ...Object.entries(byDest).map(([k, v]) => ({
-          Indicador: `Caixas → ${k}`,
-          Valor: v,
-        })),
       ];
-      const models = Object.entries(byModel).map(([model, v]) => ({
-        Modelo: model,
-        Fabricacao: v.fab,
-        Montagem: v.mont,
-      }));
+      if (monthOpts.totais) {
+        summary.push(
+          { Indicador: 'Total produzido (fabricação)', Valor: fab },
+          { Indicador: 'Total montado (montagem)', Valor: mont },
+        );
+      }
+      if (monthOpts.emergencia) {
+        summary.push({ Indicador: 'Alterações emergência', Valor: emerg });
+      }
+      if (monthOpts.caixas) {
+        summary.push({ Indicador: 'Caixas provisórias (total)', Valor: boxes });
+      }
+      if (monthOpts.caixas && monthOpts.porDestino) {
+        Object.entries(byDest).forEach(([k, v]) => {
+          summary.push({ Indicador: `Caixas → ${k}`, Valor: v });
+        });
+      }
+      const models = monthOpts.porModelo
+        ? Object.entries(byModel).map(([model, v]) => ({
+            Modelo: model,
+            Fabricacao: v.fab,
+            Montagem: v.mont,
+          }))
+        : [];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Resumo');
       if (models.length) {
@@ -371,6 +391,7 @@ export default function ProductionModule({ user }: { user: any }) {
       }
       XLSX.writeFile(wb, `resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`);
       setOkMsg('Resumo do mês (Excel) gerado.');
+      setShowMonthSummary(false);
       return;
     }
 
@@ -379,38 +400,70 @@ export default function ProductionModule({ user }: { user: any }) {
     let y = 14;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOGISTICAS BILL — Resumo de producao', margin, y);
+    doc.text('LOGÍSTICAS BILL — Resumo de produção', margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(`Período: ${periodo}`, margin, y);
-    y += 6;
-    doc.text(`Fabricacao (postes): ${fab}`, margin, y);
-    y += 5;
-    doc.text(`Montagem (postes): ${mont}`, margin, y);
-    y += 5;
-    doc.text(`Alteracoes emergencia: ${emerg}`, margin, y);
-    y += 5;
-    doc.text(`Caixas provisorias: ${boxes}`, margin, y);
-    y += 5;
-    Object.entries(byDest).forEach(([k, v]) => {
-      doc.text(`  ${k}: ${v}`, margin, y);
-      y += 5;
-    });
-    y += 4;
-    const body = Object.entries(byModel).map(([model, v]) => [model, v.fab, v.mont]);
-    if (body.length) {
+    y += 8;
+
+    // Totais no topo (organizado)
+    if (monthOpts.totais) {
+      const totRows: (string | number)[][] = [
+        ['Total produzido', fab],
+        ['Total montado', mont],
+      ];
+      if (monthOpts.emergencia) totRows.push(['Alterações emergência', emerg]);
+      if (monthOpts.caixas) totRows.push(['Caixas provisórias (total)', boxes]);
       autoTable(doc, {
         startY: y,
-        head: [['Modelo', 'Fabricacao', 'Montagem']],
-        body,
+        head: [['Indicador', 'Quantidade']],
+        body: totRows,
         margin: { left: margin, right: margin },
-        styles: { fontSize: 8, cellPadding: 1.2 },
+        styles: { fontSize: 10, cellPadding: 2 },
         headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+        columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: 40, halign: 'right' } },
       });
+      y = (doc as any).lastAutoTable.finalY + 8;
     }
+
+    if (monthOpts.caixas && monthOpts.porDestino && Object.keys(byDest).length) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('Caixas provisórias por destino', margin, y);
+      y += 4;
+      autoTable(doc, {
+        startY: y,
+        head: [['Destino', 'Quantidade']],
+        body: Object.entries(byDest).map(([k, v]) => [k, v]),
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 9, cellPadding: 1.5 },
+        headStyles: { fillColor: [120, 80, 20], textColor: 255 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 8;
+    }
+
+    if (monthOpts.porModelo) {
+      const body = Object.entries(byModel).map(([model, v]) => [model, v.fab, v.mont]);
+      if (body.length) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('Detalhe por modelo', margin, y);
+        y += 4;
+        autoTable(doc, {
+          startY: y,
+          head: [['Modelo', 'Fabricação', 'Montagem']],
+          body,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 8, cellPadding: 1.2 },
+          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+        });
+      }
+    }
+
     doc.save(`resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`);
-    setOkMsg('Resumo do mes (PDF) gerado.');
+    setOkMsg('Resumo do mês (PDF) gerado.');
+    setShowMonthSummary(false);
   }
 
   function printSelectedDay() {
@@ -953,7 +1006,7 @@ export default function ProductionModule({ user }: { user: any }) {
                     className="fixed inset-0 z-10"
                     onClick={() => setExportMenuOpen(false)}
                   />
-                  <div className="absolute left-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  <div className="absolute right-0 bottom-full z-20 mb-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -995,7 +1048,8 @@ export default function ProductionModule({ user }: { user: any }) {
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
                       onClick={() => {
                         setExportMenuOpen(false);
-                        monthSummaryBackup('pdf');
+                        setMonthFormat('pdf');
+                        setShowMonthSummary(true);
                       }}
                     >
                       <FileDown size={15} className="text-slate-700" />
@@ -1006,7 +1060,8 @@ export default function ProductionModule({ user }: { user: any }) {
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
                       onClick={() => {
                         setExportMenuOpen(false);
-                        monthSummaryBackup('xlsx');
+                        setMonthFormat('xlsx');
+                        setShowMonthSummary(true);
                       }}
                     >
                       <FileSpreadsheet size={15} className="text-emerald-700" />
@@ -1219,6 +1274,59 @@ export default function ProductionModule({ user }: { user: any }) {
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
                 {saving ? 'Salvando…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {showMonthSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">
+              Resumo do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Escolha o que incluir no relatório do período filtrado.
+            </p>
+            <div className="mt-4 grid gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              {(
+                [
+                  ['totais', 'Totais no topo (produzido / montado)'],
+                  ['emergencia', 'Alterações de emergência'],
+                  ['caixas', 'Caixas provisórias (total)'],
+                  ['porDestino', 'Caixas por destino (Matriz / Filial)'],
+                  ['porModelo', 'Tabela por modelo'],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="grid grid-cols-[18px_1fr] items-center gap-3">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-slate-300"
+                    checked={monthOpts[key]}
+                    onChange={(e) =>
+                      setMonthOpts((s) => ({ ...s, [key]: e.target.checked }))
+                    }
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMonthSummary(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => monthSummaryBackup(monthFormat)}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white"
+              >
+                Gerar {monthFormat === 'pdf' ? 'PDF' : 'Excel'}
               </button>
             </div>
           </div>
