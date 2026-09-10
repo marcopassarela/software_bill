@@ -388,9 +388,9 @@ export default function ProductionModule({ user }: { user: any }) {
     doc.setFontSize(10);
     doc.text(`Período: ${periodo}`, margin, y);
     y += 6;
-    doc.text(`Fabricação (postes): ${fab}`, margin, y);
+    doc.text(`Fabricação: ${fab}`, margin, y);
     y += 5;
-    doc.text(`Montagem (postes): ${mont}`, margin, y);
+    doc.text(`Montagem: ${mont}`, margin, y);
     y += 5;
     doc.text(`Alterações emergencia: ${emerg}`, margin, y);
     y += 5;
