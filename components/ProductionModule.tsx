@@ -97,6 +97,7 @@ export default function ProductionModule({ user }: { user: any }) {
   const [limitAlert, setLimitAlert] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState('');
+  const [notesProv, setNotesProv] = useState('');
   const [qtyFab, setQtyFab] = useState<Record<string, string>>({});
   const [qtyMont, setQtyMont] = useState<Record<string, string>>({});
   const [emerg, setEmerg] = useState<Record<string, string>>({});
@@ -198,6 +199,7 @@ export default function ProductionModule({ user }: { user: any }) {
           kind,
           production_date: date,
           notes: notes || null,
+          notes_provisional: notesProv || null,
           lines: linesPreview,
           provisional_lines:
             kind === 'montagem'
@@ -224,6 +226,7 @@ export default function ProductionModule({ user }: { user: any }) {
       setProvTri('');
       setProvDest('');
       setNotes('');
+      setNotesProv('');
       setOkMsg('Lançamento registrado.');
       setTab('dia');
       loadDays();
@@ -244,29 +247,28 @@ export default function ProductionModule({ user }: { user: any }) {
     const withNotes = printOpts.observacoes;
     const withProv = printOpts.caixasProv;
 
-    const noteText = (x: any) => {
+    const noteTextPost = (x: any) => {
       if (!withNotes) return '';
       const parts: string[] = [];
       if (x.emergency_reason) parts.push(`Motivo: ${x.emergency_reason}`);
-      if (x.notes) {
-        const n = String(x.notes)
-          .replace(/EMERG:[^|]*/gi, '')
-          .replace(/\|?\s*DEST:[^|]*/gi, '')
-          .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
-          .trim();
-        if (n) parts.push(n);
-      }
+      const clean = (x.notes_clean || '').trim();
+      if (clean) parts.push(clean);
       return parts.join(' · ');
+    };
+    const noteTextProv = (x: any) => {
+      if (!withNotes) return '';
+      return (x.notes_provisional || '').trim();
     };
 
     if (scope === 'all' || scope === 'fabricacao') {
       (day.fabricacao || []).forEach((x: any) => {
+        const obs = noteTextPost(x);
         rows.push([
           'Fabricação',
           x.model,
           x.quantity,
           withEmerg ? x.emergency_altered || 0 : '—',
-          noteText(x) || '—',
+          obs || '',
         ]);
       });
     }
@@ -275,20 +277,22 @@ export default function ProductionModule({ user }: { user: any }) {
       (day.montagem || []).forEach((x: any) => {
         if (x.is_provisional) {
           if (!withProv) return;
+          const obsP = noteTextProv(x);
           provRows.push([
             labelProvisional(x.model),
             x.destination_label || x.destination || '—',
             x.quantity,
             '—',
-            noteText(x) || '—',
+            obsP || '',
           ]);
         } else {
+          const obsM = noteTextPost(x);
           rows.push([
             'Montagem',
             x.model,
             x.quantity,
             withEmerg ? x.emergency_altered || 0 : '—',
-            noteText(x) || '—',
+            obsM || '',
           ]);
         }
       });
@@ -748,15 +752,32 @@ export default function ProductionModule({ user }: { user: any }) {
           </div>
         )}
 
-        <label className="mt-4 block text-sm">
-          <span className="mb-1 block text-slate-600">Observação</span>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="h-20 w-full rounded-lg border p-2"
-            placeholder="Opcional"
-          />
-        </label>
+        <div className="mt-4 grid gap-3">
+          <label className="block text-sm">
+            <span className="mb-1 block text-slate-600">
+              Observação dos postes
+            </span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="h-16 w-full rounded-lg border p-2"
+              placeholder="Opcional — só para postes fabricados/montados"
+            />
+          </label>
+          {kind === 'montagem' && (
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">
+                Observação das caixas provisórias
+              </span>
+              <textarea
+                value={notesProv}
+                onChange={(e) => setNotesProv(e.target.value)}
+                className="h-16 w-full rounded-lg border border-amber-200 bg-amber-50/40 p-2"
+                placeholder="Opcional — só para caixas provisórias"
+              />
+            </label>
+          )}
+        </div>
         <button
           type="button"
           onClick={openConfirm}
@@ -1043,9 +1064,11 @@ export default function ProductionModule({ user }: { user: any }) {
                                   {x.quantity}
                                 </span>
                               </div>
-                              {x.emergency_altered > 0 && x.emergency_reason && (
-                                <p className="mt-0.5 text-xs text-amber-800">
-                                  Motivo: {x.emergency_reason}
+                              {(x.emergency_reason || x.notes_clean) && (
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                  {x.emergency_reason ? `Motivo: ${x.emergency_reason}` : ''}
+                                  {x.emergency_reason && x.notes_clean ? ' · ' : ''}
+                                  {x.notes_clean || ''}
                                 </p>
                               )}
                             </li>
@@ -1055,15 +1078,22 @@ export default function ProductionModule({ user }: { user: any }) {
                             .map((x: any, i: number) => (
                               <li
                                 key={`prov-${x.id || i}`}
-                                className="flex items-center justify-between gap-2 py-1.5 text-amber-800"
+                                className="py-1.5 text-amber-800"
                               >
-                                <span>
-                                  {labelProvisional(x.model)}
-                                  {x.destination_label ? ` → ${x.destination_label}` : ''}
-                                </span>
-                                <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums">
-                                  {x.quantity}
-                                </span>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>
+                                    {labelProvisional(x.model)}
+                                    {x.destination_label ? ` → ${x.destination_label}` : ''}
+                                  </span>
+                                  <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums">
+                                    {x.quantity}
+                                  </span>
+                                </div>
+                                {x.notes_provisional && (
+                                  <p className="mt-0.5 text-xs text-amber-900/80">
+                                    Obs.: {x.notes_provisional}
+                                  </p>
+                                )}
                               </li>
                             ))}
                           {!d.montagem?.length && (

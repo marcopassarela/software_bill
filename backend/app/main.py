@@ -5544,7 +5544,8 @@ class ProductionBatchIn(BaseModel):
     kind: str
     production_date: date
     lines: list[ProductionLineIn]
-    notes: str | None = None
+    notes: str | None = None  # observação dos postes
+    notes_provisional: str | None = None  # observação só das caixas provisórias
     # Caixas provisórias (somente montagem) — monofásica / bifásica / trifásica
     provisional_lines: list[ProductionLineIn] = []
     provisional_destination: str | None = None  # matriz_tubarao | filial_biguacu
@@ -5856,9 +5857,11 @@ def create_production_batch(
                 quantity=pq,
                 emergency_altered=0,
                 notes=(
-                    f"{body.notes} | DEST:{prov_dest}"
-                    if body.notes
-                    else f"DEST:{prov_dest}"
+                    (
+                        f"PROV:{(body.notes_provisional or '').strip()} | DEST:{prov_dest}"
+                        if (body.notes_provisional or "").strip()
+                        else f"DEST:{prov_dest}"
+                    )
                 ),
                 user_id=user.id,
             )
@@ -5988,6 +5991,23 @@ def production_by_day(
         emerg_reason = None
         if "EMERG:" in notes_raw:
             emerg_reason = notes_raw.split("EMERG:", 1)[-1].split("|", 1)[0].strip()
+        prov_note = None
+        if "PROV:" in notes_raw:
+            prov_note = notes_raw.split("PROV:", 1)[-1].split("|", 1)[0].strip() or None
+        # observação "limpa" (sem prefixos técnicos)
+        clean_notes = notes_raw
+        for prefix in ("EMERG:", "PROV:", "DEST:"):
+            if prefix in clean_notes:
+                # remove each technical segment
+                parts = []
+                for seg in clean_notes.split("|"):
+                    s = seg.strip()
+                    if s.startswith("EMERG:") or s.startswith("PROV:") or s.startswith("DEST:"):
+                        continue
+                    if s:
+                        parts.append(s)
+                clean_notes = " | ".join(parts)
+        clean_notes = (clean_notes or "").strip() or None
         item = {
             "id": r.id,
             "model": r.model,
@@ -5998,6 +6018,8 @@ def production_by_day(
                 r.emergency_altered or 0
             ),
             "emergency_reason": emerg_reason,
+            "notes_provisional": prov_note,
+            "notes_clean": clean_notes,
             "user_id": r.user_id,
             "notes": r.notes,
         }
