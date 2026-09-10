@@ -248,16 +248,14 @@ export default function ProductionModule({ user }: { user: any }) {
     const withProv = printOpts.caixasProv;
 
     const noteTextPost = (x: any) => {
+      // por linha: só motivo de emergência (obs. geral vai no rodapé do PDF)
       if (!withNotes) return '';
-      const parts: string[] = [];
-      if (x.emergency_reason) parts.push(`Motivo: ${x.emergency_reason}`);
-      const clean = (x.notes_clean || '').trim();
-      if (clean) parts.push(clean);
-      return parts.join(' · ');
+      if (x.emergency_reason) return `Motivo: ${x.emergency_reason}`;
+      return '';
     };
     const noteTextProv = (x: any) => {
-      if (!withNotes) return '';
-      return (x.notes_provisional || '').trim();
+      // por linha de caixa: vazio (obs. de caixas no rodapé)
+      return '';
     };
 
     if (scope === 'all' || scope === 'fabricacao') {
@@ -444,19 +442,73 @@ export default function ProductionModule({ user }: { user: any }) {
 
     autoTable(doc, {
       startY: y,
-      head: [['Tipo', 'Modelo / Destino', 'Qtd', 'Emerg.', 'Observações']],
+      head: [['Tipo', 'Modelo / Destino', 'Qtd', 'Emerg.', 'Obs. (emergência)']],
       body: rows,
       margin: { left: margin, right: margin },
       styles: { fontSize: 8, cellPadding: 1.2 },
       headStyles: { fillColor: [15, 40, 70], textColor: 255 },
       columnStyles: {
         0: { cellWidth: 28 },
-        1: { cellWidth: 45 },
+        1: { cellWidth: 48 },
         2: { cellWidth: 14 },
         3: { cellWidth: 16 },
         4: { cellWidth: 'auto' as any },
       },
     });
+
+    // Observações gerais (só se existirem e se a opção estiver marcada)
+    if (printOpts.observacoes) {
+      const postNotes = new Set<string>();
+      const provNotes = new Set<string>();
+      const scopeFab = printScope === 'all' || printScope === 'fabricacao';
+      const scopeMont = printScope === 'all' || printScope === 'montagem';
+      if (scopeFab) {
+        (day.fabricacao || []).forEach((x: any) => {
+          if (x.notes_clean) postNotes.add(String(x.notes_clean).trim());
+        });
+      }
+      if (scopeMont) {
+        (day.montagem || []).forEach((x: any) => {
+          if (x.is_provisional) {
+            if (printOpts.caixasProv && x.notes_provisional) {
+              provNotes.add(String(x.notes_provisional).trim());
+            }
+          } else if (x.notes_clean) {
+            postNotes.add(String(x.notes_clean).trim());
+          }
+        });
+      }
+      let yFoot = (doc as any).lastAutoTable?.finalY
+        ? (doc as any).lastAutoTable.finalY + 8
+        : 200;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      if (postNotes.size) {
+        doc.text('Observação:', margin, yFoot);
+        yFoot += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        Array.from(postNotes).forEach((t) => {
+          const lines = doc.splitTextToSize(t, 180);
+          doc.text(lines, margin, yFoot);
+          yFoot += lines.length * 4.5 + 2;
+        });
+      }
+      if (provNotes.size) {
+        yFoot += 2;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text('Caixas provisórias — observação:', margin, yFoot);
+        yFoot += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        Array.from(provNotes).forEach((t) => {
+          const lines = doc.splitTextToSize(t, 180);
+          doc.text(lines, margin, yFoot);
+          yFoot += lines.length * 4.5 + 2;
+        });
+      }
+    }
 
     doc.save(`Producao_${printDate}_${printScope}.pdf`);
     setShowPrintDay(false);
@@ -749,35 +801,30 @@ export default function ProductionModule({ user }: { user: any }) {
                 </select>
               </label>
             </div>
+            {(Number(provMono || 0) + Number(provBi || 0) + Number(provTri || 0) > 0) && (
+              <label className="mt-3 block text-sm">
+                <span className="mb-1 block text-slate-600">Observação (opcional)</span>
+                <input
+                  type="text"
+                  value={notesProv}
+                  onChange={(e) => setNotesProv(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm"
+                  placeholder="Ex.: envio parcial, reposição de estoque…"
+                />
+              </label>
+            )}
           </div>
         )}
 
-        <div className="mt-4 grid gap-3">
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-600">
-              Observação dos postes
-            </span>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="h-16 w-full rounded-lg border p-2"
-              placeholder="Opcional — só para postes fabricados/montados"
-            />
-          </label>
-          {kind === 'montagem' && (
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-600">
-                Observação das caixas provisórias
-              </span>
-              <textarea
-                value={notesProv}
-                onChange={(e) => setNotesProv(e.target.value)}
-                className="h-16 w-full rounded-lg border border-amber-200 bg-amber-50/40 p-2"
-                placeholder="Opcional — só para caixas provisórias"
-              />
-            </label>
-          )}
-        </div>
+        <label className="mt-4 block text-sm">
+          <span className="mb-1 block text-slate-600">Observação</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="h-20 w-full rounded-lg border p-2"
+            placeholder="Opcional"
+          />
+        </label>
         <button
           type="button"
           onClick={openConfirm}
