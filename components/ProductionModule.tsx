@@ -68,7 +68,20 @@ function formatDayLabel(iso: string) {
   const w = date
     .toLocaleDateString('pt-BR', { weekday: 'long' })
     .replace(/^\w/, (c) => c.toUpperCase());
-  return `${w} | ${d}-${m}-${y}`;
+  return `${w} | ${d}/${m}/${y}`;
+}
+
+/** Data curta BR: 08/09/2026 */
+function formatDateBR(iso?: string | null) {
+  if (!iso) return '…';
+  const parts = String(iso).slice(0, 10).split('-');
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+}
+
+function formatPeriodoBR(from?: string | null, to?: string | null) {
+  return `${formatDateBR(from)} a ${formatDateBR(to)}`;
 }
 
 export default function ProductionModule({ user }: { user: any }) {
@@ -335,7 +348,7 @@ export default function ProductionModule({ user }: { user: any }) {
         });
     });
 
-    const periodo = `${filterFrom || '…'} a ${filterTo || '…'}`;
+    const periodo = formatPeriodoBR(filterFrom, filterTo);
 
     if (format === 'xlsx') {
       const summary = [
@@ -369,19 +382,19 @@ export default function ProductionModule({ user }: { user: any }) {
     let y = 14;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOGISTICAS BILL — Resumo de producao', margin, y);
+    doc.text('LOGISTICAS BILL — Resumo de produção', margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Periodo: ${periodo}`, margin, y);
+    doc.text(`Período: ${periodo}`, margin, y);
     y += 6;
-    doc.text(`Fabricacao (postes): ${fab}`, margin, y);
+    doc.text(`Fabricação (postes): ${fab}`, margin, y);
     y += 5;
     doc.text(`Montagem (postes): ${mont}`, margin, y);
     y += 5;
-    doc.text(`Alteracoes emergencia: ${emerg}`, margin, y);
+    doc.text(`Alterações emergencia: ${emerg}`, margin, y);
     y += 5;
-    doc.text(`Caixas provisorias: ${boxes}`, margin, y);
+    doc.text(`Caixas provisórias: ${boxes}`, margin, y);
     y += 5;
     Object.entries(byDest).forEach(([k, v]) => {
       doc.text(`  ${k}: ${v}`, margin, y);
@@ -552,7 +565,7 @@ export default function ProductionModule({ user }: { user: any }) {
     y += 6;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Filtro: ${filterFrom || '…'} → ${filterTo || '…'}`, margin, y);
+    doc.text(`Período: ${formatPeriodoBR(filterFrom, filterTo)}`, margin, y);
     y += 6;
 
     const body: any[] = [];
