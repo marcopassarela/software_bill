@@ -1106,7 +1106,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileDown size={15} className="text-slate-700" />
-                      Resumo do mês (PDF)
+                      Relatório do mês (PDF)
                     </button>
                     <button
                       type="button"
@@ -1118,7 +1118,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileSpreadsheet size={15} className="text-emerald-700" />
-                      Resumo do mês (Excel)
+                      Relatório do mês (Excel)
                     </button>
                   </div>
                 </>
@@ -1338,7 +1338,7 @@ export default function ProductionModule({ user }: { user: any }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">
-              Resumo do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
+              Relatório do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
             </h3>
             <p className="mt-1 text-sm text-slate-500">
               Escolha o que incluir no relatório do período filtrado.
