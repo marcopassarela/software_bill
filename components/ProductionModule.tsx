@@ -390,7 +390,7 @@ export default function ProductionModule({ user }: { user: any }) {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(models), 'Por modelo');
       }
       XLSX.writeFile(wb, `resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`);
-      setOkMsg('Resumo do mês (Excel) gerado.');
+      setOkMsg('Relatório do mês (Excel) gerado.');
       setShowMonthSummary(false);
       return;
     }
@@ -400,47 +400,93 @@ export default function ProductionModule({ user }: { user: any }) {
     let y = 14;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOGÍSTICAS BILL — Resumo de produção', margin, y);
+    doc.text('LOGÍSTICAS BILL — Relatório de produção', margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(`Período: ${periodo}`, margin, y);
     y += 8;
 
-    // Totais no topo (organizado)
+    const tableBase = {
+      margin: { left: margin, right: margin },
+      theme: 'grid' as const,
+      styles: {
+        fontSize: 9,
+        cellPadding: 2.2,
+        lineColor: [180, 190, 200] as [number, number, number],
+        lineWidth: 0.25,
+        textColor: [30, 40, 50] as [number, number, number],
+        valign: 'middle' as const,
+      },
+      headStyles: {
+        fillColor: [15, 40, 70] as [number, number, number],
+        textColor: 255,
+        fontStyle: 'bold' as const,
+        lineColor: [15, 40, 70] as [number, number, number],
+        lineWidth: 0.25,
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252] as [number, number, number],
+      },
+    };
+
+    // Totais no topo — tabela em largura total + Matriz / Filial
     if (monthOpts.totais) {
       const totRows: (string | number)[][] = [
-        ['Total produzido', fab],
-        ['Total montado', mont],
+        ['Total produzido (fabricação)', fab],
+        ['Total montado (montagem)', mont],
       ];
       if (monthOpts.emergencia) totRows.push(['Alterações emergência', emerg]);
       if (monthOpts.caixas) totRows.push(['Caixas provisórias (total)', boxes]);
+      // Sempre mostra Matriz e Filial no bloco de indicadores (0 se não houver)
+      if (monthOpts.caixas && monthOpts.porDestino) {
+        const destKeys = ['Matriz — Tubarão', 'Filial — Biguaçu'];
+        destKeys.forEach((k) => {
+          const found = Object.entries(byDest).find(
+            ([label]) => label.toLowerCase().includes(k.split('—')[0].trim().toLowerCase().slice(0, 6))
+          );
+          // match by partial: Matriz / Filial
+          let qty = 0;
+          Object.entries(byDest).forEach(([label, v]) => {
+            const L = label.toLowerCase();
+            if (k.startsWith('Matriz') && L.includes('matriz')) qty = v;
+            if (k.startsWith('Filial') && L.includes('filial')) qty = v;
+          });
+          totRows.push([`Caixas provisórias — ${k}`, qty]);
+        });
+        // qualquer outro destino que não seja matriz/filial
+        Object.entries(byDest).forEach(([label, v]) => {
+          const L = label.toLowerCase();
+          if (!L.includes('matriz') && !L.includes('filial')) {
+            totRows.push([`Caixas provisórias — ${label}`, v]);
+          }
+        });
+      }
+
       autoTable(doc, {
         startY: y,
         head: [['Indicador', 'Quantidade']],
         body: totRows,
-        margin: { left: margin, right: margin },
-        styles: { fontSize: 10, cellPadding: 2 },
-        headStyles: { fillColor: [15, 40, 70], textColor: 255 },
-        columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: 40, halign: 'right' } },
+        ...tableBase,
+        styles: { ...tableBase.styles, fontSize: 10 },
+        columnStyles: {
+          0: { cellWidth: 'auto', fontStyle: 'bold' },
+          1: { cellWidth: 36, halign: 'right' },
+        },
       });
-      y = (doc as any).lastAutoTable.finalY + 8;
-    }
-
-    if (monthOpts.caixas && monthOpts.porDestino && Object.keys(byDest).length) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('Caixas provisórias por destino', margin, y);
-      y += 4;
+      y = (doc as any).lastAutoTable.finalY + 10;
+    } else if (monthOpts.caixas && monthOpts.porDestino && Object.keys(byDest).length) {
       autoTable(doc, {
         startY: y,
-        head: [['Destino', 'Quantidade']],
-        body: Object.entries(byDest).map(([k, v]) => [k, v]),
-        margin: { left: margin, right: margin },
-        styles: { fontSize: 9, cellPadding: 1.5 },
-        headStyles: { fillColor: [120, 80, 20], textColor: 255 },
+        head: [['Indicador', 'Quantidade']],
+        body: Object.entries(byDest).map(([k, v]) => [`Caixas provisórias — ${k}`, v]),
+        ...tableBase,
+        columnStyles: {
+          0: { cellWidth: 'auto', fontStyle: 'bold' },
+          1: { cellWidth: 36, halign: 'right' },
+        },
       });
-      y = (doc as any).lastAutoTable.finalY + 8;
+      y = (doc as any).lastAutoTable.finalY + 10;
     }
 
     if (monthOpts.porModelo) {
@@ -448,21 +494,27 @@ export default function ProductionModule({ user }: { user: any }) {
       if (body.length) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
+        doc.setTextColor(15, 40, 70);
         doc.text('Detalhe por modelo', margin, y);
-        y += 4;
+        y += 5;
+        doc.setTextColor(30, 40, 50);
         autoTable(doc, {
           startY: y,
           head: [['Modelo', 'Fabricação', 'Montagem']],
           body,
-          margin: { left: margin, right: margin },
-          styles: { fontSize: 8, cellPadding: 1.2 },
-          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+          ...tableBase,
+          styles: { ...tableBase.styles, fontSize: 8 },
+          columnStyles: {
+            0: { cellWidth: 'auto' },
+            1: { cellWidth: 32, halign: 'right' },
+            2: { cellWidth: 32, halign: 'right' },
+          },
         });
       }
     }
 
     doc.save(`resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`);
-    setOkMsg('Resumo do mês (PDF) gerado.');
+    setOkMsg('Relatório do mês (PDF) gerado.');
     setShowMonthSummary(false);
   }
 
@@ -1053,7 +1105,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileDown size={15} className="text-slate-700" />
-                      Resumo do mês (PDF)
+                      Relatório do mês (PDF)
                     </button>
                     <button
                       type="button"
@@ -1065,7 +1117,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileSpreadsheet size={15} className="text-emerald-700" />
-                      Resumo do mês (Excel)
+                      Relatório do mês (Excel)
                     </button>
                   </div>
                 </>
@@ -1285,7 +1337,7 @@ export default function ProductionModule({ user }: { user: any }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">
-              Resumo do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
+              Relatório do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
             </h3>
             <p className="mt-1 text-sm text-slate-500">
               Escolha o que incluir no relatório do período filtrado.
