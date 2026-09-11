@@ -411,7 +411,7 @@ export default function ProductionModule({ user }: { user: any }) {
       margin: { left: margin, right: margin },
       theme: 'grid' as const,
       styles: {
-        fontSize: 9,
+        fontSize: 8,
         cellPadding: 2.2,
         lineColor: [180, 190, 200] as [number, number, number],
         lineWidth: 0.25,
@@ -468,9 +468,9 @@ export default function ProductionModule({ user }: { user: any }) {
         head: [['Indicador', 'Quantidade']],
         body: totRows,
         ...tableBase,
-        styles: { ...tableBase.styles, fontSize: 10 },
+        styles: { ...tableBase.styles, fontSize: 8 },
         columnStyles: {
-          0: { cellWidth: 'auto', fontStyle: 'bold' },
+          0: { cellWidth: 'auto' },
           1: { cellWidth: 36, halign: 'right' },
         },
       });
@@ -481,8 +481,9 @@ export default function ProductionModule({ user }: { user: any }) {
         head: [['Indicador', 'Quantidade']],
         body: Object.entries(byDest).map(([k, v]) => [`Caixas provisórias — ${k}`, v]),
         ...tableBase,
+        styles: { ...tableBase.styles, fontSize: 8 },
         columnStyles: {
-          0: { cellWidth: 'auto', fontStyle: 'bold' },
+          0: { cellWidth: 'auto' },
           1: { cellWidth: 36, halign: 'right' },
         },
       });
