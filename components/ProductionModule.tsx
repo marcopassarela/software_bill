@@ -323,7 +323,7 @@ export default function ProductionModule({ user }: { user: any }) {
   function monthSummaryBackup(format: 'pdf' | 'xlsx') {
     setError('');
     if (!days.length) {
-      setError('Filtre o período (ex.: o mês) antes de gerar o resumo.');
+      setError('Filtre o período (ex.: o mês) antes de gerar o relatório.');
       return;
     }
     let fab = 0;
@@ -433,8 +433,8 @@ export default function ProductionModule({ user }: { user: any }) {
     // Totais no topo — tabela em largura total + Matriz / Filial
     if (monthOpts.totais) {
       const totRows: (string | number)[][] = [
-        ['Total produzido (fabricação)', fab],
-        ['Total montado (montagem)', mont],
+        ['Total produzido', fab],
+        ['Total montado', mont],
       ];
       if (monthOpts.emergencia) totRows.push(['Alterações emergência', emerg]);
       if (monthOpts.caixas) totRows.push(['Caixas provisórias (total)', boxes]);
@@ -1058,7 +1058,7 @@ export default function ProductionModule({ user }: { user: any }) {
                     className="fixed inset-0 z-10"
                     onClick={() => setExportMenuOpen(false)}
                   />
-                  <div className="absolute right-0 bottom-full z-20 mb-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  <div className="absolute right-0 top-full z-20 mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -1105,7 +1105,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileDown size={15} className="text-slate-700" />
-                      Relatório do mês (PDF)
+                      Resumo do mês (PDF)
                     </button>
                     <button
                       type="button"
@@ -1117,7 +1117,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileSpreadsheet size={15} className="text-emerald-700" />
-                      Relatório do mês (Excel)
+                      Resumo do mês (Excel)
                     </button>
                   </div>
                 </>
@@ -1337,7 +1337,7 @@ export default function ProductionModule({ user }: { user: any }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">
-              Relatório do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
+              Resumo do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
             </h3>
             <p className="mt-1 text-sm text-slate-500">
               Escolha o que incluir no relatório do período filtrado.
