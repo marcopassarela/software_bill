@@ -45,10 +45,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from typing import Any, AsyncIterator, Optional
 
-REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("UPSTASH_REDIS_URL")
+logger = logging.getLogger("realtime")
+
+# A integração do Redis na Vercel (Marketplace/Storage → Upstash) nem
+# sempre cria a variável com o nome exato "REDIS_URL" — às vezes vem como
+# KV_URL, ou com outro prefixo dependendo de como foi conectado. Checamos
+# os nomes mais comuns nessa ordem, e uso o primeiro que existir.
+_ENV_CANDIDATES = ("REDIS_URL", "UPSTASH_REDIS_URL", "KV_URL", "STORAGE_URL")
+REDIS_URL = next((os.environ.get(name) for name in _ENV_CANDIDATES if os.environ.get(name)), None)
+_REDIS_URL_SOURCE = next((name for name in _ENV_CANDIDATES if os.environ.get(name)), None)
+
+if REDIS_URL:
+    logger.info("[realtime] usando Redis via env var %s", _REDIS_URL_SOURCE)
+else:
+    logger.warning(
+        "[realtime] nenhuma das env vars %s está configurada — caindo para "
+        "o hub em memória (não sincroniza entre instâncias serverless).",
+        _ENV_CANDIDATES,
+    )
 
 
 def _channel(company_id: int) -> str:
@@ -122,9 +140,19 @@ if REDIS_URL:
             socket_timeout=2,
             socket_connect_timeout=2,
         )
-    except Exception:
+        # from_url não conecta na hora (é preguiçoso) — força um PING
+        # aqui só pra já aparecer no log do deploy se a URL/senha/host
+        # estiverem erradas, em vez de descobrir isso só quando alguém
+        # reportar "não atualizou".
+        try:
+            _redis_sync_client.ping()
+            logger.info("[realtime] PING no Redis OK na inicialização")
+        except Exception as exc:
+            logger.error("[realtime] PING no Redis FALHOU na inicialização: %r", exc)
+    except Exception as exc:
         # Se a lib "redis" não estiver instalada ou a URL for inválida,
         # cai para o hub em memória em vez de quebrar o app inteiro.
+        logger.error("[realtime] falha ao criar cliente Redis: %r", exc)
         _redis_sync_client = None
 
 
@@ -150,8 +178,29 @@ def notify_company_changed(
             _redis_sync_client.publish(_channel(company_id), payload)
         else:
             _memory_hub.publish(company_id, module, reason)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error(
+            "[realtime] falha ao publicar evento (company=%s, module=%s): %r",
+            company_id, module, exc,
+        )
+
+
+def redis_diagnostics() -> dict[str, Any]:
+    """Usado pelo endpoint GET /debug/realtime para você conseguir ver,
+    sem precisar caçar nos logs, se o Redis está de fato conectado."""
+    info: dict[str, Any] = {
+        "env_var_encontrada": _REDIS_URL_SOURCE,
+        "redis_url_configurada": bool(REDIS_URL),
+        "cliente_criado": _redis_sync_client is not None,
+        "ping_ok": False,
+        "erro": None,
+    }
+    if _redis_sync_client is not None:
+        try:
+            info["ping_ok"] = bool(_redis_sync_client.ping())
+        except Exception as exc:
+            info["erro"] = repr(exc)
+    return info
 
 
 async def subscribe_events(company_id: int) -> AsyncIterator[Optional[dict[str, Any]]]:

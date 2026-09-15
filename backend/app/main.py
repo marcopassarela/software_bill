@@ -24,7 +24,7 @@ from slowapi.util import get_remote_address
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
-from .realtime import subscribe_events, notify_company_changed
+from .realtime import subscribe_events, notify_company_changed, redis_diagnostics
 from .security import (
     audit,
     current_user,
@@ -3807,6 +3807,23 @@ def schedule_data_version(db: Session, company_id: int) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
+
+
+@app.get("/debug/realtime")
+def debug_realtime(user: User = Depends(current_user)):
+    """
+    Diagnóstico rápido do Redis, sem precisar caçar nos Function Logs da
+    Vercel. Só para administrador/dono, porque devolve detalhes de infra.
+    Abra https://<seu-dominio>/api/debug/realtime logado como admin.
+    """
+    role_val = (
+        user.role.value if hasattr(user.role, "value") else str(user.role or "")
+    ).strip().upper()
+    if role_val not in {"ADMINISTRADOR", "ADMIN"} and not getattr(
+        user, "is_main_admin", False
+    ):
+        raise HTTPException(403, "Apenas administrador")
+    return redis_diagnostics()
 
 
 @app.get("/events/stream")
