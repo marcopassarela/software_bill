@@ -3778,36 +3778,61 @@ class ScheduleHub:
         self._listen_thread = None
 
     def _pg_listen_loop(self) -> None:
-        """Uma conexão LISTEN enquanto houver assinantes SSE."""
+        """Uma conexão LISTEN enquanto houver assinantes SSE (driver via SQLAlchemy)."""
         import select
-        try:
-            import psycopg2
-            from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-        except Exception:
-            return
 
-        url = str(engine.url)
-        # SQLAlchemy URL → psycopg2
-        dsn = url.replace("postgresql+psycopg2://", "postgresql://").replace(
-            "postgresql+psycopg://", "postgresql://"
-        )
-        conn = None
+        raw = None
         try:
-            conn = psycopg2.connect(dsn)
-            conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-            cur = conn.cursor()
+            # Usa o mesmo driver do projeto (psycopg2 ou psycopg) — sem import direto
+            raw = engine.raw_connection()
+            # AUTOCOMMIT necessário para LISTEN/NOTIFY
+            try:
+                raw.set_isolation_level(0)
+            except Exception:
+                try:
+                    raw.autocommit = True  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            cur = raw.cursor()
             cur.execute("LISTEN schedule_changed;")
+            try:
+                cur.close()
+            except Exception:
+                pass
+
             while not self._listen_stop.is_set():
-                ready = select.select([conn], [], [], 20.0)
+                # psycopg2: conexão é selectável; psycopg3 pode usar fileno()
+                sock = getattr(raw, "fileno", lambda: raw)()
+                try:
+                    ready = select.select([sock], [], [], 20.0)
+                except Exception:
+                    # fallback: poll periódico
+                    ready = ([sock], [], [])
+                    import time as _time
+                    _time.sleep(1.0)
+
                 if self._listen_stop.is_set():
                     break
                 if ready == ([], [], []):
                     continue
-                conn.poll()
-                while conn.notifies:
-                    n = conn.notifies.pop(0)
+
+                try:
+                    raw.poll()
+                except Exception:
+                    # psycopg3: connection.notifies após fill
                     try:
-                        cid = int(str(n.payload).strip())
+                        from psycopg import waiting  # type: ignore
+                    except Exception:
+                        pass
+
+                notifies = getattr(raw, "notifies", None)
+                if notifies is None:
+                    continue
+                while notifies:
+                    n = notifies.pop(0)
+                    payload = getattr(n, "payload", None) or (n[1] if isinstance(n, tuple) and len(n) > 1 else n)
+                    try:
+                        cid = int(str(payload).strip())
                     except Exception:
                         continue
                     self.notify_local(cid, "pg_notify")
@@ -3815,8 +3840,8 @@ class ScheduleHub:
             pass
         finally:
             try:
-                if conn is not None:
-                    conn.close()
+                if raw is not None:
+                    raw.close()
             except Exception:
                 pass
 
