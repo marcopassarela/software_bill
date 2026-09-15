@@ -778,6 +778,97 @@ export default function AppShell({
     setEditingMovement(null);
   }, [page]);
 
+  // SSE global: qualquer usuário logado, qualquer tela — só atualiza se houve mudança
+  useEffect(() => {
+    if (!user) return;
+    let closed = false;
+    let es: EventSource | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+
+    const streamUrl = () => {
+      const base = (
+        process.env.NEXT_PUBLIC_API_BROWSER ||
+        process.env.NEXT_PUBLIC_API_URL ||
+        'http://localhost:8000'
+      ).replace(/\/$/, '');
+      return `${base}/events/stream`;
+    };
+
+    const connect = () => {
+      if (closed) return;
+      try {
+        es = new EventSource(streamUrl(), { withCredentials: true });
+        es.addEventListener('company_changed', (ev) => {
+          let mod = '*';
+          try {
+            const data = JSON.parse((ev as MessageEvent).data || '{}');
+            mod = data.module || '*';
+          } catch {
+            /* ignore */
+          }
+          window.dispatchEvent(
+            new CustomEvent('company-data-changed', { detail: { module: mod } })
+          );
+        });
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (!closed) retry = setTimeout(connect, 5000);
+        };
+      } catch {
+        if (!closed) retry = setTimeout(connect, 8000);
+      }
+    };
+    connect();
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !es) connect();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      es?.close();
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const mod = (ev as CustomEvent).detail?.module || '*';
+      const match =
+        mod === '*' ||
+        mod === page ||
+        (mod === 'stock' && ['stock', 'entry', 'output', 'movements'].includes(page)) ||
+        (mod === 'schedule' && page === 'schedule') ||
+        (mod === 'production' && page === 'production') ||
+        (mod === 'orders' && page === 'orders');
+      if (!match) return;
+      if (page === 'schedule') {
+        window.dispatchEvent(new Event('reload-schedule'));
+        return;
+      }
+      if (page === 'production') {
+        window.dispatchEvent(new Event('reload-production'));
+        return;
+      }
+      if (page === 'orders') {
+        window.dispatchEvent(new Event('reload-orders'));
+        return;
+      }
+      if (page === 'dashboard') {
+        request('/metrics').then(setMetrics).catch(() => {});
+        return;
+      }
+      load(page);
+    };
+    window.addEventListener('company-data-changed', handler);
+    return () => window.removeEventListener('company-data-changed', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+
   useEffect(() => {
     Promise.all([
       request('/vehicles').catch(() => []),
@@ -3883,42 +3974,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeArchived]);
 
-  // Push real (SSE + PostgreSQL NOTIFY): sem poll.
-  // Quando alguém altera a agenda, todos com a aba aberta atualizam na hora.
+  // Atualização vem do SSE global (AppShell) → evento reload-schedule
   useEffect(() => {
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    let closed = false;
-    let es: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-
-    const connect = () => {
-      if (closed) return;
-      try {
-        es = new EventSource(`${API}/schedule/stream`, { withCredentials: true });
-        es.addEventListener('ready', () => {
-          /* stream ok */
-        });
-        es.addEventListener('schedule_changed', () => {
-          forceReloadSchedule();
-        });
-        es.onerror = () => {
-          es?.close();
-          es = null;
-          if (!closed) retry = setTimeout(connect, 5000);
-        };
-      } catch {
-        if (!closed) retry = setTimeout(connect, 8000);
-      }
-    };
-    connect();
-
-    return () => {
-      closed = true;
-      if (retry) clearTimeout(retry);
-      es?.close();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeArchived]);
+    const onReload = () => forceReloadSchedule();
+    window.addEventListener('reload-schedule', onReload);
+    return () => window.removeEventListener('reload-schedule', onReload);
+  }, []);
 
   const selectedWeek = weeks.find((w) => w.id === selectedWeekId);
 

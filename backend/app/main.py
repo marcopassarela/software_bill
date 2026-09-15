@@ -948,12 +948,13 @@ def login(
         db,
     )
 
+    # SameSite=None + Secure quando HTTPS: necessário para SSE/API em outro domínio (celular)
     response.set_cookie(
         "gl_session",
         token_for(u),
         httponly=True,
         secure=settings.cookie_secure,
-        samesite="lax",
+        samesite="none" if settings.cookie_secure else "lax",
         max_age=settings.access_token_minutes * 60,
         path="/",
     )
@@ -2266,6 +2267,7 @@ def stock(
     )
 
     db.commit()
+    notify_company_changed(company.id, "stock")
 
     return {
         "movement": serialize(m),
@@ -3160,6 +3162,7 @@ def add_resource(
     )
 
     db.commit()
+    notify_company_changed(company.id, resource if resource != "products" else "stock")
 
     return serialize(x)
 
@@ -3284,6 +3287,7 @@ def edit_resource(
         )
 
         db.commit()
+        notify_company_changed(company.id, resource if resource != "products" else "stock")
 
     except IntegrityError as exc:
         db.rollback()
@@ -3715,165 +3719,59 @@ def serialize_week(
 # Agenda: push em tempo real (SSE) — sem poll no Neon
 # ============================================================
 
-class ScheduleHub:
-    """
-    Push da agenda entre usuários/workers via PostgreSQL NOTIFY + SSE.
-    - 1 conexão LISTEN por processo (só enquanto houver alguém na agenda)
-    - Clientes SSE só recebem evento em memória (sem poll)
-    """
+class CompanyHub:
+    """SSE in-memory por empresa. 1 worker uvicorn. Sem poll / sem LISTEN no Neon."""
 
     def __init__(self) -> None:
         self._subs: dict[int, list[asyncio.Queue]] = {}
-        self._lock = threading.Lock()
-        self._listen_thread: threading.Thread | None = None
-        self._listen_stop = threading.Event()
-        self._loops: set[asyncio.AbstractEventLoop] = set()
 
-    def _subscriber_count(self) -> int:
-        return sum(len(v) for v in self._subs.values())
-
-    def subscribe(self, company_id: int, loop: asyncio.AbstractEventLoop) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue(maxsize=16)
-        with self._lock:
-            self._subs.setdefault(company_id, []).append(q)
-            self._loops.add(loop)
-            self._ensure_listener()
+    def subscribe(self, company_id: int, loop=None) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=32)
+        self._subs.setdefault(int(company_id), []).append(q)
         return q
 
     def unsubscribe(self, company_id: int, q: asyncio.Queue) -> None:
-        with self._lock:
-            lst = self._subs.get(company_id) or []
-            if q in lst:
-                lst.remove(q)
-            if not lst and company_id in self._subs:
-                del self._subs[company_id]
-            if self._subscriber_count() == 0:
-                self._stop_listener()
+        lst = self._subs.get(int(company_id)) or []
+        if q in lst:
+            lst.remove(q)
+        if not lst:
+            self._subs.pop(int(company_id), None)
 
-    def notify_local(self, company_id: int, reason: str = "changed") -> None:
-        dead: list[tuple[int, asyncio.Queue]] = []
-        with self._lock:
-            items = list(self._subs.get(company_id) or [])
-        for q in items:
+    def notify(self, company_id: int, module: str = "*", reason: str = "changed") -> None:
+        dead: list[asyncio.Queue] = []
+        payload = {
+            "type": "company_changed",
+            "module": module or "*",
+            "reason": reason,
+        }
+        for q in list(self._subs.get(int(company_id)) or []):
             try:
-                q.put_nowait({"type": "schedule_changed", "reason": reason})
+                q.put_nowait(payload)
             except Exception:
-                dead.append((company_id, q))
-        for cid, q in dead:
-            self.unsubscribe(cid, q)
-
-    def _ensure_listener(self) -> None:
-        if self._listen_thread and self._listen_thread.is_alive():
-            return
-        self._listen_stop.clear()
-        self._listen_thread = threading.Thread(
-            target=self._pg_listen_loop,
-            name="schedule-pg-listen",
-            daemon=True,
-        )
-        self._listen_thread.start()
-
-    def _stop_listener(self) -> None:
-        self._listen_stop.set()
-        self._listen_thread = None
-
-    def _pg_listen_loop(self) -> None:
-        """Uma conexão LISTEN enquanto houver assinantes SSE (driver via SQLAlchemy)."""
-        import select
-
-        raw = None
-        try:
-            # Usa o mesmo driver do projeto (psycopg2 ou psycopg) — sem import direto
-            raw = engine.raw_connection()
-            # AUTOCOMMIT necessário para LISTEN/NOTIFY
-            try:
-                raw.set_isolation_level(0)
-            except Exception:
-                try:
-                    raw.autocommit = True  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-            cur = raw.cursor()
-            cur.execute("LISTEN schedule_changed;")
-            try:
-                cur.close()
-            except Exception:
-                pass
-
-            while not self._listen_stop.is_set():
-                # psycopg2: conexão é selectável; psycopg3 pode usar fileno()
-                sock = getattr(raw, "fileno", lambda: raw)()
-                try:
-                    ready = select.select([sock], [], [], 20.0)
-                except Exception:
-                    # fallback: poll periódico
-                    ready = ([sock], [], [])
-                    import time as _time
-                    _time.sleep(1.0)
-
-                if self._listen_stop.is_set():
-                    break
-                if ready == ([], [], []):
-                    continue
-
-                try:
-                    raw.poll()
-                except Exception:
-                    # psycopg3: connection.notifies após fill
-                    try:
-                        from psycopg import waiting  # type: ignore
-                    except Exception:
-                        pass
-
-                notifies = getattr(raw, "notifies", None)
-                if notifies is None:
-                    continue
-                while notifies:
-                    n = notifies.pop(0)
-                    payload = getattr(n, "payload", None) or (n[1] if isinstance(n, tuple) and len(n) > 1 else n)
-                    try:
-                        cid = int(str(payload).strip())
-                    except Exception:
-                        continue
-                    self.notify_local(cid, "pg_notify")
-        except Exception:
-            pass
-        finally:
-            try:
-                if raw is not None:
-                    raw.close()
-            except Exception:
-                pass
+                dead.append(q)
+        for q in dead:
+            self.unsubscribe(company_id, q)
 
 
-schedule_hub = ScheduleHub()
+company_hub = CompanyHub()
+
+
+def notify_company_changed(
+    company_id: int,
+    module: str = "*",
+    reason: str = "changed",
+) -> None:
+    """Avisa todos os clientes logados da empresa (qualquer tela)."""
+    try:
+        company_hub.notify(int(company_id), module, reason)
+    except Exception:
+        pass
 
 
 def notify_schedule_changed(company_id: int, reason: str = "changed") -> None:
-    """Avisa quem está na agenda (mesmo worker + outros via PG NOTIFY)."""
-    try:
-        schedule_hub.notify_local(int(company_id), reason)
-    except Exception:
-        pass
-    try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("SELECT pg_notify('schedule_changed', :payload)"),
-                {"payload": str(int(company_id))},
-            )
-            conn.commit()
-    except Exception:
-        try:
-            with engine.connect() as conn:
-                conn.execute(text(f"NOTIFY schedule_changed, '{int(company_id)}'"))
-                conn.commit()
-        except Exception:
-            pass
+    """Compat: agenda → evento global module=schedule."""
+    notify_company_changed(company_id, "schedule", reason)
 
-
-# ============================================================
-# SEMANAS
-# ============================================================
 
 def schedule_data_version(db: Session, company_id: int) -> str:
     """Fingerprint barato da agenda (sem serializar tudo)."""
@@ -3946,17 +3844,16 @@ def schedule_data_version(db: Session, company_id: int) -> str:
 
 
 
-@app.get("/schedule/stream")
-async def schedule_stream(request: Request):
-    """SSE: avisa quando a agenda muda. Não mantém query aberta no Neon."""
+@app.get("/events/stream")
+async def events_stream(request: Request):
+    """SSE global: qualquer mudança na empresa. Zero query no Neon enquanto idle."""
     import jwt as _jwt
     from .security import get_settings
 
-    token = request.cookies.get("gl_session")
+    token = request.cookies.get("gl_session") or request.query_params.get("token")
     if not token:
         raise HTTPException(401, "Não autenticado")
 
-    # Sessão curta só para auth — fecha antes do stream (não segura Neon)
     db_gen = get_db()
     db = next(db_gen)
     try:
@@ -3971,7 +3868,6 @@ async def schedule_stream(request: Request):
             raise HTTPException(401, "Sessão inválida")
         if not user:
             raise HTTPException(401, "Usuário indisponível")
-        require("schedule")(user)
         company = get_current_company(user, db)
         company_id = int(company.id)
     finally:
@@ -3982,21 +3878,18 @@ async def schedule_stream(request: Request):
 
     async def event_gen():
         loop = asyncio.get_running_loop()
-        q = schedule_hub.subscribe(company_id, loop)
+        q = company_hub.subscribe(company_id, loop)
         try:
             yield "event: ready\ndata: {\"ok\":true}\n\n"
             while True:
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=25.0)
-                    if msg.get("type") == "keepalive":
-                        yield ": keepalive\n\n"
-                        continue
                     import json as _json
-                    yield f"event: schedule_changed\ndata: {_json.dumps(msg)}\n\n"
+                    yield f"event: company_changed\ndata: {_json.dumps(msg)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         finally:
-            schedule_hub.unsubscribe(company_id, q)
+            company_hub.unsubscribe(company_id, q)
 
     return StreamingResponse(
         event_gen(),
@@ -4009,6 +3902,10 @@ async def schedule_stream(request: Request):
     )
 
 
+# Alias antigo
+@app.get("/schedule/stream")
+async def schedule_stream_alias(request: Request):
+    return await events_stream(request)
 
 
 @app.get("/schedule/rev")
@@ -6151,6 +6048,7 @@ def create_production_batch(
     )
 
     db.commit()
+    notify_company_changed(company.id, "production")
 
     return {
         "ok": True,

@@ -170,6 +170,13 @@ export default function ProductionModule({ user }: { user: any }) {
     if (tab === 'dia') loadDays();
   }, [tab, loadDays]);
 
+  useEffect(() => {
+    const onReload = () => loadDays();
+    window.addEventListener('reload-production', onReload);
+    return () => window.removeEventListener('reload-production', onReload);
+  }, [loadDays]);
+
+
   const linesPreview = useMemo(() => {
     const qtyMap = tab === 'montagem' ? qtyMont : qtyFab;
     return PRODUCTION_MODELS.map((model) => ({

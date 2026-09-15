@@ -1,14 +1,30 @@
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+/** URL base da API */
+export function apiBase(): string {
+  if (typeof window !== 'undefined') {
+    return (
+      process.env.NEXT_PUBLIC_API_BROWSER ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://localhost:8000'
+    );
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+}
 
 function extractErrorMessage(detail: unknown): string {
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
     return detail
-      .map((d) => (typeof d === 'string' ? d : (d as any)?.msg || JSON.stringify(d)))
+      .map((d) =>
+        typeof d === 'string' ? d : (d as any)?.msg || JSON.stringify(d)
+      )
       .join('; ');
   }
   if (detail && typeof detail === 'object') {
-    return (detail as any).message || (detail as any).msg || JSON.stringify(detail);
+    return (
+      (detail as any).message ||
+      (detail as any).msg ||
+      JSON.stringify(detail)
+    );
   }
   return 'Erro de comunicação';
 }
@@ -31,9 +47,13 @@ function notifySessionExpired(path: string, status: number) {
 }
 
 export async function request(path: string, options: RequestInit = {}) {
+  const API = apiBase();
   const r = await fetch(`${API}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
     ...options,
   });
 
