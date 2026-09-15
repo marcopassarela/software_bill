@@ -24,7 +24,7 @@ from slowapi.util import get_remote_address
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
-from .realtime import company_hub, notify_company_changed
+from .realtime import subscribe_events, notify_company_changed
 from .security import (
     audit,
     current_user,
@@ -3719,15 +3719,16 @@ def serialize_week(
 # ============================================================
 # Tempo real (SSE) — sem poll no Neon
 # ============================================================
-# O hub (company_hub) e notify_company_changed agora moram em
+# subscribe_events / notify_company_changed moram em
 # backend/app/realtime.py, porque models.py também precisa deles (o
 # listener genérico de before_commit/after_commit em models.py dispara a
 # notificação sozinho para qualquer modelo mapeado em MODEL_TO_MODULE —
 # ver comentário lá para a lista completa de módulos cobertos
 # automaticamente: veículos, motoristas, rotas, manutenção, combustível,
 # estoque/produtos, movimentações, clientes, configurações, usuários,
-# pedidos e auditoria). Import aqui só para o endpoint /events/stream
-# conseguir assinar o hub.
+# pedidos e auditoria). O backplane real é Redis Pub/Sub (ver
+# realtime.py) para funcionar entre instâncias serverless da Vercel —
+# import aqui só para o endpoint /events/stream assinar/publicar.
 
 
 def notify_schedule_changed(company_id: int, reason: str = "changed") -> None:
@@ -3841,18 +3842,13 @@ async def events_stream(request: Request):
             pass
 
     async def event_gen():
-        q = company_hub.subscribe(company_id)
-        try:
-            yield "event: ready\ndata: {\"ok\":true}\n\n"
-            while True:
-                try:
-                    msg = await asyncio.wait_for(q.get(), timeout=25.0)
-                    import json as _json
-                    yield f"event: company_changed\ndata: {_json.dumps(msg)}\n\n"
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-        finally:
-            company_hub.unsubscribe(company_id, q)
+        yield "event: ready\ndata: {\"ok\":true}\n\n"
+        async for msg in subscribe_events(company_id):
+            if msg is None:
+                yield ": keepalive\n\n"
+                continue
+            import json as _json
+            yield f"event: company_changed\ndata: {_json.dumps(msg)}\n\n"
 
     return StreamingResponse(
         event_gen(),
