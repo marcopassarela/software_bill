@@ -5,7 +5,6 @@ import hashlib
 import os
 import secrets
 import smtplib
-
 from datetime import datetime, date, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any
@@ -24,7 +23,12 @@ from slowapi.util import get_remote_address
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
-from .realtime import subscribe_events, notify_company_changed, redis_diagnostics
+from .realtime import (
+    subscribe_events,
+    notify_company_changed,
+    redis_diagnostics,
+    debug_publish_company_changed,
+)
 from .security import (
     audit,
     current_user,
@@ -3810,14 +3814,26 @@ def schedule_data_version(db: Session, company_id: int) -> str:
 
 
 @app.get("/debug/realtime")
-def debug_realtime(user: User = Depends(current_user)):
-    """
-    Diagnóstico rápido do Redis, sem precisar caçar nos Function Logs da
-    Vercel. Só exige estar logado (não expõe a REDIS_URL, só booleanos e
-    a mensagem de erro de conexão, se houver).
-    Abra https://<seu-dominio>/api/debug/realtime logado no sistema.
-    """
-    return redis_diagnostics()
+def debug_realtime(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    info = redis_diagnostics()
+
+    try:
+        company = get_current_company(user, db)
+
+        info["company_id"] = company.id
+
+        info.update(
+            debug_publish_company_changed(company.id)
+        )
+
+    except Exception as exc:
+        info["publish_ok"] = False
+        info["publish_error"] = repr(exc)
+
+    return info
 
 
 @app.get("/events/stream")

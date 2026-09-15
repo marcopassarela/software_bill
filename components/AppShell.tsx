@@ -843,46 +843,58 @@ export default function AppShell({
   }, [user?.id]);
 
   useEffect(() => {
-    const handler = (ev: Event) => {
-      const mod = (ev as CustomEvent).detail?.module || '*';
-      const match =
-        mod === '*' ||
-        mod === page ||
-        (mod === 'stock' && ['stock', 'entry', 'output', 'movements'].includes(page)) ||
-        (mod === 'schedule' && page === 'schedule') ||
-        (mod === 'production' && page === 'production') ||
-        (mod === 'orders' && page === 'orders') ||
-        (mod === 'audit' && page === 'settings');
-      if (!match) return;
-      if (page === 'schedule') {
-        window.dispatchEvent(new Event('reload-schedule'));
-        return;
-      }
-      if (page === 'production') {
-        window.dispatchEvent(new Event('reload-production'));
-        return;
-      }
-      if (page === 'orders') {
-        window.dispatchEvent(new Event('reload-orders'));
-        return;
-      }
-      if (mod === 'audit') {
-        // Aba Auditoria fica dentro de Configurações; só o próprio
-        // SettingsModule sabe se o usuário está de fato na sub-aba
-        // "audit" no momento, então só repassamos o evento.
-        window.dispatchEvent(new Event('reload-audit'));
-        return;
-      }
-      if (page === 'dashboard') {
-        request('/metrics').then(setMetrics).catch(() => {});
-        return;
-      }
-      load(page);
-    };
-    window.addEventListener('company-data-changed', handler);
-    return () => window.removeEventListener('company-data-changed', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  const handler = (ev: Event) => {
+    const mod = (ev as CustomEvent).detail?.module || '*';
+
+    const match =
+      mod === '*' ||
+      mod === page ||
+      (mod === 'stock' && ['stock', 'entry', 'output', 'movements'].includes(page)) ||
+      (mod === 'schedule' && page === 'schedule') ||
+      (mod === 'customers' && page === 'schedule') ||
+      (mod === 'production' && page === 'production') ||
+      (mod === 'orders' && page === 'orders') ||
+      (mod === 'audit' && page === 'settings');
+
+    if (!match) return;
+
+    if (page === 'schedule') {
+      window.dispatchEvent(new Event('reload-schedule'));
+      return;
+    }
+
+    if (page === 'production') {
+      window.dispatchEvent(new Event('reload-production'));
+      return;
+    }
+
+    if (page === 'orders') {
+      window.dispatchEvent(new Event('reload-orders'));
+      return;
+    }
+
+    if (mod === 'audit') {
+      // Aba Auditoria fica dentro de Configurações; só o próprio
+      // SettingsModule sabe se o usuário está de fato na sub-aba
+      // "audit" no momento, então só repassamos o evento.
+      window.dispatchEvent(new Event('reload-audit'));
+      return;
+    }
+
+    if (page === 'dashboard') {
+      request('/metrics').then(setMetrics).catch(() => {});
+      return;
+    }
+
+    load(page);
+  };
+
+  window.addEventListener('company-data-changed', handler);
+
+  return () => window.removeEventListener('company-data-changed', handler);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [page]);
 
 
   useEffect(() => {

@@ -187,6 +187,44 @@ def notify_company_changed(
             company_id, module, exc,
         )
 
+def debug_publish_company_changed(company_id: int) -> dict[str, Any]:
+    payload = json.dumps(
+        {
+            "type": "company_changed",
+            "module": "*",
+            "reason": "debug_test",
+        }
+    )
+
+    if _redis_sync_client is None:
+        return {
+            "publish_ok": False,
+            "subscribers_received": 0,
+            "publish_error": "Cliente Redis não disponível.",
+        }
+
+    try:
+        published = _redis_sync_client.publish(
+            _channel(company_id),
+            payload,
+        )
+
+        return {
+            "publish_ok": True,
+            "subscribers_received": int(published),
+        }
+
+    except Exception as exc:
+        logger.error(
+            "Falha no teste de publicação Redis: %r",
+            exc,
+        )
+        return {
+            "publish_ok": False,
+            "subscribers_received": 0,
+            "publish_error": repr(exc),
+        }
+
 
 def redis_diagnostics() -> dict[str, Any]:
     """Usado pelo endpoint GET /debug/realtime para você conseguir ver,
