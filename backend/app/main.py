@@ -3719,23 +3719,25 @@ def list_schedule_weeks(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    ...
-    if (status or "").strip().lower() in ("ativa", "ativas", "active"):
+    require("schedule")(user)
+
+    company = get_current_company(user, db)
+    
+    q = (
+        select(ScheduleWeek)
+        .where(ScheduleWeek.company_id == company.id)
+        .order_by(ScheduleWeek.start_date)
+    )
+
+    status_norm = (status or "").strip().lower()
+    if status_norm in ("ativa", "ativas", "active"):
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
     elif not include_archived:
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
 
-    weeks = db.scalars(
-        q
-    ).all()
+    weeks = db.scalars(q).all()
 
-    return [
-        serialize_week(
-            w,
-            db,
-        )
-        for w in weeks
-    ]
+    return [serialize_week(w, db) for w in weeks]
 
 
 @app.post("/schedule/weeks")
