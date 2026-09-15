@@ -213,14 +213,17 @@ export default function SettingsModule({ user }: { user: any }) {
   }, [tab, loadAudit]);
 
 
+  // Em vez de perguntar ao Neon de 20 em 20 segundos, só recarrega a
+  // auditoria quando o AppShell avisa via SSE que alguma linha de
+  // auditoria realmente foi criada em algum lugar do sistema (evento
+  // 'reload-audit'). Continua nada consultando o banco enquanto a tela
+  // fica parada sem ninguém fazer nada em nenhuma aba.
   useEffect(() => {
-  if (tab !== 'audit' || !isMainAdmin) return;
+    if (tab !== 'audit' || !isMainAdmin) return;
 
-  const timer = window.setInterval(() => {
-    loadAudit();
-  }, 20000);
-
-  return () => window.clearInterval(timer);
+    const onReload = () => loadAudit();
+    window.addEventListener('reload-audit', onReload);
+    return () => window.removeEventListener('reload-audit', onReload);
   }, [tab, isMainAdmin, loadAudit]);
 
 

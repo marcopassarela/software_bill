@@ -843,7 +843,8 @@ export default function AppShell({
         (mod === 'stock' && ['stock', 'entry', 'output', 'movements'].includes(page)) ||
         (mod === 'schedule' && page === 'schedule') ||
         (mod === 'production' && page === 'production') ||
-        (mod === 'orders' && page === 'orders');
+        (mod === 'orders' && page === 'orders') ||
+        (mod === 'audit' && page === 'settings');
       if (!match) return;
       if (page === 'schedule') {
         window.dispatchEvent(new Event('reload-schedule'));
@@ -855,6 +856,13 @@ export default function AppShell({
       }
       if (page === 'orders') {
         window.dispatchEvent(new Event('reload-orders'));
+        return;
+      }
+      if (mod === 'audit') {
+        // Aba Auditoria fica dentro de Configurações; só o próprio
+        // SettingsModule sabe se o usuário está de fato na sub-aba
+        // "audit" no momento, então só repassamos o evento.
+        window.dispatchEvent(new Event('reload-audit'));
         return;
       }
       if (page === 'dashboard') {

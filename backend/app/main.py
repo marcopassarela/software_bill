@@ -24,6 +24,7 @@ from slowapi.util import get_remote_address
 from .config import get_settings
 from .database import Base, engine, get_db
 from .models import *
+from .realtime import company_hub, notify_company_changed
 from .security import (
     audit,
     current_user,
@@ -3716,60 +3717,23 @@ def serialize_week(
 
 
 # ============================================================
-# Agenda: push em tempo real (SSE) — sem poll no Neon
+# Tempo real (SSE) — sem poll no Neon
 # ============================================================
-
-class CompanyHub:
-    """SSE in-memory por empresa. 1 worker uvicorn. Sem poll / sem LISTEN no Neon."""
-
-    def __init__(self) -> None:
-        self._subs: dict[int, list[asyncio.Queue]] = {}
-
-    def subscribe(self, company_id: int, loop=None) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue(maxsize=32)
-        self._subs.setdefault(int(company_id), []).append(q)
-        return q
-
-    def unsubscribe(self, company_id: int, q: asyncio.Queue) -> None:
-        lst = self._subs.get(int(company_id)) or []
-        if q in lst:
-            lst.remove(q)
-        if not lst:
-            self._subs.pop(int(company_id), None)
-
-    def notify(self, company_id: int, module: str = "*", reason: str = "changed") -> None:
-        dead: list[asyncio.Queue] = []
-        payload = {
-            "type": "company_changed",
-            "module": module or "*",
-            "reason": reason,
-        }
-        for q in list(self._subs.get(int(company_id)) or []):
-            try:
-                q.put_nowait(payload)
-            except Exception:
-                dead.append(q)
-        for q in dead:
-            self.unsubscribe(company_id, q)
-
-
-company_hub = CompanyHub()
-
-
-def notify_company_changed(
-    company_id: int,
-    module: str = "*",
-    reason: str = "changed",
-) -> None:
-    """Avisa todos os clientes logados da empresa (qualquer tela)."""
-    try:
-        company_hub.notify(int(company_id), module, reason)
-    except Exception:
-        pass
+# O hub (company_hub) e notify_company_changed agora moram em
+# backend/app/realtime.py, porque models.py também precisa deles (o
+# listener genérico de before_commit/after_commit em models.py dispara a
+# notificação sozinho para qualquer modelo mapeado em MODEL_TO_MODULE —
+# ver comentário lá para a lista completa de módulos cobertos
+# automaticamente: veículos, motoristas, rotas, manutenção, combustível,
+# estoque/produtos, movimentações, clientes, configurações, usuários,
+# pedidos e auditoria). Import aqui só para o endpoint /events/stream
+# conseguir assinar o hub.
 
 
 def notify_schedule_changed(company_id: int, reason: str = "changed") -> None:
-    """Compat: agenda → evento global module=schedule."""
+    """Compat: agenda → evento global module=schedule. Chamado explicitamente
+    pelos endpoints de /schedule/*, que não passam por MODEL_TO_MODULE de
+    propósito (ver comentário em models.py)."""
     notify_company_changed(company_id, "schedule", reason)
 
 
@@ -3877,8 +3841,7 @@ async def events_stream(request: Request):
             pass
 
     async def event_gen():
-        loop = asyncio.get_running_loop()
-        q = company_hub.subscribe(company_id, loop)
+        q = company_hub.subscribe(company_id)
         try:
             yield "event: ready\ndata: {\"ok\":true}\n\n"
             while True:

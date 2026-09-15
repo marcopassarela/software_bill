@@ -21,6 +21,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import Mapped, mapped_column, Session as _OrmSession
 
 from .database import Base
+from .realtime import notify_company_changed
 
 
 # ============================================================
@@ -1684,3 +1685,79 @@ class Order(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+# ============================================================
+# NOTIFICAÇÃO EM TEMPO REAL (SSE) — genérica, para todos os módulos
+# ============================================================
+#
+# Mesma ideia do ScheduleVersion acima, generalizada: em vez de cada
+# endpoint do main.py precisar lembrar de chamar notify_company_changed(...)
+# depois do commit (o que já ficou faltando em Usuários, Pedidos, exclusões
+# de Veículos/Motoristas/Produtos/etc. e na Auditoria — cada uma dessas
+# lacunas é uma tela que só atualizava sozinha via polling), este listener
+# observa TODA sessão do SQLAlchemy. Qualquer INSERT/UPDATE/DELETE num
+# modelo mapeado abaixo dispara o aviso automaticamente, sem precisar
+# tocar nos endpoints. Cobre também qualquer endpoint novo que vier a
+# existir no futuro, desde que o modelo esteja no mapa.
+#
+# Modelos de Agendamento (ScheduleWeek/RouteSlot/ScheduleEntry/ScheduleExtra)
+# ficam de fora deste mapa de propósito: eles já têm chamada explícita de
+# notify_schedule_changed(...) em cada endpoint, com um "reason" específico
+# — incluí-los aqui só duplicaria o aviso.
+MODEL_TO_MODULE: dict[type, str] = {
+    Vehicle: "vehicles",
+    Driver: "drivers",
+    Route: "routes",
+    RouteStop: "routes",
+    Maintenance: "maintenance",
+    FuelRecord: "fuel",
+    Product: "stock",
+    StockMovement: "stock",
+    Customer: "customers",
+    Setting: "settings",
+    User: "users",
+    Order: "orders",
+    # Cada CADASTRO/ALTERAÇÃO/EXCLUSÃO no sistema grava uma linha de
+    # auditoria — mapear AuditLog para "audit" faz a aba Auditoria (dentro
+    # de Configurações) atualizar sozinha para quem estiver com ela aberta,
+    # sem precisar do poll de 20s que existia antes.
+    AuditLog: "audit",
+}
+
+
+@event.listens_for(_OrmSession, "before_commit")
+def _collect_touched_modules_on_commit(session: _OrmSession) -> None:
+    """
+    Antes do commit, verifica se algum objeto de um modelo mapeado em
+    MODEL_TO_MODULE foi criado/alterado/removido nesta sessão, e guarda
+    (company_id, módulo) em session.info para o listener de after_commit
+    ler depois. Precisa ser before_commit porque depois do commit o
+    SQLAlchemy já esvaziou session.new/dirty/deleted.
+    """
+    touched: dict[int, set[str]] = session.info.setdefault(
+        "_touched_modules", {}
+    )
+
+    for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+        module = MODEL_TO_MODULE.get(type(obj))
+        if module is None:
+            continue
+        company_id = getattr(obj, "company_id", None)
+        if company_id is None:
+            continue
+        touched.setdefault(int(company_id), set()).add(module)
+
+
+@event.listens_for(_OrmSession, "after_commit")
+def _notify_touched_modules_after_commit(session: _OrmSession) -> None:
+    """
+    Só dispara a notificação SSE depois que o commit realmente teve
+    sucesso (se desse rollback, before_commit nem chega a rodar de novo
+    para essa sessão). Cada notificação é só um "avise quem está com essa
+    aba aberta" em memória — não é uma consulta ao Postgres.
+    """
+    touched: dict[int, set[str]] = session.info.pop("_touched_modules", {})
+    for company_id, modules in touched.items():
+        for module in modules:
+            notify_company_changed(company_id, module)

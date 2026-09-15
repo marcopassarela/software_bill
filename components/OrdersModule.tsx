@@ -99,22 +99,27 @@ export default function OrdersModule({
     load();
   }, [load]);
 
-  // Sync matriz ↔ filial a cada 10s na Lista
+  // Sync matriz ↔ filial na Lista: em vez de perguntar ao Neon de 10 em
+  // 10 segundos (mesmo sem ninguém ter mexido em nada), só recarrega
+  // quando o AppShell avisa via SSE que algum pedido mudou (evento
+  // 'reload-orders', disparado só quando module === 'orders' realmente
+  // muda no backend) ou quando a aba volta a ficar visível/em foco —
+  // isso cobre o caso de ter ficado sem internet um tempo.
   useEffect(() => {
     if (tab !== 'lista') return;
 
-    const tick = () => {
+    const onReload = () => load({ silent: true });
+    const onFocus = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
       load({ silent: true });
     };
 
-    const id = setInterval(tick, 10000);
-    const onFocus = () => load({ silent: true });
+    window.addEventListener('reload-orders', onReload);
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
 
     return () => {
-      clearInterval(id);
+      window.removeEventListener('reload-orders', onReload);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
