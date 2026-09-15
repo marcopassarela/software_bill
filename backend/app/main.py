@@ -5769,6 +5769,7 @@ CAIXA_PROVISORIA_MODELS = {
     "CAIXA PROVISÓRIA",  # legado
 }
 PROVISIONAL_DESTINATIONS = {
+    # legado (se ainda houver no banco)
     "matriz_tubarao": "Matriz — Tubarão",
     "filial_biguacu": "Filial — Biguaçu",
 }
@@ -5901,11 +5902,8 @@ def create_production_batch(
         )
 
     if kind == "montagem" and prov_total > 0:
-        if prov_dest not in PROVISIONAL_DESTINATIONS:
-            raise HTTPException(
-                400,
-                "Informe o destino das caixas provisórias: Matriz (Tubarão) ou Filial (Biguaçu).",
-            )
+        if False:  # destino livre (SaaS single-company)
+            pass
 
     company = get_current_company(
         user,
@@ -6184,7 +6182,7 @@ def production_by_day(
                     dest = notes.split("DEST:")[-1].strip().split()[0].strip()
                 if dest in PROVISIONAL_DESTINATIONS:
                     days[key]["provisional_destination"] = dest
-                    days[key]["provisional_destination_label"] = PROVISIONAL_DESTINATIONS[dest]
+                    days[key]["provisional_destination_label"] = PROVISIONAL_DESTINATIONS.get(dest, dest)
                 days[key]["montagem"].append({
                     **item,
                     "is_provisional": True,

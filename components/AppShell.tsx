@@ -6,7 +6,7 @@ import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import PlansModule from '@/components/PlansModule';
 import OrdersModule from '@/components/OrdersModule';
-import { ClipboardPen } from 'lucide-react';
+import { ClipboardPen } from 'lucide-react'; // ou Package se preferir
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -850,9 +850,6 @@ export default function AppShell({
   async function create(data: any) {
     setError('');
     try {
-      if (page === 'users' && !data.units_access) {
-        data = { ...data, units_access: 'matriz,filial' };
-      }
       if (page === 'entry' || page === 'output')
         await request('/stock/' + page, { method: 'POST', body: JSON.stringify(data) });
       else
@@ -1164,7 +1161,7 @@ export default function AppShell({
               {page ? titleFor(page) : 'Sem acesso'}
             </h1>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-              {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
+              
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -3482,12 +3479,6 @@ function EditUserForm({
     active: user.active ? 'Sim' : 'Não',
     password: '',
   });
-  const [unitsAccess, setUnitsAccess] = useState<string[]>(
-    String(user.units_access || 'matriz,filial')
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter(Boolean)
-  );
   const [saving, setSaving] = useState(false);
 
   function set(key: string, v: string) {
@@ -3508,7 +3499,6 @@ function EditUserForm({
           )
         : null,
       active: values.active === 'Sim',
-      units_access: (unitsAccess.length ? unitsAccess : ['matriz']).join(','),
     };
     if (values.password) data.password = values.password;
     try {
@@ -3564,40 +3554,6 @@ function EditUserForm({
         </Wrapper>
         );
       })}
-      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="mb-2 text-sm font-medium text-slate-700">Acesso às unidades</p>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={unitsAccess.includes('matriz')}
-              onChange={(e) => {
-                const s = new Set(unitsAccess);
-                if (e.target.checked) s.add('matriz');
-                else s.delete('matriz');
-                setUnitsAccess(Array.from(s));
-              }}
-            />
-            1 — Matriz
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={unitsAccess.includes('filial')}
-              onChange={(e) => {
-                const s = new Set(unitsAccess);
-                if (e.target.checked) s.add('filial');
-                else s.delete('filial');
-                setUnitsAccess(Array.from(s));
-              }}
-            />
-            2 — Filial
-          </label>
-        </div>
-        <p className="mt-1 text-xs text-slate-500">
-          Define em qual unidade este usuário pode entrar no login.
-        </p>
-      </div>
       <div className="sm:col-span-2">
         <button
           disabled={saving}
@@ -3840,6 +3796,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const canExport =
     isMainAdmin || perms.includes('schedule_export');
 
+    function forceReloadSchedule() {
+      scheduleHashRef.current = '';
+      return load({ silent: true });
+    }
+
     async function load(opts?: { silent?: boolean }) {
     const silent = !!(opts?.silent || weeks.length > 0);
     // NÃO guardar scroll no início: se o usuário rolar durante o fetch,
@@ -3934,8 +3895,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       if (closed) return;
       es = new EventSource(`${API}/schedule/stream`, { withCredentials: true });
       es.addEventListener('schedule_changed', () => {
-        // Uma consulta só quando houve alteração real
-        load({ silent: true });
+        forceReloadSchedule();
       });
       es.onerror = () => {
         es?.close();
@@ -4045,7 +4005,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/weeks', { method: 'POST', body: JSON.stringify(data) });
       setShowNewWeek(false);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4057,7 +4017,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       setShowArchiveWeek(false);
       setArchiveWeekId(null);
       setSelectedWeekId(null);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -4077,7 +4037,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       setDeleteWeekId(null);
       setDeletePassword('');
       setSelectedWeekId(null);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -4309,7 +4269,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/route-slots', { method: 'POST', body: JSON.stringify(data) });
       setShowNewSlot(false);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4317,7 +4277,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/route-slots/${slotId}`, { method: 'PATCH', body: JSON.stringify(data) });
       setEditingSlot(null);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4325,7 +4285,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     if (!confirm('Excluir esta rota e todos os clientes dela?')) return;
     try {
       await request(`/schedule/route-slots/${slotId}`, { method: 'DELETE' });
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4333,7 +4293,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/entries', { method: 'POST', body: JSON.stringify(data) });
       setAddingEntryTo(null);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4341,7 +4301,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request(`/schedule/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(data) });
       setEditingEntry(null);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4349,7 +4309,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     if (!confirm('Remover este cliente da rota? A vaga será liberada.')) return;
     try {
       await request(`/schedule/entries/${entryId}`, { method: 'DELETE' });
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4359,7 +4319,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         method: 'POST',
         body: JSON.stringify({ direction }),
       });
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4372,7 +4332,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           ordered_ids: orderedIds,
         }),
       });
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) {
       setError(e.message);
     }
@@ -4391,7 +4351,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       });
       setTransferEntry(null);
       setTransferTargetSlotId('');
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) {
       setError(
         e.message ||
@@ -4416,7 +4376,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       setTransferSlot(null);
       setTransferNewDate('');
       setTransferWeekId('');
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -4469,7 +4429,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     try {
       await request('/schedule/extras', { method: 'POST', body: JSON.stringify(data) });
       setAddingExtraTo(null);
-      load({ silent: true });
+      forceReloadSchedule();
     } catch (e: any) { setError(e.message); }
   }
 
@@ -4477,7 +4437,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     if (!confirm('Remover este item extra?')) return;
     try {
       await request(`/schedule/extras/${extraId}`, { method: 'DELETE' });
-      load({ silent: true })
+      forceReloadSchedule()
     } catch (e: any) { setError(e.message); }
   }
 

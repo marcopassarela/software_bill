@@ -117,7 +117,7 @@ export default function ProductionModule({ user }: { user: any }) {
   const [provMono, setProvMono] = useState('');
   const [provBi, setProvBi] = useState('');
   const [provTri, setProvTri] = useState('');
-  const [provDest, setProvDest] = useState<'matriz_tubarao' | 'filial_biguacu' | ''>('');
+  const [provDest, setProvDest] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [days, setDays] = useState<any[]>([]);
@@ -202,10 +202,7 @@ export default function ProductionModule({ user }: { user: any }) {
       setError('Informe a quantidade de pelo menos um modelo.');
       return;
     }
-    if (tab === 'montagem' && boxes > 0 && !provDest) {
-      setError('Informe o destino das caixas provisórias (Matriz Tubarão ou Filial Biguaçu).');
-      return;
-    }
+    // destino das caixas é opcional (SaaS single-company)
     setConfirmOpen(true);
   }
 
@@ -323,7 +320,7 @@ export default function ProductionModule({ user }: { user: any }) {
   function monthSummaryBackup(format: 'pdf' | 'xlsx') {
     setError('');
     if (!days.length) {
-      setError('Filtre o período (ex.: o mês) antes de gerar o relatório.');
+      setError('Filtre o período (ex.: o mês) antes de gerar o resumo.');
       return;
     }
     let fab = 0;
@@ -390,7 +387,7 @@ export default function ProductionModule({ user }: { user: any }) {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(models), 'Por modelo');
       }
       XLSX.writeFile(wb, `resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.xlsx`);
-      setOkMsg('Relatório do mês (Excel) gerado.');
+      setOkMsg('Resumo do mês (Excel) gerado.');
       setShowMonthSummary(false);
       return;
     }
@@ -400,7 +397,7 @@ export default function ProductionModule({ user }: { user: any }) {
     let y = 14;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOGÍSTICAS BILL — Relatório de produção', margin, y);
+    doc.text('LOGÍSTICAS BILL — Resumo de produção', margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -430,36 +427,17 @@ export default function ProductionModule({ user }: { user: any }) {
       },
     };
 
-    // Totais no topo — tabela em largura total + Matriz / Filial
+    // Totais no topo
     if (monthOpts.totais) {
       const totRows: (string | number)[][] = [
-        ['Total produzido', fab],
-        ['Total montado', mont],
+        ['Total produzido (fabricação)', fab],
+        ['Total montado (montagem)', mont],
       ];
       if (monthOpts.emergencia) totRows.push(['Alterações emergência', emerg]);
       if (monthOpts.caixas) totRows.push(['Caixas provisórias (total)', boxes]);
-      // Sempre mostra Matriz e Filial no bloco de indicadores (0 se não houver)
       if (monthOpts.caixas && monthOpts.porDestino) {
-        const destKeys = ['Matriz — Tubarão', 'Filial — Biguaçu'];
-        destKeys.forEach((k) => {
-          const found = Object.entries(byDest).find(
-            ([label]) => label.toLowerCase().includes(k.split('—')[0].trim().toLowerCase().slice(0, 6))
-          );
-          // match by partial: Matriz / Filial
-          let qty = 0;
-          Object.entries(byDest).forEach(([label, v]) => {
-            const L = label.toLowerCase();
-            if (k.startsWith('Matriz') && L.includes('matriz')) qty = v;
-            if (k.startsWith('Filial') && L.includes('filial')) qty = v;
-          });
-          totRows.push([`Caixas provisórias — ${k}`, qty]);
-        });
-        // qualquer outro destino que não seja matriz/filial
         Object.entries(byDest).forEach(([label, v]) => {
-          const L = label.toLowerCase();
-          if (!L.includes('matriz') && !L.includes('filial')) {
-            totRows.push([`Caixas provisórias — ${label}`, v]);
-          }
+          totRows.push([`Caixas provisórias — ${label}`, v]);
         });
       }
 
@@ -515,7 +493,7 @@ export default function ProductionModule({ user }: { user: any }) {
     }
 
     doc.save(`resumo_producao_${filterFrom || 'ini'}_${filterTo || 'fim'}.pdf`);
-    setOkMsg('Relatório do mês (PDF) gerado.');
+    setOkMsg('Resumo do mês (PDF) gerado.');
     setShowMonthSummary(false);
   }
 
@@ -845,7 +823,7 @@ export default function ProductionModule({ user }: { user: any }) {
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
             <p className="text-sm font-semibold text-slate-800">Caixas provisórias</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              Informe a quantidade por modelo e o destino (Matriz Tubarão ou Filial Biguaçu).
+              Informe a quantidade por modelo e, se quiser, o destino.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <label className="text-sm">
@@ -885,18 +863,14 @@ export default function ProductionModule({ user }: { user: any }) {
                 />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block text-slate-600">Destino</span>
-                <select
+                <span className="mb-1 block text-slate-600">Destino (opcional)</span>
+                <input
+                  type="text"
                   value={provDest}
-                  onChange={(e) =>
-                    setProvDest(e.target.value as 'matriz_tubarao' | 'filial_biguacu' | '')
-                  }
+                  onChange={(e) => setProvDest(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white p-2"
-                >
-                  <option value="">Selecione…</option>
-                  <option value="matriz_tubarao">Matriz — Tubarão</option>
-                  <option value="filial_biguacu">Filial — Biguaçu</option>
-                </select>
+                  placeholder="Ex.: estoque, obra, cliente…"
+                />
               </label>
             </div>
             {(Number(provMono || 0) + Number(provBi || 0) + Number(provTri || 0) > 0) && (
@@ -1106,7 +1080,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileDown size={15} className="text-slate-700" />
-                      Relatório do mês (PDF)
+                      Resumo do mês (PDF)
                     </button>
                     <button
                       type="button"
@@ -1118,7 +1092,7 @@ export default function ProductionModule({ user }: { user: any }) {
                       }}
                     >
                       <FileSpreadsheet size={15} className="text-emerald-700" />
-                      Relatório do mês (Excel)
+                      Resumo do mês (Excel)
                     </button>
                   </div>
                 </>
@@ -1293,19 +1267,19 @@ export default function ProductionModule({ user }: { user: any }) {
                 <>
                   {Number(provMono || 0) > 0 && (
                     <li className="flex justify-between border-b py-1 text-amber-800">
-                      <span>Caixa prov. mono → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span>Caixa prov. mono → {provDest || '—'}</span>
                       <span className="tabular-nums font-semibold">{Number(provMono)}</span>
                     </li>
                   )}
                   {Number(provBi || 0) > 0 && (
                     <li className="flex justify-between border-b py-1 text-amber-800">
-                      <span>Caixa prov. bi → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span>Caixa prov. bi → {provDest || '—'}</span>
                       <span className="tabular-nums font-semibold">{Number(provBi)}</span>
                     </li>
                   )}
                   {Number(provTri || 0) > 0 && (
                     <li className="flex justify-between border-b py-1 text-amber-800">
-                      <span>Caixa prov. tri → {provDest === 'filial_biguacu' ? 'Filial Biguaçu' : provDest === 'matriz_tubarao' ? 'Matriz Tubarão' : '—'}</span>
+                      <span>Caixa prov. tri → {provDest || '—'}</span>
                       <span className="tabular-nums font-semibold">{Number(provTri)}</span>
                     </li>
                   )}
@@ -1338,7 +1312,7 @@ export default function ProductionModule({ user }: { user: any }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">
-              Relatório do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
+              Resumo do mês ({monthFormat === 'pdf' ? 'PDF' : 'Excel'})
             </h3>
             <p className="mt-1 text-sm text-slate-500">
               Escolha o que incluir no relatório do período filtrado.
@@ -1349,7 +1323,7 @@ export default function ProductionModule({ user }: { user: any }) {
                   ['totais', 'Totais no topo (produzido / montado)'],
                   ['emergencia', 'Alterações de emergência'],
                   ['caixas', 'Caixas provisórias (total)'],
-                  ['porDestino', 'Caixas por destino (Matriz / Filial)'],
+                  ['porDestino', 'Caixas por destino'],
                   ['porModelo', 'Tabela por modelo'],
                 ] as const
               ).map(([key, label]) => (
