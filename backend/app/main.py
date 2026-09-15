@@ -1,4 +1,5 @@
 import re
+import asyncio
 import hashlib
 import os
 import secrets
@@ -10,7 +11,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update, delete
 from sqlalchemy.exc import IntegrityError
@@ -3708,36 +3709,243 @@ def serialize_week(
     return d
 
 
+
+# ============================================================
+# Agenda: push em tempo real (SSE) — sem poll no Neon
+# ============================================================
+
+class ScheduleHub:
+    """Assinantes por company_id. Só notifica em memória (servidor da app)."""
+
+    def __init__(self) -> None:
+        self._subs: dict[int, list[asyncio.Queue]] = {}
+
+    def subscribe(self, company_id: int) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=8)
+        self._subs.setdefault(company_id, []).append(q)
+        return q
+
+    def unsubscribe(self, company_id: int, q: asyncio.Queue) -> None:
+        lst = self._subs.get(company_id) or []
+        if q in lst:
+            lst.remove(q)
+        if not lst and company_id in self._subs:
+            del self._subs[company_id]
+
+    def notify(self, company_id: int, reason: str = "changed") -> None:
+        dead: list[asyncio.Queue] = []
+        for q in list(self._subs.get(company_id) or []):
+            try:
+                q.put_nowait({"type": "schedule_changed", "reason": reason})
+            except asyncio.QueueFull:
+                dead.append(q)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            self.unsubscribe(company_id, q)
+
+
+schedule_hub = ScheduleHub()
+
+
+def notify_schedule_changed(company_id: int, reason: str = "changed") -> None:
+    try:
+        schedule_hub.notify(company_id, reason)
+    except Exception:
+        pass
+
+
 # ============================================================
 # SEMANAS
 # ============================================================
+
+def schedule_data_version(db: Session, company_id: int) -> str:
+    """Fingerprint barato da agenda (sem serializar tudo)."""
+    weeks_c, weeks_max = db.execute(
+        select(
+            func.count(ScheduleWeek.id),
+            func.coalesce(func.max(ScheduleWeek.id), 0),
+        ).where(ScheduleWeek.company_id == company_id)
+    ).one()
+    # slots / entries via week_id (não depende de company_id em RouteSlot)
+    slots_c, slots_max = db.execute(
+        select(
+            func.count(RouteSlot.id),
+            func.coalesce(func.max(RouteSlot.id), 0),
+        )
+        .select_from(RouteSlot)
+        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+        .where(ScheduleWeek.company_id == company_id)
+    ).one()
+    entries_c, entries_max = db.execute(
+        select(
+            func.count(ScheduleEntry.id),
+            func.coalesce(func.max(ScheduleEntry.id), 0),
+        )
+        .select_from(ScheduleEntry)
+        .join(RouteSlot, ScheduleEntry.route_slot_id == RouteSlot.id)
+        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+        .where(ScheduleWeek.company_id == company_id)
+    ).one()
+    try:
+        extras_c, extras_max = db.execute(
+            select(
+                func.count(ScheduleExtra.id),
+                func.coalesce(func.max(ScheduleExtra.id), 0),
+            )
+            .select_from(ScheduleExtra)
+            .join(ScheduleEntry, ScheduleExtra.entry_id == ScheduleEntry.id)
+            .join(RouteSlot, ScheduleEntry.route_slot_id == RouteSlot.id)
+            .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+            .where(ScheduleWeek.company_id == company_id)
+        ).one()
+    except Exception:
+        extras_c, extras_max = 0, 0
+    # arquivar muda status sem novo id
+    status_bits = db.execute(
+        select(ScheduleWeek.status, func.count())
+        .where(ScheduleWeek.company_id == company_id)
+        .group_by(ScheduleWeek.status)
+    ).all()
+    status_part = ",".join(
+        f"{getattr(s, 'value', s)}:{c}" for s, c in status_bits
+    )
+    # closed slots (fechar rota muda sem novo id)
+    closed_n = db.execute(
+        select(func.count(RouteSlot.id))
+        .select_from(RouteSlot)
+        .join(ScheduleWeek, RouteSlot.week_id == ScheduleWeek.id)
+        .where(
+            ScheduleWeek.company_id == company_id,
+            RouteSlot.closed.is_(True),
+        )
+    ).scalar() or 0
+    raw = (
+        f"w:{weeks_c}:{weeks_max}|s:{slots_c}:{slots_max}|"
+        f"e:{entries_c}:{entries_max}|x:{extras_c}:{extras_max}|"
+        f"c:{closed_n}|{status_part}"
+    )
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+
+
+@app.get("/schedule/stream")
+async def schedule_stream(request: Request):
+    """SSE: avisa quando a agenda muda. Não mantém query aberta no Neon."""
+    import jwt as _jwt
+    from .security import get_settings
+
+    token = request.cookies.get("gl_session")
+    if not token:
+        raise HTTPException(401, "Não autenticado")
+
+    # Sessão curta só para auth — fecha antes do stream (não segura Neon)
+    db_gen = get_db()
+    db = next(db_gen)
+    try:
+        try:
+            data = _jwt.decode(
+                token,
+                get_settings().auth_secret,
+                algorithms=["HS256"],
+            )
+            user = db.get(User, int(data["sub"]))
+        except Exception:
+            raise HTTPException(401, "Sessão inválida")
+        if not user:
+            raise HTTPException(401, "Usuário indisponível")
+        require("schedule")(user)
+        company = get_current_company(user, db)
+        company_id = int(company.id)
+    finally:
+        try:
+            next(db_gen)
+        except StopIteration:
+            pass
+
+    async def event_gen():
+        q = schedule_hub.subscribe(company_id)
+        try:
+            yield "event: ready\ndata: {\"ok\":true}\n\n"
+            while True:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=25.0)
+                    import json as _json
+                    yield f"event: schedule_changed\ndata: {_json.dumps(msg)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            schedule_hub.unsubscribe(company_id, q)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 
 @app.get("/schedule/weeks")
 def list_schedule_weeks(
     status: str | None = None,
     include_archived: bool = False,
+    client_hash: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
     require("schedule")(user)
 
-    company = get_current_company(user, db)
-    
-    q = (
-        select(ScheduleWeek)
-        .where(ScheduleWeek.company_id == company.id)
-        .order_by(ScheduleWeek.start_date)
+    company = get_current_company(
+        user,
+        db,
     )
 
-    status_norm = (status or "").strip().lower()
-    if status_norm in ("ativa", "ativas", "active"):
+    # Hash barato: se o cliente manda o mesmo, não serializa a agenda inteira
+    version = schedule_data_version(db, company.id)
+    if client_hash and client_hash == version:
+        return {
+            "unchanged": True,
+            "hash": version,
+        }
+
+    q = (
+        select(ScheduleWeek)
+        .where(
+            ScheduleWeek.company_id
+            == company.id
+        )
+        .order_by(
+            ScheduleWeek.start_date
+        )
+    )
+
+    # status=ativa OU include_archived=false → só semanas ativas
+    if (status or "").strip().lower() in ("ativa", "ativas", "active"):
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
     elif not include_archived:
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
 
-    weeks = db.scalars(q).all()
+    weeks = db.scalars(
+        q
+    ).all()
 
-    return [serialize_week(w, db) for w in weeks]
+    return {
+        "unchanged": False,
+        "hash": version,
+        "weeks": [
+            serialize_week(
+                w,
+                db,
+            )
+            for w in weeks
+        ],
+    }
 
 
 @app.post("/schedule/weeks")
@@ -3778,6 +3986,7 @@ def create_schedule_week(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_week(
         w,
@@ -3860,6 +4069,7 @@ def delete_schedule_week(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -3933,6 +4143,7 @@ def archive_schedule_week(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -4049,6 +4260,7 @@ def create_route_slot(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_route_slot(
         rs,
@@ -4176,6 +4388,7 @@ def update_route_slot(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_route_slot(
         rs,
@@ -4227,6 +4440,7 @@ def delete_route_slot(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -4343,6 +4557,7 @@ def create_schedule_entry(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_entry(
         entry,
@@ -4489,6 +4704,7 @@ def delete_schedule_entry(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -4587,6 +4803,7 @@ def move_schedule_entry(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -4672,6 +4889,7 @@ def reorder_schedule_entries(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -4812,6 +5030,7 @@ def transfer_schedule_entry(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_entry(
         entry,
@@ -4896,6 +5115,7 @@ def transfer_route_slot(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_route_slot(
         rs,
@@ -4961,6 +5181,7 @@ def create_schedule_extra(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return serialize_extra(
         extra
@@ -5011,6 +5232,7 @@ def delete_schedule_extra(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True
@@ -5340,6 +5562,7 @@ def critical_revoke_sessions(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True,
@@ -5413,6 +5636,7 @@ def critical_purge_users(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True,
@@ -5474,6 +5698,7 @@ def critical_wipe_operational(
     )
 
     db.commit()
+    notify_schedule_changed(company.id)
 
     return {
         "ok": True,
