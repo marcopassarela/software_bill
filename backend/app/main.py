@@ -3715,34 +3715,15 @@ def serialize_week(
 @app.get("/schedule/weeks")
 def list_schedule_weeks(
     status: str | None = None,
+    include_archived: bool = False,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
-    require("schedule")(user)
-
-    company = get_current_company(
-        user,
-        db,
-    )
-
-    q = (
-        select(ScheduleWeek)
-        .where(
-            ScheduleWeek.company_id
-            == company.id
-        )
-        .order_by(
-            ScheduleWeek.start_date
-        )
-    )
-
-    if status == "ativa":
-
-        q = q.where(
-            ScheduleWeek.status
-            == WeekStatus.ATIVA
-        )
+    ...
+    if (status or "").strip().lower() in ("ativa", "ativas", "active"):
+        q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
+    elif not include_archived:
+        q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
 
     weeks = db.scalars(
         q
