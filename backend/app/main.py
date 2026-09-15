@@ -1,5 +1,6 @@
 import re
 import asyncio
+import threading
 import hashlib
 import os
 import secrets
@@ -13,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update, delete
+from sqlalchemy import text, func, select, update, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from slowapi import Limiter
@@ -3715,44 +3716,134 @@ def serialize_week(
 # ============================================================
 
 class ScheduleHub:
-    """Assinantes por company_id. Só notifica em memória (servidor da app)."""
+    """
+    Push da agenda entre usuários/workers via PostgreSQL NOTIFY + SSE.
+    - 1 conexão LISTEN por processo (só enquanto houver alguém na agenda)
+    - Clientes SSE só recebem evento em memória (sem poll)
+    """
 
     def __init__(self) -> None:
         self._subs: dict[int, list[asyncio.Queue]] = {}
+        self._lock = threading.Lock()
+        self._listen_thread: threading.Thread | None = None
+        self._listen_stop = threading.Event()
+        self._loops: set[asyncio.AbstractEventLoop] = set()
 
-    def subscribe(self, company_id: int) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue(maxsize=8)
-        self._subs.setdefault(company_id, []).append(q)
+    def _subscriber_count(self) -> int:
+        return sum(len(v) for v in self._subs.values())
+
+    def subscribe(self, company_id: int, loop: asyncio.AbstractEventLoop) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=16)
+        with self._lock:
+            self._subs.setdefault(company_id, []).append(q)
+            self._loops.add(loop)
+            self._ensure_listener()
         return q
 
     def unsubscribe(self, company_id: int, q: asyncio.Queue) -> None:
-        lst = self._subs.get(company_id) or []
-        if q in lst:
-            lst.remove(q)
-        if not lst and company_id in self._subs:
-            del self._subs[company_id]
+        with self._lock:
+            lst = self._subs.get(company_id) or []
+            if q in lst:
+                lst.remove(q)
+            if not lst and company_id in self._subs:
+                del self._subs[company_id]
+            if self._subscriber_count() == 0:
+                self._stop_listener()
 
-    def notify(self, company_id: int, reason: str = "changed") -> None:
-        dead: list[asyncio.Queue] = []
-        for q in list(self._subs.get(company_id) or []):
+    def notify_local(self, company_id: int, reason: str = "changed") -> None:
+        dead: list[tuple[int, asyncio.Queue]] = []
+        with self._lock:
+            items = list(self._subs.get(company_id) or [])
+        for q in items:
             try:
                 q.put_nowait({"type": "schedule_changed", "reason": reason})
-            except asyncio.QueueFull:
-                dead.append(q)
             except Exception:
-                dead.append(q)
-        for q in dead:
-            self.unsubscribe(company_id, q)
+                dead.append((company_id, q))
+        for cid, q in dead:
+            self.unsubscribe(cid, q)
+
+    def _ensure_listener(self) -> None:
+        if self._listen_thread and self._listen_thread.is_alive():
+            return
+        self._listen_stop.clear()
+        self._listen_thread = threading.Thread(
+            target=self._pg_listen_loop,
+            name="schedule-pg-listen",
+            daemon=True,
+        )
+        self._listen_thread.start()
+
+    def _stop_listener(self) -> None:
+        self._listen_stop.set()
+        self._listen_thread = None
+
+    def _pg_listen_loop(self) -> None:
+        """Uma conexão LISTEN enquanto houver assinantes SSE."""
+        import select
+        try:
+            import psycopg2
+            from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+        except Exception:
+            return
+
+        url = str(engine.url)
+        # SQLAlchemy URL → psycopg2
+        dsn = url.replace("postgresql+psycopg2://", "postgresql://").replace(
+            "postgresql+psycopg://", "postgresql://"
+        )
+        conn = None
+        try:
+            conn = psycopg2.connect(dsn)
+            conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+            cur = conn.cursor()
+            cur.execute("LISTEN schedule_changed;")
+            while not self._listen_stop.is_set():
+                ready = select.select([conn], [], [], 20.0)
+                if self._listen_stop.is_set():
+                    break
+                if ready == ([], [], []):
+                    continue
+                conn.poll()
+                while conn.notifies:
+                    n = conn.notifies.pop(0)
+                    try:
+                        cid = int(str(n.payload).strip())
+                    except Exception:
+                        continue
+                    self.notify_local(cid, "pg_notify")
+        except Exception:
+            pass
+        finally:
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
 
 
 schedule_hub = ScheduleHub()
 
 
 def notify_schedule_changed(company_id: int, reason: str = "changed") -> None:
+    """Avisa quem está na agenda (mesmo worker + outros via PG NOTIFY)."""
     try:
-        schedule_hub.notify(company_id, reason)
+        schedule_hub.notify_local(int(company_id), reason)
     except Exception:
         pass
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("SELECT pg_notify('schedule_changed', :payload)"),
+                {"payload": str(int(company_id))},
+            )
+            conn.commit()
+    except Exception:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(f"NOTIFY schedule_changed, '{int(company_id)}'"))
+                conn.commit()
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -3865,12 +3956,16 @@ async def schedule_stream(request: Request):
             pass
 
     async def event_gen():
-        q = schedule_hub.subscribe(company_id)
+        loop = asyncio.get_running_loop()
+        q = schedule_hub.subscribe(company_id, loop)
         try:
             yield "event: ready\ndata: {\"ok\":true}\n\n"
             while True:
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=25.0)
+                    if msg.get("type") == "keepalive":
+                        yield ": keepalive\n\n"
+                        continue
                     import json as _json
                     yield f"event: schedule_changed\ndata: {_json.dumps(msg)}\n\n"
                 except asyncio.TimeoutError:
@@ -3888,6 +3983,18 @@ async def schedule_stream(request: Request):
         },
     )
 
+
+
+
+@app.get("/schedule/rev")
+def schedule_rev(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Fingerprint barato da agenda (1 consulta leve) — sync entre aparelhos/workers."""
+    require("schedule")(user)
+    company = get_current_company(user, db)
+    return {"hash": schedule_data_version(db, company.id)}
 
 
 @app.get("/schedule/weeks")

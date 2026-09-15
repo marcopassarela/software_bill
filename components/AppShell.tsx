@@ -3883,8 +3883,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeArchived]);
 
-  // Push SSE: só recarrega a agenda quando OUTRO (ou o mesmo) usuário altera algo.
-  // Sem poll, sem timer — zero consulta Neon enquanto ninguém edita.
+  // Push real (SSE + PostgreSQL NOTIFY): sem poll.
+  // Quando alguém altera a agenda, todos com a aba aberta atualizam na hora.
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     let closed = false;
@@ -3893,17 +3893,22 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     const connect = () => {
       if (closed) return;
-      es = new EventSource(`${API}/schedule/stream`, { withCredentials: true });
-      es.addEventListener('schedule_changed', () => {
-        forceReloadSchedule();
-      });
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        if (!closed) {
-          retry = setTimeout(connect, 8000);
-        }
-      };
+      try {
+        es = new EventSource(`${API}/schedule/stream`, { withCredentials: true });
+        es.addEventListener('ready', () => {
+          /* stream ok */
+        });
+        es.addEventListener('schedule_changed', () => {
+          forceReloadSchedule();
+        });
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (!closed) retry = setTimeout(connect, 5000);
+        };
+      } catch {
+        if (!closed) retry = setTimeout(connect, 8000);
+      }
     };
     connect();
 
