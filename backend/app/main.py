@@ -4650,6 +4650,12 @@ def update_schedule_entry(
 
     db.commit()
 
+    notify_company_changed(
+        company.id,
+        "schedule",
+        "schedule_entry_updated",
+    )
+
     return serialize_entry(
         entry,
         db,
