@@ -5,6 +5,7 @@ import { StockMovementForm, printProductLabels } from './QrTools';
 import SettingsModule from '@/components/SettingsModule';
 import CriticalSettingsModule from '@/components/CriticalSettingsModule';
 import OrdersModule from '@/components/OrdersModule';
+import PlansModule from '@/components/PlansModule';
 import { ClipboardPen } from 'lucide-react'; // ou Package se preferir
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from '@/lib/api';
@@ -28,6 +29,7 @@ import {
   Users,
   Settings,
   ShieldAlert,
+  CreditCard,
   LogOut,
   Menu,
   X,
@@ -65,6 +67,7 @@ const items = [
   ['users', 'Usuários', Users],
   ['settings', 'Configurações', Settings],
   ['critical', 'Configurações críticas', ShieldAlert],
+  ['plans', 'Planos', CreditCard],
 ] as const;
 
 const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
@@ -81,7 +84,7 @@ const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
     keys: ['stock', 'entry', 'output', 'movements'],
   },
   { id: 'data', label: 'Dados', keys: ['reports', 'users'] },
-  { id: 'system', label: 'Sistema', keys: ['settings', 'critical'] },
+  { id: 'system', label: 'Sistema', keys: ['settings', 'plans', 'critical'] },
 ];
 
 const resource: any = {
@@ -103,6 +106,7 @@ const moduleAccess: any = {
   VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
   MONTAGEM: ['production'],
+  PLANOS: ['plans'],
 };
 
 export const PRODUCTION_MODELS = [
@@ -128,7 +132,6 @@ function titleFor(k: string) {
     ({
       dashboard: 'Dashboard',
       schedule: 'Agendamento',
-      commercial: 'Comercial',
       vehicles: 'Veículos',
       drivers: 'Motoristas',
       maintenance: 'Manutenção',
@@ -143,6 +146,7 @@ function titleFor(k: string) {
       reports: 'Relatórios',
       users: 'Usuários',
       critical: 'Configurações críticas',
+      plans: 'Planos',
     } as any)[k] || k
   );
 }
@@ -209,16 +213,9 @@ const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
 ]);
 
 function expandPermissions(keys: string[]): string[] {
-  const s = new Set(keys);
-  if (s.has('stock')) {
-    s.add('entry');
-    s.add('output');
-    s.add('movements');
-  }
-  if (s.has('entry') || s.has('output') || s.has('movements')) {
-    s.add('stock');
-  }
-  return Array.from(s);
+  // A aba-pai libera somente a visualização da aba. As ações internas são
+  // independentes e não podem ser expandidas automaticamente no salvamento.
+  return Array.from(new Set(keys));
 }
 
 function resourceIdOf(page: string, row: any) {
@@ -349,7 +346,7 @@ const FIELDS: Record<string, FieldDef[]> = {
     { key: 'name', label: 'Nome', type: 'text', required: true },
     { key: 'model', label: 'Modelo', type: 'text' },
     { key: 'category', label: 'Categoria', type: 'text' },
-    { key: 'unit', label: 'Unidade', type: 'text' },
+    { key: 'quantity', label: 'Quantidade em estoque', type: 'number', step: '0.01' },
     { key: 'minimum_stock', label: 'Estoque mínimo', type: 'number', step: '0.01' },
     { key: 'location', label: 'Localização', type: 'text' },
     { key: 'supplier', label: 'Fornecedor', type: 'text' },
@@ -418,13 +415,13 @@ const USER_EDIT_FIELDS: FieldDef[] = [
     options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR', 'MONTAGEM'],
     required: true,
   },
-  { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
   { key: 'active', label: 'Ativo', type: 'select', options: ['Sim', 'Não'], required: true },
   {
     key: 'password',
     label: 'Nova senha (deixe em branco para manter a atual)',
     type: 'text',
   },
+  { key: 'permissions', label: 'Permissões específicas (abas e botões)', type: 'modules' },
 ];
 
 const LABELS: Record<string, string> = {
@@ -471,7 +468,6 @@ const LABELS: Record<string, string> = {
   location: 'Localização',
   supplier: 'Fornecedor',
   unit_value: 'Valor unitário',
-  unit: 'Unidade',
   quantity: 'Quantidade',
   key: 'Chave',
   created_at: 'Criado em',
@@ -591,55 +587,87 @@ function statusClasses(v: string): string {
 
 export default function AppShell({
   user,
-  onLogout,
-  onUserUpdate,
-}: {
-  user: any;
-  onLogout: () => void;
-  onUserUpdate: (u: any) => void;
-}) {
-  const isMainAdmin = !!user.is_main_admin;
+    onLogout,
+    onUserUpdate,
+    }: {
+    user: any;
+    onLogout: () => void;
+    onUserUpdate: (u: any) => void;
+  }) {
+  const isMainAdmin = !!user?.is_main_admin;
+
+  const isCompanyAdmin =
+  isMainAdmin ||
+  String(user?.role || '').toUpperCase() === 'ADMINISTRADOR';
 
   const allowed = (key: string) => {
-    if (isMainAdmin) return true;
-    const perms = user.permissions
-      ? user.permissions.split(',').filter(Boolean)
-      : null;
-    if (perms) {
-      if (perms.includes(key)) return true;
-      if (key === 'production' && perms.includes('assembly')) return true;
-      if (
-        key === 'orders' &&
-        (perms.includes('orders_create') || perms.includes('orders_list'))
-      )
-        return true;
-      return false;
+  if (isMainAdmin) return true;
+
+  const rawPerms = user?.permissions;
+  const perms = rawPerms
+    ? String(rawPerms).split(',').filter(Boolean)
+    : null;
+
+  if (perms) {
+    if (perms.includes(key)) return true;
+
+    if (key === 'production' && perms.includes('assembly')) {
+      return true;
     }
-    const roleMods = moduleAccess[user.role] || [];
-    if (roleMods.includes('*') || roleMods.includes(key)) return true;
-    if (key === 'production' && roleMods.includes('assembly')) return true;
+
+    if (
+      key === 'orders' &&
+      (perms.includes('orders_create') ||
+        perms.includes('orders_list'))
+    ) {
+      return true;
+    }
+
     return false;
+  }
+
+  const roleMods = moduleAccess[user.role] || [];
+
+  if (roleMods.includes('*') || roleMods.includes(key)) {
+    return true;
+  }
+
+  if (key === 'production' && roleMods.includes('assembly')) {
+    return true;
+  }
+
+  return false;
+
   };
 
-  // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
-  // já entra direto na primeira aba que ele efetivamente pode ver.
   const [page, setPage] = useState<string>(() => {
-    const first = items.find(([k]) => {
-      if (k === 'critical') return isMainAdmin;
-      return allowed(k);
-    });
-    return first ? first[0] : '';
+  const first = items.find(([k]) => {
+  if (k === 'critical') return isMainAdmin;
+  return allowed(k);
   });
 
+  return first ? first[0] : '';
+
+  });
+
+  // Se o usuário não tiver acesso à página atual,
+  // direciona para a primeira página permitida.
   useEffect(() => {
-    if (isMainAdmin) return;
-    const ok = page && (page === 'critical' ? isMainAdmin : allowed(page));
-    if (ok) return;
-    const first = items.find(([k]) => {
-      if (k === 'critical') return false;
-      return allowed(k);
-    });
-    setPage(first ? first[0] : '');
+  if (isMainAdmin) return;
+
+  const ok =
+    page &&
+    (page === 'critical' ? isMainAdmin : allowed(page));
+
+  if (ok) return;
+
+  const first = items.find(([k]) => {
+    if (k === 'critical') return false;
+    return allowed(k);
+  });
+
+  setPage(first ? first[0] : '');
+
   }, [user, page]);
 
   const [rows, setRows] = useState<any[]>([]);
@@ -849,9 +877,6 @@ export default function AppShell({
   async function create(data: any) {
     setError('');
     try {
-      if (page === 'users' && !data.units_access) {
-        data = { ...data, units_access: 'matriz,filial' };
-      }
       if (page === 'entry' || page === 'output')
         await request('/stock/' + page, { method: 'POST', body: JSON.stringify(data) });
       else
@@ -1162,9 +1187,6 @@ export default function AppShell({
             <h1 className="text-2xl font-bold">
               {page ? titleFor(page) : 'Sem acesso'}
             </h1>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-              {user?.current_unit === 'filial' ? '2 — Filial' : '1 — Matriz'}
-            </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative" ref={accountMenuRef}>
@@ -1220,6 +1242,8 @@ export default function AppShell({
           <SettingsModule user={user} />
         ) : page === 'critical' ? (
           <CriticalSettingsModule user={user} />
+        ) : page === 'plans' ? (
+          <PlansModule user={user} />
         ) : page === 'dashboard' ? (
           <Dashboard metrics={metrics} onNavigate={setPage} />
         ) : (
@@ -1228,7 +1252,7 @@ export default function AppShell({
             rows={rows}
             loading={loading}
             create={create}
-            isAdmin={isMainAdmin}
+            isAdmin={isMainAdmin || user.role === 'ADMINISTRADOR'}
             lookups={lookups}
             editingUser={editingUser}
             setEditingUser={setEditingUser}
@@ -1438,6 +1462,7 @@ function AccountPanel({
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [tab, setTab] = useState<'conta' | 'senha' | 'foto'>('conta');
 
   async function submitName(e: React.FormEvent) {
     e.preventDefault();
@@ -1526,123 +1551,152 @@ function AccountPanel({
   }
 
   return (
-    <div className="absolute right-0 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg space-y-4">
-      <div className="flex items-center gap-3 border-b pb-3">
+    <div className="absolute right-0 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg">
+      <div className="mb-3 flex items-center gap-3 border-b pb-3">
         {user.avatar_data ? (
           <img
             src={user.avatar_data}
             alt=""
-            className="h-12 w-12 rounded-full object-cover ring-2 ring-slate-100"
+            className="h-11 w-11 rounded-full object-cover ring-2 ring-slate-100"
           />
         ) : (
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
             {(user.name || user.username || '?').slice(0, 1).toUpperCase()}
           </span>
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
           <p className="truncate text-xs text-slate-500">@{user.username}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-600">
+          </p>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-slate-500">Foto de perfil</p>
-        <div className="flex flex-wrap gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
-            <Camera size={14} />
-            {avatarBusy ? 'Enviando…' : 'Alterar foto'}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              disabled={avatarBusy}
-              onChange={(e) => {
-                onPickAvatar(e.target.files?.[0] || null);
-                e.target.value = '';
-              }}
-            />
-          </label>
-          {user.avatar_data && (
+      <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-0.5">
+        {(
+          [
+            ['conta', 'Conta'],
+            ['senha', 'Senha'],
+            ['foto', 'Foto'],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            className={`flex-1 rounded-md px-1 py-1.5 text-[11px] font-semibold ${
+              tab === k
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="max-h-64 overflow-y-auto">
+        {tab === 'conta' && (
+          <form onSubmit={submitName} className="space-y-2" autoComplete="off">
+            {nameErr && <p className="text-xs text-red-600">{nameErr}</p>}
+            {nameMsg && <p className="text-xs text-green-600">{nameMsg}</p>}
+            <label className="block text-xs text-slate-600">
+              Nome
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="mt-1 w-full rounded-lg border p-2 text-sm"
+              />
+            </label>
+            <label className="block text-xs text-slate-600">
+              E-mail
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="mt-1 w-full rounded-lg border p-2 text-sm"
+              />
+            </label>
             <button
-              type="button"
-              disabled={avatarBusy}
-              onClick={removeAvatar}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+              type="submit"
+              disabled={savingName}
+              className="w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
             >
-              Remover
+              {savingName ? 'Salvando…' : 'Salvar dados'}
             </button>
-          )}
-        </div>
-        <p className="text-[10px] text-slate-400"></p>
+          </form>
+        )}
+
+        {tab === 'senha' && (
+          <form onSubmit={submitPassword} className="space-y-2" autoComplete="off">
+            {err && <p className="text-xs text-red-600">{err}</p>}
+            {msg && <p className="text-xs text-green-600">{msg}</p>}
+            <input
+              type="password"
+              placeholder="Senha atual"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              required
+              className="w-full rounded-lg border p-2 text-sm"
+            />
+            <input
+              type="password"
+              placeholder="Nova senha"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              required
+              minLength={3}
+              className="w-full rounded-lg border p-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+            >
+              {saving ? 'Salvando…' : 'Atualizar senha'}
+            </button>
+          </form>
+        )}
+
+        {tab === 'foto' && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
+                {avatarBusy ? 'Enviando…' : 'Alterar foto'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  disabled={avatarBusy}
+                  onChange={(e) => {
+                    onPickAvatar(e.target.files?.[0] || null);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {user.avatar_data && (
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={removeAvatar}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                >
+                  Remover
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400">JPEG ou PNG, arquivo leve.</p>
+          </div>
+        )}
       </div>
-
-      <form onSubmit={submitName} className="space-y-2" autoComplete="off">
-        <p className="text-xs font-medium text-slate-500">Dados da conta</p>
-        {nameErr && <p className="text-xs text-red-600">{nameErr}</p>}
-        {nameMsg && <p className="text-xs text-green-600">{nameMsg}</p>}
-        <label className="block text-xs text-slate-600">
-          Nome
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            className="mt-1 w-full rounded-lg border p-2 text-sm"
-          />
-        </label>
-        <label className="block text-xs text-slate-600">
-          E-mail
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="mt-1 w-full rounded-lg border p-2 text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={savingName}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
-        >
-          {savingName ? 'Salvando…' : 'Salvar dados'}
-        </button>
-      </form>
-
-      <form onSubmit={submitPassword} className="space-y-2 border-t pt-3" autoComplete="off">
-        <p className="text-xs font-medium text-slate-500">Alterar senha</p>
-        {err && <p className="text-xs text-red-600">{err}</p>}
-        {msg && <p className="text-xs text-green-600">{msg}</p>}
-        <input
-          type="password"
-          placeholder="Senha atual"
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          required
-          className="w-full rounded-lg border p-2 text-sm"
-        />
-        <input
-          type="password"
-          placeholder="Nova senha"
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-          required
-          minLength={3}
-          className="w-full rounded-lg border p-2 text-sm"
-        />
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
-        >
-          {saving ? 'Salvando…' : 'Atualizar senha'}
-        </button>
-      </form>
 
       <button
         type="button"
         onClick={onLogout}
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
       >
         <LogOut size={14} />
         Sair
@@ -2203,126 +2257,6 @@ const SCHEDULE_REPORT_FIELDS = [
   { key: 'Vagas', label: 'Vagas' },
 ];
 
-const COMMERCIAL_REPORT_FIELDS = [
-  { key: 'Código', label: 'Código' },
-  { key: 'Produto', label: 'Produto' },
-  { key: 'Qtd', label: 'Quantidade' },
-  { key: 'Preço unit.', label: 'Preço unitário' },
-  { key: 'Total', label: 'Total' },
-  { key: 'Agendamentos', label: 'Nº de agendamentos' },
-];
-
-function ClosingReport() {
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [data, setData] = useState<any>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  async function run(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setErr('');
-    try {
-      const qs = new URLSearchParams();
-      if (dateFrom) qs.set('date_from', dateFrom);
-      if (dateTo) qs.set('date_to', dateTo);
-      setData(await request(`/commercial/closing-report?${qs}`));
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const money = (n: number) =>
-    (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-  return (
-    <div className="mb-8 rounded-xl border bg-white p-5">
-      <h3 className="font-semibold text-slate-800">Fechamento do mês</h3>
-      <p className="mt-1 text-sm text-slate-500">
-        Compara a descrição do serviço agendado com os produtos cadastrados em Comercial.
-      </p>
-      <form onSubmit={run} className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-slate-600">De</span>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border p-2" />
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-slate-600">Até</span>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border p-2" />
-        </label>
-        <button type="submit" disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-          {busy ? 'Gerando…' : 'Gerar fechamento'}
-        </button>
-      </form>
-      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
-
-      {data && (
-        <>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Qtd. total</p>
-              <p className="text-xl font-bold">{data.summary?.quantity_total ?? 0}</p>
-            </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Valor total</p>
-              <p className="text-xl font-bold text-emerald-700">{money(data.summary?.revenue_total)}</p>
-            </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Sem produto correspondente</p>
-              <p className="text-xl font-bold text-amber-700">{data.summary?.entries_unmatched ?? 0}</p>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Produto</th>
-                  <th className="px-3 py-2">Qtd</th>
-                  <th className="px-3 py-2">Preço unit.</th>
-                  <th className="px-3 py-2">Total</th>
-                  <th className="px-3 py-2">Agendamentos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.lines || []).map((l: any) => (
-                  <tr key={l.product_id} className="border-t">
-                    <td className="px-3 py-2">{l.code || '—'}</td>
-                    <td className="px-3 py-2 font-medium">{l.name}</td>
-                    <td className="px-3 py-2">{l.quantity}</td>
-                    <td className="px-3 py-2">{money(l.unit_price)}</td>
-                    <td className="px-3 py-2 font-medium">{money(l.line_total)}</td>
-                    <td className="px-3 py-2">{l.entries}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {!!data.unmatched?.length && (
-            <details className="mt-4 text-sm">
-              <summary className="cursor-pointer text-amber-800">
-                Serviços sem produto cadastrado ({data.unmatched.length})
-              </summary>
-              <ul className="mt-2 max-h-40 overflow-auto text-xs text-slate-600">
-                {data.unmatched.map((u: any, i: number) => (
-                  <li key={i}>
-                    {u.date} — {u.client}: {u.service}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function ReportsExport({ lookups }: { lookups: any }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'pdf'>('xlsx');
@@ -2332,24 +2266,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
   const [preview, setPreview] = useState<{ cfg: any; rows: any[] }[] | null>(null);
   const [scheduleFields, setScheduleFields] = useState<string[]>(SCHEDULE_REPORT_FIELDS.map((f) => f.key)
 );
-  const [commercialFields, setCommercialFields] = useState<string[]>(
-    COMMERCIAL_REPORT_FIELDS.map((f) => f.key)
-  );
-  const [commercialFrom, setCommercialFrom] = useState('');
-  const [commercialTo, setCommercialTo] = useState('');
-
-  function toggleCommercialField(key: string) {
-    setCommercialFields((s) =>
-      s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
-    );
-  }
-  function selectAllCommercialFields() {
-    setCommercialFields(COMMERCIAL_REPORT_FIELDS.map((f) => f.key));
-  }
-  function clearCommercialFields() {
-    setCommercialFields([]);
-  }
-
   function toggleScheduleField(key: string) {
     setScheduleFields((s) =>
       s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
@@ -2413,41 +2329,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
                 });
               });
             });
-            return { cfg, rows: flat };
-          }
-
-          if (v === 'commercial') {
-            if (!commercialFields.length) {
-              throw new Error('Selecione pelo menos um campo do Comercial.');
-            }
-            const qs = new URLSearchParams();
-            if (commercialFrom) qs.set('date_from', commercialFrom);
-            if (commercialTo) qs.set('date_to', commercialTo);
-            const data = await request(`/commercial/closing-report?${qs.toString()}`);
-            const flat = (data.lines || []).map((l: any) => {
-              const full: Record<string, any> = {
-                Código: l.code || '',
-                Produto: l.name || '',
-                Qtd: l.quantity,
-                'Preço unit.': l.unit_price,
-                Total: l.line_total,
-                Agendamentos: l.entries,
-              };
-              const row: Record<string, any> = {};
-              commercialFields.forEach((key) => {
-                if (key in full) row[key] = full[key];
-              });
-              return row;
-            });
-            if (data.summary) {
-              const tot: Record<string, any> = {};
-              if (commercialFields.includes('Produto')) tot['Produto'] = 'TOTAL';
-              if (commercialFields.includes('Qtd')) tot['Qtd'] = data.summary.quantity_total;
-              if (commercialFields.includes('Total')) tot['Total'] = data.summary.revenue_total;
-              if (commercialFields.includes('Agendamentos'))
-                tot['Agendamentos'] = data.summary.entries_matched;
-              flat.push(tot);
-            }
             return { cfg, rows: flat };
           }
 
@@ -2544,69 +2425,6 @@ function ReportsExport({ lookups }: { lookups: any }) {
           ))}
         </div>
       </div>
-      )}
-
-        {selected.includes('commercial') && (
-        <div className="mb-4 rounded-lg border p-3">
-          <p className="mb-2 text-xs font-medium text-slate-700">
-            Comercial — período e campos
-          </p>
-          <div className="mb-3 flex flex-wrap gap-3">
-            <label className="text-xs">
-              <span className="mb-1 block text-slate-600">Data inicial</span>
-              <input
-                type="date"
-                value={commercialFrom}
-                onChange={(e) => setCommercialFrom(e.target.value)}
-                className="rounded-lg border p-2 text-sm"
-              />
-            </label>
-            <label className="text-xs">
-              <span className="mb-1 block text-slate-600">Data final</span>
-              <input
-                type="date"
-                value={commercialTo}
-                onChange={(e) => setCommercialTo(e.target.value)}
-                className="rounded-lg border p-2 text-sm"
-              />
-            </label>
-          </div>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-slate-700">Campos do Comercial</p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={selectAllCommercialFields}
-                className="text-xs text-brand hover:underline"
-              >
-                Marcar todos
-              </button>
-              <button
-                type="button"
-                onClick={clearCommercialFields}
-                className="text-xs text-slate-500 hover:underline"
-              >
-                Limpar
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {COMMERCIAL_REPORT_FIELDS.map((f) => (
-              <label
-                key={f.key}
-                className="flex items-center gap-2 text-xs text-slate-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={commercialFields.includes(f.key)}
-                  onChange={() => toggleCommercialField(f.key)}
-                  className="h-4 w-4"
-                />
-                {f.label}
-              </label>
-            ))}
-          </div>
-        </div>
       )}
 
       <div className="mb-4">
@@ -3154,17 +2972,6 @@ function ModuleCheckboxes({
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => {
                   setFocus(g.module);
-                  if (g.module === 'orders') {
-                    if (e.target.checked) {
-                      toggle('orders', true);
-                      if (!list.includes('orders_list') && !list.includes('orders_create')) {
-                        toggle('orders_list', true);
-                      }
-                    } else {
-                      toggle('orders', false, ['orders_create', 'orders_list']);
-                    }
-                    return;
-                  }
                   if (!e.target.checked && g.children?.length) {
                     toggle(
                       g.module,
@@ -3206,13 +3013,14 @@ function ModuleCheckboxes({
                   className="mt-0.5 h-3.5 w-3.5 shrink-0"
                   checked={list.includes(c.value)}
                   onChange={(e) => {
+                    const next = new Set(list);
                     if (e.target.checked) {
-                      if (group.module === 'orders') toggle('orders', true);
-                      else if (group.module !== 'production' && group.module !== 'stock') {
-                        toggle(group.module, true);
-                      }
+                      next.add(group.module);
+                      next.add(c.value);
+                    } else {
+                      next.delete(c.value);
                     }
-                    toggle(c.value, e.target.checked);
+                    onChange(Array.from(next).join(','));
                   }}
                 />
                 <span className="leading-snug">{c.label}</span>
@@ -3449,12 +3257,6 @@ function EditUserForm({
     active: user.active ? 'Sim' : 'Não',
     password: '',
   });
-  const [unitsAccess, setUnitsAccess] = useState<string[]>(
-    String(user.units_access || 'matriz,filial')
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter(Boolean)
-  );
   const [saving, setSaving] = useState(false);
 
   function set(key: string, v: string) {
@@ -3470,12 +3272,11 @@ function EditUserForm({
       email: (values.email || '').trim().toLowerCase(),
       role: values.role,
       permissions: values.permissions
-        ? expandPermissions(String(values.permissions).split(',').filter(Boolean)).join(
-            ','
-          )
+        ? expandPermissions(
+            String(values.permissions).split(',').filter(Boolean)
+          ).join(',')
         : null,
       active: values.active === 'Sim',
-      units_access: (unitsAccess.length ? unitsAccess : ['matriz']).join(','),
     };
     if (values.password) data.password = values.password;
     try {
@@ -3502,7 +3303,7 @@ function EditUserForm({
             <PermissionsField
               value={values[f.key]}
               onChange={(v) => set(f.key, v)}
-              startOpen={!!user.permissions}
+              startOpen={true}
             />
           ) : f.type === 'select' ? (
             <select
@@ -3531,40 +3332,6 @@ function EditUserForm({
         </Wrapper>
         );
       })}
-      <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="mb-2 text-sm font-medium text-slate-700">Acesso às unidades</p>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={unitsAccess.includes('matriz')}
-              onChange={(e) => {
-                const s = new Set(unitsAccess);
-                if (e.target.checked) s.add('matriz');
-                else s.delete('matriz');
-                setUnitsAccess(Array.from(s));
-              }}
-            />
-            1 — Matriz
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={unitsAccess.includes('filial')}
-              onChange={(e) => {
-                const s = new Set(unitsAccess);
-                if (e.target.checked) s.add('filial');
-                else s.delete('filial');
-                setUnitsAccess(Array.from(s));
-              }}
-            />
-            2 — Filial
-          </label>
-        </div>
-        <p className="mt-1 text-xs text-slate-500">
-          Define em qual unidade este usuário pode entrar no login.
-        </p>
-      </div>
       <div className="sm:col-span-2">
         <button
           disabled={saving}
@@ -3789,29 +3556,31 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     extras: true,
   });
 
-  const perms = (user.permissions || '').split(',').filter(Boolean);
-  const isMainAdmin = !!user.is_main_admin;
+  const activePermissions = user?.permissions;
+  const perms = String(activePermissions || '')
+  .split(',')
+  .map((p: string) => p.trim())
+  .filter(Boolean);
 
-  // Apenas o Administrador Principal (id 1) tem acesso total automático ao
-  // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
-  // depende exclusivamente das permissões específicas marcadas no cadastro
-  // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
-  // schedule_archive).
-  const canEdit =
-    isMainAdmin || perms.includes('schedule_edit') || perms.includes('schedule');
+  const isMainAdmin = !!user?.is_main_admin;
+  const isCompanyAdmin =
+  isMainAdmin ||
+  String(user?.role || '').toUpperCase() === 'ADMINISTRADOR';
+
+  const canEdit = isMainAdmin || perms.includes('schedule_edit');
   const canWrite = canEdit;
   const canNewWeek =
-    isMainAdmin || perms.includes('schedule_week') || perms.includes('schedule_edit');
+  isMainAdmin || perms.includes('schedule_week');
   const canNewRoute =
-    isMainAdmin || perms.includes('schedule_route') || perms.includes('schedule_edit');
+  isMainAdmin || perms.includes('schedule_route');
   const canPrint =
-    isMainAdmin || perms.includes('schedule_print') || perms.includes('schedule_export');
+  isMainAdmin || perms.includes('schedule_print');
   const canDelete =
-    isMainAdmin || perms.includes('schedule_delete');
+  isMainAdmin || perms.includes('schedule_delete');
   const canArchive =
-    isMainAdmin || perms.includes('schedule_archive');
+  isMainAdmin || perms.includes('schedule_archive');
   const canExport =
-    isMainAdmin || perms.includes('schedule_export');
+  isMainAdmin || perms.includes('schedule_export');
 
     async function load(opts?: { silent?: boolean }) {
     const silent = !!(opts?.silent || weeks.length > 0);
@@ -4487,19 +4256,23 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             </label>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canWrite && (
+            {(canNewWeek || canNewRoute) && (
               <>
+                {canNewWeek && (
                 <button onClick={() => setShowNewWeek(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
                   + Nova semana
                 </button>
+                )}
                 {selectedWeek && selectedWeek.status === 'Ativa' && (
+                  canNewRoute && (
                   <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90">
                     + Nova rota
                   </button>
+                  )
                 )}
               </>
             )}
-            {selectedWeek && dates.length > 0 && canExport && (
+            {selectedWeek && dates.length > 0 && canPrint && (
               <button
                 type="button"
                 onClick={openPrintDay}
@@ -4554,7 +4327,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 Baixar PDF da semana
               </button>
             )}
-            {isMainAdmin && (
+            {canDelete && (
               <button
                 type="button"
                 onClick={() => {
@@ -5156,7 +4929,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             </p>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">
-                Senha do Administrador Principal *
+                Senha do usuário ou do Administrador Principal *
               </span>
               <input
                 type="password"
@@ -5164,7 +4937,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 className="w-full rounded-lg border p-2"
-                placeholder="Digite sua senha"
+                placeholder="Digite uma das senhas autorizadas"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') confirmDeleteWeek();
