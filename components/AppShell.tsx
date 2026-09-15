@@ -69,7 +69,7 @@ const items = [
 
 const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
   { id: 'main', label: 'Principal', keys: ['dashboard', 'schedule', 'orders'] },
-  { id: 'ops', label: 'Operação', keys: ['production', 'commercial'] },
+  { id: 'ops', label: 'Operação', keys: ['production'] },
   {
     id: 'fleet',
     label: 'Frota',
@@ -95,13 +95,13 @@ const resource: any = {
 
 const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
-  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial', 'production', 'orders'],
-  LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel', 'commercial'],
-  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'],
-  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements', 'commercial'], // se ainda existir
+  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'production', 'orders'],
+  LOGÍSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
+  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
+  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
   MOTORISTA: [],
-  VENDEDOR: ['dashboard', 'schedule', 'commercial'], // vê agenda; edição vem das permissões finas
-  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'commercial'],
+  VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
+  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
   MONTAGEM: ['production'],
 };
 
@@ -183,7 +183,6 @@ const PERMISSION_GROUPS: {
       { value: 'assembly', label: 'Lançar montagem' },
     ],
   },
-  { module: 'commercial', label: 'Comercial' },
   { module: 'vehicles', label: 'Veículos' },
   { module: 'drivers', label: 'Motoristas' },
   { module: 'maintenance', label: 'Manutenção' },
@@ -1968,7 +1967,6 @@ const REPORT_SOURCES = [
   { value: 'products', label: 'Estoque', path: '/products' },
   { value: 'movements', label: 'Movimentações de estoque', path: '/stock/movements' },
   { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
-  { value: 'commercial', label: 'Comercial', path: '/commercial/closing-report' },
 ];
 
 function cleanRowForReport(r: any, lookups: any) {
@@ -3817,27 +3815,33 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     async function load(opts?: { silent?: boolean }) {
     const silent = !!(opts?.silent || weeks.length > 0);
-    // Preserva posição do scroll (o refresh a cada 15s não deve “pular” a página)
-    const scrollY =
-      typeof window !== 'undefined'
-        ? window.scrollY || document.documentElement.scrollTop || 0
-        : 0;
+    // NÃO guardar scroll no início: se o usuário rolar durante o fetch,
+    // restaurar a posição antiga puxa a página para cima de novo.
 
     if (!silent) setLoading(true);
-    // silent: não liga “refreshing” visual — evita reflow / salto no meio da rolagem
     if (!silent) setError('');
     try {
       const data = await request(`/schedule/weeks?include_archived=${includeArchived}`);
 
-      // Só atualiza estado se os dados mudaram (evita re-render e salto de scroll)
-      setWeeks((prev: any[]) => {
-        try {
-          if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
-        } catch {
-          /* ignore */
-        }
-        return data;
-      });
+      let dataChanged = true;
+      try {
+        // comparação leve: se igual, não mexe em estado nem em scroll
+        dataChanged = JSON.stringify(weeks) !== JSON.stringify(data);
+      } catch {
+        dataChanged = true;
+      }
+
+      if (!dataChanged) {
+        return;
+      }
+
+      // posição ATUAL (depois do await) — é onde o usuário está agora
+      const scrollY =
+        typeof window !== 'undefined'
+          ? window.scrollY || document.documentElement.scrollTop || 0
+          : 0;
+
+      setWeeks(data);
 
       if (data.length) {
         setSelectedWeekId((prev: number | null) => {
@@ -3848,19 +3852,20 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           return active.id;
         });
       }
-    } catch (e: any) {
-      if (!silent) setError(e.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      // Restaura scroll depois do paint (2 frames) — 1 rAF costuma ser cedo demais
-      if (typeof window !== 'undefined') {
+
+      // Só corrige scroll se houve re-render real
+      if (typeof window !== 'undefined' && scrollY > 0) {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             window.scrollTo(0, scrollY);
           });
         });
       }
+    } catch (e: any) {
+      if (!silent) setError(e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }
 
