@@ -130,6 +130,7 @@ _memory_hub = _InMemoryHub()
 # ============================================================
 
 _redis_sync_client = None  # usado para publicar (rápido, síncrono)
+_client_creation_error: str | None = None  # guardado pro /debug/realtime
 
 if REDIS_URL:
     try:
@@ -148,10 +149,12 @@ if REDIS_URL:
             _redis_sync_client.ping()
             logger.info("[realtime] PING no Redis OK na inicialização")
         except Exception as exc:
+            _client_creation_error = f"ping falhou: {exc!r}"
             logger.error("[realtime] PING no Redis FALHOU na inicialização: %r", exc)
     except Exception as exc:
         # Se a lib "redis" não estiver instalada ou a URL for inválida,
         # cai para o hub em memória em vez de quebrar o app inteiro.
+        _client_creation_error = f"falha ao criar cliente: {exc!r}"
         logger.error("[realtime] falha ao criar cliente Redis: %r", exc)
         _redis_sync_client = None
 
@@ -193,7 +196,7 @@ def redis_diagnostics() -> dict[str, Any]:
         "redis_url_configurada": bool(REDIS_URL),
         "cliente_criado": _redis_sync_client is not None,
         "ping_ok": False,
-        "erro": None,
+        "erro": _client_creation_error,
     }
     if _redis_sync_client is not None:
         try:
