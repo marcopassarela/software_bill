@@ -3813,16 +3813,10 @@ def schedule_data_version(db: Session, company_id: int) -> str:
 def debug_realtime(user: User = Depends(current_user)):
     """
     Diagnóstico rápido do Redis, sem precisar caçar nos Function Logs da
-    Vercel. Só para administrador/dono, porque devolve detalhes de infra.
-    Abra https://<seu-dominio>/api/debug/realtime logado como admin.
+    Vercel. Só exige estar logado (não expõe a REDIS_URL, só booleanos e
+    a mensagem de erro de conexão, se houver).
+    Abra https://<seu-dominio>/api/debug/realtime logado no sistema.
     """
-    role_val = (
-        user.role.value if hasattr(user.role, "value") else str(user.role or "")
-    ).strip().upper()
-    if role_val not in {"ADMINISTRADOR", "ADMIN"} and not getattr(
-        user, "is_main_admin", False
-    ):
-        raise HTTPException(403, "Apenas administrador")
     return redis_diagnostics()
 
 
