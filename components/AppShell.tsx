@@ -798,6 +798,14 @@ export default function AppShell({
       if (closed) return;
       try {
         es = new EventSource(streamUrl(), { withCredentials: true });
+        // A Vercel pode encerrar uma função SSE por limite de duração ou
+        // reinício da instância. Ao conectar novamente, recarregamos uma vez
+        // para recuperar qualquer alteração ocorrida durante a desconexão.
+        es.addEventListener('ready', () => {
+          window.dispatchEvent(
+            new CustomEvent('company-data-changed', { detail: { module: '*' } })
+          );
+        });
         es.addEventListener('company_changed', (ev) => {
           let mod = '*';
           try {
