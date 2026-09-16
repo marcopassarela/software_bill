@@ -995,7 +995,7 @@ export default function AppShell({
     }
 
     if (page === 'dashboard') {
-      request('/metrics').then(setMetrics).catch(() => {});
+      request('/dashboard').then(setMetrics).catch(() => {});
       return;
     }
 
