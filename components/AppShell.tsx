@@ -4629,14 +4629,15 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                     + Nova semana
                   </button>
                 )}
+                
                 {canNewRoute && selectedWeek && selectedWeek.status === 'Ativa' && (
-                <button
-                  onClick={() => setShowNewSlot(true)}
-                  className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                >
-                  + Nova rota
-                </button>
-              )}
+                  <button
+                    onClick={() => setShowNewSlot(true)}
+                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    + Nova rota
+                  </button>
+                )}
               </>
             )}
             {selectedWeek && dates.length > 0 && canPrint && (
