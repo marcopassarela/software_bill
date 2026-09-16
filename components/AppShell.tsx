@@ -3934,9 +3934,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
   const canWrite =
   canEdit ||
+  canNewWeek ||
+  canNewRoute ||
   canTransfer ||
   canExtra ||
   canDelete ||
+  canArchive ||
   canClose;
 
     function forceReloadSchedule() {
@@ -4629,7 +4632,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                     + Nova semana
                   </button>
                 )}
-                
+
                 {canNewRoute && selectedWeek && selectedWeek.status === 'Ativa' && (
                   <button
                     onClick={() => setShowNewSlot(true)}
