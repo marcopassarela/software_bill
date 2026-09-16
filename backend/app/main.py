@@ -3963,7 +3963,6 @@ def list_schedule_weeks(
     }
 
 
-@app.post("/schedule/weeks")
 def create_schedule_week(
     body: ScheduleWeekCreate,
     request: Request,
@@ -3972,7 +3971,7 @@ def create_schedule_week(
 ):
 
     require(
-        "schedule",
+        "schedule_week",
         write=True,
     )(user)
 
@@ -4019,7 +4018,7 @@ def delete_schedule_week(
 ):
 
     require(
-        "schedule",
+        "schedule_delete",
         write=True,
     )(user)
 
@@ -4100,7 +4099,7 @@ def archive_schedule_week(
 ):
 
     require(
-        "schedule",
+        "schedule_archive",
         write=True,
     )(user)
 
@@ -4169,7 +4168,7 @@ def archive_schedule_week(
 # ROTAS
 # ============================================================
 
-@app.post("/schedule/route-slots")
+
 def create_route_slot(
     body: RouteSlotCreate,
     request: Request,
@@ -4178,7 +4177,7 @@ def create_route_slot(
 ):
 
     require(
-        "schedule",
+        "schedule_route",
         write=True,
     )(user)
 
@@ -4293,7 +4292,7 @@ def update_route_slot(
 ):
 
     require(
-        "schedule",
+        "schedule_edit_route",
         write=True,
     )(user)
 
@@ -4420,7 +4419,7 @@ def delete_route_slot(
 ):
 
     require(
-        "schedule",
+        "schedule_delete",
         write=True,
     )(user)
 
@@ -4475,7 +4474,7 @@ def create_schedule_entry(
 ):
 
     require(
-        "schedule",
+        "schedule_edit",
         write=True,
     )(user)
 
@@ -4590,7 +4589,7 @@ def update_schedule_entry(
 ):
 
     require(
-        "schedule",
+        "schedule_edit",
         write=True,
     )(user)
 
@@ -4671,7 +4670,7 @@ def delete_schedule_entry(
 ):
 
     require(
-        "schedule",
+        "schedule_delete",
         write=True,
     )(user)
 
@@ -4742,7 +4741,7 @@ def move_schedule_entry(
 ):
 
     require(
-        "schedule",
+        "schedule_edit",
         write=True,
     )(user)
 
@@ -4840,7 +4839,7 @@ def reorder_schedule_entries(
 ):
 
     require(
-        "schedule",
+        "schedule_edit",
         write=True,
     )(user)
 
@@ -4927,7 +4926,7 @@ def transfer_schedule_entry(
 ):
 
     require(
-        "schedule",
+        "schedule_transfer",
         write=True,
     )(user)
 
@@ -5073,7 +5072,7 @@ def transfer_route_slot(
 ):
 
     require(
-        "schedule",
+        "schedule_transfer_route",
         write=True,
     )(user)
 
@@ -5157,7 +5156,7 @@ def create_schedule_extra(
 ):
 
     require(
-        "schedule",
+        "schedule_extra",
         write=True,
     )(user)
 
@@ -5218,7 +5217,7 @@ def delete_schedule_extra(
 ):
 
     require(
-        "schedule",
+        "schedule_extra",
         write=True,
     )(user)
 
@@ -5271,7 +5270,7 @@ def export_route_slot(
     db: Session = Depends(get_db),
 ):
 
-    require("schedule")(user)
+    require("schedule_export")(user)
 
     company = get_current_company(
         user,

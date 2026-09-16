@@ -129,17 +129,24 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
     return user
 
 
-def require(module: str, write: bool = False):
+def require(module: str, write: bool = False, action: str | None = None):
     def check(user: User = Depends(current_user)):
         has_custom_permissions = bool(user.permissions)
+
         if has_custom_permissions:
-            grants = {p.strip() for p in (user.permissions or "").split(",") if p.strip()}
+            grants = {
+                p.strip()
+                for p in (user.permissions or "").split(",")
+                if p.strip()
+            }
         else:
             grants = set(MODULES.get(user.role, set()))
 
-        # Pedidos: orders_list / orders_create valem como acesso ao módulo "orders"
+        if "*" in grants:
+            return user
+
         if module == "orders":
-            if "*" in grants or "orders" in grants:
+            if "orders" in grants:
                 pass
             elif write:
                 if "orders_create" not in grants:
@@ -148,54 +155,72 @@ def require(module: str, write: bool = False):
                         detail="Sem permissão para este módulo",
                     )
             else:
-                # leitura (lista)
-                if "orders_list" not in grants and "orders_create" not in grants:
+                if (
+                    "orders_list" not in grants
+                    and "orders_create" not in grants
+                ):
                     raise HTTPException(
                         status_code=403,
                         detail="Sem permissão para este módulo",
                     )
-        elif (
-            "*" not in grants
-            and module not in grants
-            # A interface permite liberar apenas uma ação da Agenda
-            # (schedule_edit, schedule_week etc.). Essas permissões também
-            # precisam liberar a leitura inicial de /schedule/weeks; antes a
-            # API respondia 403 porque exigia literalmente "schedule".
-            and not (
-                module == "schedule"
-                and any(p.startswith("schedule_") for p in grants)
-            )
-        ):
-            raise HTTPException(status_code=403, detail="Sem permissão para este módulo")
 
-        # Em permissões customizadas, "schedule" sozinho representa apenas
-        # acesso de consulta à aba. Ações de escrita exigem uma permissão
-        # interna (schedule_edit, schedule_week, etc.). Perfis padrão seguem
-        # a regra de escrita definida em WRITE_ONLY_ROLES.
-        if (
-            write
-            and module == "schedule"
-            and has_custom_permissions
-            and "schedule" in grants
-            and not any(p.startswith("schedule_") for p in grants)
-        ):
-            raise HTTPException(status_code=403, detail="Sem permissão para editar este módulo")
+        elif module == "schedule":
 
-        if (
-            write
-            and not has_custom_permissions
-            and module in WRITE_ONLY_ROLES
-            and user.role not in WRITE_ONLY_ROLES[module]
-        ):
+            if (
+                "schedule" not in grants
+                and not any(p.startswith("schedule_") for p in grants)
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Sem permissão para este módulo",
+                )
+
+            if write and action:
+                if has_custom_permissions:
+                    if action not in grants:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Sem permissão para esta ação da Agenda",
+                        )
+                else:
+                    # Perfis padrão continuam respeitando a regra
+                    # tradicional de escrita da Agenda.
+                    if user.role not in WRITE_ONLY_ROLES.get("schedule", set()):
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Você só pode consultar este módulo, não editar",
+                        )
+
+            elif write:
+                if has_custom_permissions:
+                    # "schedule" sozinho NÃO permite escrever.
+                    if "schedule" in grants and not any(
+                        p.startswith("schedule_") for p in grants
+                    ):
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Sem permissão para editar este módulo",
+                        )
+                else:
+                    if user.role not in WRITE_ONLY_ROLES.get("schedule", set()):
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Você só pode consultar este módulo, não editar",
+                        )
+
+        elif module not in grants:
             raise HTTPException(
                 status_code=403,
-                detail="Você só pode consultar este módulo, não editar",
+                detail="Sem permissão para este módulo",
             )
+
+        # Usuário precisa trocar a senha temporária.
         if user.must_change_password and module != "auth":
             raise HTTPException(
                 status_code=403,
                 detail="Altere a senha temporária antes de continuar",
             )
+
         return user
 
     return check
