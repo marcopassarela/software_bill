@@ -4170,7 +4170,7 @@ def archive_schedule_week(
 # ROTAS
 # ============================================================
 
-
+@app.post("/schedule/route-slots")
 def create_route_slot(
     body: RouteSlotCreate,
     request: Request,
