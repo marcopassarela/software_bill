@@ -156,7 +156,13 @@ const PERMISSION_GROUPS: {
   label: string;
   children?: { value: string; label: string }[];
 }[] = [
-  { module: 'dashboard', label: 'Dashboard' },
+  {
+  module: 'dashboard',
+    label: 'Dashboard',
+    children: [
+      { value: 'dashboard_view', label: 'Visualizar' },
+    ],
+  },
   {
     module: 'schedule',
     label: 'Agendamento',
@@ -174,38 +180,142 @@ const PERMISSION_GROUPS: {
     ],
   },
   {
-    module: 'orders',
+  module: 'orders',
     label: 'Pedidos',
     children: [
-      { value: 'orders_create', label: 'Cadastrar / editar / excluir' },
-      { value: 'orders_list', label: 'Lista de pedidos' },
+      { value: 'orders_view', label: 'Visualizar' },
+      { value: 'orders_create', label: 'Criar' },
+      { value: 'orders_edit', label: 'Editar' },
+      { value: 'orders_delete', label: 'Excluir' },
     ],
   },
   {
-    module: 'production',
+  module: 'production',
     label: 'Produção',
     children: [
-      { value: 'production', label: 'Lançar produção (fábrica)' },
-      { value: 'assembly', label: 'Lançar montagem' },
+      { value: 'production_view', label: 'Visualizar produção' },
+      { value: 'production_create', label: 'Lançar produção' },
+      { value: 'production_edit', label: 'Editar produção' },
+      { value: 'production_delete', label: 'Excluir produção' },
+      { value: 'assembly_view', label: 'Visualizar montagem' },
+      { value: 'assembly_create', label: 'Lançar montagem' },
+      { value: 'assembly_edit', label: 'Editar montagem' },
+      { value: 'assembly_delete', label: 'Excluir montagem' },
     ],
   },
-  { module: 'vehicles', label: 'Veículos' },
-  { module: 'drivers', label: 'Motoristas' },
-  { module: 'maintenance', label: 'Manutenção' },
-  { module: 'fuel', label: 'Combustível' },
   {
-    module: 'stock',
+  module: 'vehicles',
+    label: 'Veículos',
+    children: [
+      { value: 'vehicles_view', label: 'Visualizar' },
+      { value: 'vehicles_create', label: 'Criar' },
+      { value: 'vehicles_edit', label: 'Editar' },
+      { value: 'vehicles_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'drivers',
+    label: 'Motoristas',
+    children: [
+      { value: 'drivers_view', label: 'Visualizar' },
+      { value: 'drivers_create', label: 'Criar' },
+      { value: 'drivers_edit', label: 'Editar' },
+      { value: 'drivers_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'maintenance',
+    label: 'Manutenção',
+    children: [
+      { value: 'maintenance_view', label: 'Visualizar' },
+      { value: 'maintenance_create', label: 'Criar' },
+      { value: 'maintenance_edit', label: 'Editar' },
+      { value: 'maintenance_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'fuel',
+    label: 'Combustível',
+    children: [
+      { value: 'fuel_view', label: 'Visualizar' },
+      { value: 'fuel_create', label: 'Criar' },
+      { value: 'fuel_edit', label: 'Editar' },
+      { value: 'fuel_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'stock',
     label: 'Estoque / movimentações',
     children: [
-      { value: 'stock', label: 'Estoque (produtos)' },
-      { value: 'entry', label: 'Entradas' },
-      { value: 'output', label: 'Saídas' },
-      { value: 'movements', label: 'Movimentações' },
+      { value: 'stock_view', label: 'Visualizar estoque' },
+      { value: 'stock_create', label: 'Cadastrar produto' },
+      { value: 'stock_edit', label: 'Editar produto' },
+      { value: 'stock_delete', label: 'Excluir produto' },
+
+      { value: 'entry_view', label: 'Visualizar entradas' },
+      { value: 'entry_create', label: 'Lançar entrada' },
+      { value: 'entry_edit', label: 'Editar entrada' },
+      { value: 'entry_delete', label: 'Excluir entrada' },
+
+      { value: 'output_view', label: 'Visualizar saídas' },
+      { value: 'output_create', label: 'Lançar saída' },
+      { value: 'output_edit', label: 'Editar saída' },
+      { value: 'output_delete', label: 'Excluir saída' },
+
+      { value: 'movements_view', label: 'Visualizar movimentações' },
+      { value: 'movements_create', label: 'Lançar movimentação' },
+      { value: 'movements_edit', label: 'Editar movimentação' },
+      { value: 'movements_delete', label: 'Excluir movimentação' },
     ],
   },
-  { module: 'reports', label: 'Relatórios' },
-  { module: 'settings', label: 'Configurações' },
-  { module: 'users', label: 'Usuários' },
+  {
+  module: 'reports',
+    label: 'Relatórios',
+    children: [
+      { value: 'reports_view', label: 'Visualizar' },
+      { value: 'reports_export', label: 'Exportar' },
+      { value: 'reports_print', label: 'Imprimir' },
+    ],
+  },
+  {
+  module: 'settings',
+    label: 'Configurações',
+    children: [
+      { value: 'settings_view', label: 'Visualizar' },
+      { value: 'settings_edit', label: 'Editar' },
+    ],
+  },
+  {
+  module: 'users',
+    label: 'Usuários',
+    children: [
+      { value: 'users_view', label: 'Visualizar' },
+      { value: 'users_create', label: 'Criar' },
+      { value: 'users_edit', label: 'Editar' },
+      { value: 'users_delete', label: 'Excluir' },
+      { value: 'users_permissions', label: 'Gerenciar permissões' },
+    ],
+  },
+{
+  module: 'customers',
+    label: 'Clientes',
+    children: [
+      { value: 'customers_view', label: 'Visualizar' },
+      { value: 'customers_create', label: 'Criar' },
+      { value: 'customers_edit', label: 'Editar' },
+      { value: 'customers_delete', label: 'Excluir' },
+    ],
+  },
+{
+  module: 'routes',
+    label: 'Rotas',
+    children: [
+      { value: 'routes_view', label: 'Visualizar' },
+      { value: 'routes_create', label: 'Criar' },
+      { value: 'routes_edit', label: 'Editar' },
+      { value: 'routes_delete', label: 'Excluir' },
+    ],
+  },
 ];
 
 /** Lista plana (compatível com expandPermissions / backend) */
