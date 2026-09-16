@@ -3971,8 +3971,9 @@ def create_schedule_week(
 ):
 
     require(
-        "schedule_week",
+        "schedule",
         write=True,
+        action="schedule_week",
     )(user)
 
     company = get_current_company(
