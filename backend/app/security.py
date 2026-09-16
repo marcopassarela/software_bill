@@ -130,7 +130,9 @@ def current_user(token: str | None = Depends(cookie), db: Session = Depends(get_
 
 
 def require(module: str, write: bool = False, action: str | None = None):
+
     def check(user: User = Depends(current_user)):
+
         has_custom_permissions = bool(user.permissions)
 
         if has_custom_permissions:
@@ -142,30 +144,46 @@ def require(module: str, write: bool = False, action: str | None = None):
         else:
             grants = set(MODULES.get(user.role, set()))
 
+        # Administrador / permissão total
         if "*" in grants:
             return user
 
+        # Usuário precisa trocar a senha temporária.
+        if user.must_change_password and module != "auth":
+            raise HTTPException(
+                status_code=403,
+                detail="Altere a senha temporária antes de continuar",
+            )
+
         if module == "orders":
-            if "orders" in grants:
-                pass
-            elif write:
-                if "orders_create" not in grants:
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Sem permissão para este módulo",
-                    )
-            else:
-                if (
-                    "orders_list" not in grants
-                    and "orders_create" not in grants
-                ):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Sem permissão para este módulo",
-                    )
+
+            if write:
+                if has_custom_permissions:
+                    if "orders_create" not in grants:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Sem permissão para esta ação",
+                        )
+                else:
+                    if "orders_create" not in grants:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Sem permissão para esta ação",
+                        )
+
+            elif (
+                "orders" not in grants
+                and "orders_list" not in grants
+                and "orders_create" not in grants
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Sem permissão para este módulo",
+                )
 
         elif module == "schedule":
 
+            # Primeiro: precisa ter acesso ao módulo Agendamento.
             if (
                 "schedule" not in grants
                 and not any(p.startswith("schedule_") for p in grants)
@@ -176,49 +194,54 @@ def require(module: str, write: bool = False, action: str | None = None):
                 )
 
             if write and action:
+
                 if has_custom_permissions:
+
                     if action not in grants:
                         raise HTTPException(
                             status_code=403,
                             detail="Sem permissão para esta ação da Agenda",
                         )
+
                 else:
-                    # Perfis padrão continuam respeitando a regra
-                    # tradicional de escrita da Agenda.
-                    if user.role not in WRITE_ONLY_ROLES.get("schedule", set()):
+                    if user.role not in WRITE_ONLY_ROLES.get(
+                        "schedule",
+                        set(),
+                    ):
                         raise HTTPException(
                             status_code=403,
                             detail="Você só pode consultar este módulo, não editar",
                         )
 
             elif write:
+
                 if has_custom_permissions:
-                    # "schedule" sozinho NÃO permite escrever.
-                    if "schedule" in grants and not any(
-                        p.startswith("schedule_") for p in grants
+
+                    if not any(
+                        p.startswith("schedule_")
+                        for p in grants
                     ):
                         raise HTTPException(
                             status_code=403,
                             detail="Sem permissão para editar este módulo",
                         )
+
                 else:
-                    if user.role not in WRITE_ONLY_ROLES.get("schedule", set()):
+
+                    if user.role not in WRITE_ONLY_ROLES.get(
+                        "schedule",
+                        set(),
+                    ):
                         raise HTTPException(
                             status_code=403,
                             detail="Você só pode consultar este módulo, não editar",
                         )
-
+                    
         elif module not in grants:
+
             raise HTTPException(
                 status_code=403,
                 detail="Sem permissão para este módulo",
-            )
-
-        # Usuário precisa trocar a senha temporária.
-        if user.must_change_password and module != "auth":
-            raise HTTPException(
-                status_code=403,
-                detail="Altere a senha temporária antes de continuar",
             )
 
         return user
