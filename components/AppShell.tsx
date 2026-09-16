@@ -3900,20 +3900,41 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
   // schedule_archive).
   const canEdit =
-    isMainAdmin || perms.includes('schedule_edit') || perms.includes('schedule');
-  const canWrite = canEdit;
+    isMainAdmin || perms.includes('schedule_edit');
+
   const canNewWeek =
-    isMainAdmin || perms.includes('schedule_week') || perms.includes('schedule_edit');
+    isMainAdmin || perms.includes('schedule_week');
+
   const canNewRoute =
-    isMainAdmin || perms.includes('schedule_route') || perms.includes('schedule_edit');
-  const canPrint =
-    isMainAdmin || perms.includes('schedule_print') || perms.includes('schedule_export');
+    isMainAdmin || perms.includes('schedule_route');
+
+  const canTransfer =
+    isMainAdmin || perms.includes('schedule_transfer');
+
+  const canExtra =
+    isMainAdmin || perms.includes('schedule_extra');
+
   const canDelete =
     isMainAdmin || perms.includes('schedule_delete');
+
   const canArchive =
     isMainAdmin || perms.includes('schedule_archive');
+
+  const canClose =
+    isMainAdmin || perms.includes('schedule_close');
+
+  const canPrint =
+    isMainAdmin || perms.includes('schedule_print');
+
   const canExport =
     isMainAdmin || perms.includes('schedule_export');
+
+  const canWrite =
+  canEdit ||
+  canTransfer ||
+  canExtra ||
+  canDelete ||
+  canClose;
 
     function forceReloadSchedule() {
       scheduleHashRef.current = '';
@@ -4940,6 +4961,9 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                         canWrite={canWrite}
                         canEdit={canEdit}
                         canDelete={canDelete}
+                        canTransfer={canTransfer}
+                        canExtra={canExtra}
+                        canClose={canClose}
                         canExport={canExport}
                         onEdit={() => setEditingSlot(slot)}
                         onDelete={() => deleteSlot(slot.id)}
@@ -5312,6 +5336,9 @@ function RouteSlotCard({
   canWrite,
   canEdit,
   canDelete,
+  canTransfer,
+  canExtra,
+  canClose,
   canExport,
   onEdit,
   onDelete,
@@ -5433,38 +5460,46 @@ function RouteSlotCard({
           </button>
           {canWrite && (
             <>
-              <button
-                type="button"
-                onClick={onToggleClosed}
-                disabled={!canEdit}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {isClosed ? 'Reabrir' : 'Fechar rota'}
-              </button>
-              <button
-                type="button"
-                onClick={onEdit}
-                disabled={!canEdit}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Editar
-              </button>
-              <button
-                type="button"
-                onClick={onTransferSlot}
-                disabled={!canEdit}
-                className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Transferir rota
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                disabled={!canDelete}
-                className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Excluir
-              </button>
+               {canClose && (
+                 <button
+                   type="button"
+                   onClick={onToggleClosed}
+                   disabled={!canClose}
+                   className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                 >
+                   {isClosed ? 'Reabrir' : 'Fechar rota'}
+                 </button>
+               )}
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  disabled={!canEdit}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Editar
+                </button>
+              )}
+              {canTransfer && (
+                <button
+                  type="button"
+                  onClick={onTransferSlot}
+                  disabled={!canTransfer}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Transferir rota
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={!canDelete}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Excluir
+                </button>
+              )}
               {!isClosed && !isFull && (
                 <button
                   type="button"
