@@ -4100,8 +4100,9 @@ def archive_schedule_week(
 ):
 
     require(
-        "schedule_archive",
+        "schedule",
         write=True,
+        action="schedule_archive",
     )(user)
 
     if user.role != Role.ADMIN:
@@ -4178,8 +4179,9 @@ def create_route_slot(
 ):
 
     require(
-        "schedule_route",
+        "schedule",
         write=True,
+        action="schedule_route",
     )(user)
 
     company = get_current_company(
@@ -4293,8 +4295,9 @@ def update_route_slot(
 ):
 
     require(
-        "schedule_edit_route",
+        "schedule",
         write=True,
+        action="schedule_close",
     )(user)
 
     company = get_current_company(
@@ -4590,8 +4593,9 @@ def update_schedule_entry(
 ):
 
     require(
-        "schedule_edit",
+        "schedule",
         write=True,
+        action="schedule_edit",
     )(user)
 
     company = get_current_company(
@@ -4671,8 +4675,9 @@ def delete_schedule_entry(
 ):
 
     require(
-        "schedule_delete",
+        "schedule",
         write=True,
+        action="schedule_delete",
     )(user)
 
     company = get_current_company(
@@ -4927,8 +4932,9 @@ def transfer_schedule_entry(
 ):
 
     require(
-        "schedule_transfer",
+        "schedule",
         write=True,
+        action="schedule_transfer",
     )(user)
 
     company = get_current_company(
@@ -5073,8 +5079,9 @@ def transfer_route_slot(
 ):
 
     require(
-        "schedule_transfer_route",
+        "schedule",
         write=True,
+        action="schedule_transfer",
     )(user)
 
     company = get_current_company(
@@ -5157,8 +5164,9 @@ def create_schedule_extra(
 ):
 
     require(
-        "schedule_extra",
+        "schedule",
         write=True,
+        action="schedule_extra",
     )(user)
 
     company = get_current_company(
@@ -5218,8 +5226,9 @@ def delete_schedule_extra(
 ):
 
     require(
-        "schedule_extra",
+        "schedule",
         write=True,
+        action="schedule_extra",
     )(user)
 
     company = get_current_company(
