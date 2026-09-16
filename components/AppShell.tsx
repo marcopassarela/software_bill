@@ -167,7 +167,10 @@ const PERMISSION_GROUPS: {
       { value: 'schedule_print', label: 'Imprimir rota do dia' },
       { value: 'schedule_export', label: 'Exportar TXT / PDF da rota' },
       { value: 'schedule_delete', label: 'Excluir cliente / rota / semana' },
+      { value: 'schedule_transfer', label: 'Transferir' },
+      { value: 'schedule_extra', label: 'Extra' },
       { value: 'schedule_archive', label: 'Arquivar semana (backup)' },
+      { value: 'schedule_close', label: 'Fechar / reabrir rota' },
     ],
   },
   {
@@ -4618,17 +4621,25 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           <div className="flex flex-wrap gap-2">
             {canWrite && (
               <>
-                <button onClick={() => setShowNewWeek(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
-                  + Nova semana
-                </button>
-                {selectedWeek && selectedWeek.status === 'Ativa' && (
-                  <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90">
-                    + Nova rota
+                {canNewWeek && (
+                  <button
+                    onClick={() => setShowNewWeek(true)}
+                    className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    + Nova semana
                   </button>
                 )}
+                {canNewRoute && selectedWeek && selectedWeek.status === 'Ativa' && (
+                <button
+                  onClick={() => setShowNewSlot(true)}
+                  className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  + Nova rota
+                </button>
+              )}
               </>
             )}
-            {selectedWeek && dates.length > 0 && canExport && (
+            {selectedWeek && dates.length > 0 && canPrint && (
               <button
                 type="button"
                 onClick={openPrintDay}
@@ -4915,7 +4926,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           {dates.length === 0 ? (
             <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm">
               Nenhuma rota cadastrada nesta semana.
-              {canWrite && (
+              {canNewRoute && (
                 <div className="mt-3">
                   <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
                     Criar primeira rota
@@ -5370,7 +5381,7 @@ function RouteSlotCard({
   const vehiclePlate = slot.vehicle?.plate || slot.route_label || '';
 
   function handleDragStart(e: React.DragEvent, entryId: number) {
-    if (!canWrite || !canEdit) return;
+    if (!canEdit) return;
     setDragId(entryId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(entryId));
@@ -5450,14 +5461,16 @@ function RouteSlotCard({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={!canExport}
-            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Exportar Rota
-          </button>
+          {canExport && (
+              <button
+                type="button"
+                onClick={onExport}
+                disabled={!canExport}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Exportar Rota
+              </button>
+            )}
           {canWrite && (
             <>
                {canClose && (
@@ -5500,7 +5513,7 @@ function RouteSlotCard({
                   Excluir
                 </button>
               )}
-              {!isClosed && !isFull && (
+              {canEdit && !isClosed && !isFull && (
                 <button
                   type="button"
                   onClick={onAddEntry}
@@ -5525,7 +5538,9 @@ function RouteSlotCard({
               <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
               <th className="min-w-[180px] px-3 py-2">Observação</th>
-              {canWrite && <th className="w-52 px-3 py-2">Ações</th>}
+              {(canEdit || canTransfer || canExtra || canDelete) && (
+                <th className="w-52 px-3 py-2">Ações</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -5539,7 +5554,7 @@ function RouteSlotCard({
               return (
                 <React.Fragment key={entry.id}>
                   <tr
-                    draggable={!!canWrite && !!canEdit}
+                    draggable={!!canEdit}
                     onDragStart={(e) => handleDragStart(e, entry.id)}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, entry.id)}
@@ -5552,7 +5567,7 @@ function RouteSlotCard({
                         : entry.pago
                         ? 'bg-green-50/50'
                         : 'hover:bg-slate-50/50'
-                    } ${canWrite && canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
                   >
                     <td className="px-3 py-2">
                       <div className="flex flex-col items-center gap-1">
@@ -5570,7 +5585,7 @@ function RouteSlotCard({
                             {slots} vagas
                           </span>
                         )}
-                        {canWrite && (
+                        {canEdit && (
                           <div className="flex gap-0.5">
                             <button
                               type="button"
@@ -5665,33 +5680,40 @@ function RouteSlotCard({
                         {entry.observation || '—'}
                       </div>
                     </td>
-                    {canWrite && (
+                    {(canEdit || canTransfer || canExtra || canDelete) && (
                       <td className="px-3 py-2">
                         <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => onEditEntry(entry)}
-                            disabled={!canEdit}
-                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-40"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onTransferEntry(entry)}
-                            disabled={!canEdit}
-                            className="rounded bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
-                          >
-                            Transferir
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onAddExtra(entry.id)}
-                            disabled={!canEdit}
-                            className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-40"
-                          >
-                            + Extra
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onEditEntry(entry)}
+                              disabled={!canEdit}
+                              className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-40"
+                            >
+                              Editar
+                            </button>
+                          )}
+                          {canTransfer && (
+                            <button
+                              type="button"
+                              onClick={() => onTransferEntry(entry)}
+                              disabled={!canTransfer}
+                              className="rounded bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                            >
+                              Transferir
+                            </button>
+                          )}
+                          {canExtra && (
+                            <button
+                              type="button"
+                              onClick={() => onAddExtra(entry.id)}
+                              disabled={!canExtra}
+                              className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+                            >
+                              + Extra
+                            </button>
+                          )}
+                          {canDelete && (
                           <button
                             type="button"
                             onClick={() => onDeleteEntry(entry.id)}
@@ -5700,6 +5722,7 @@ function RouteSlotCard({
                           >
                             Remover
                           </button>
+                        )}
                         </div>
                       </td>
                     )}
@@ -5716,17 +5739,17 @@ function RouteSlotCard({
                           </span>
                         )}
                       </td>
-                      {canWrite && (
-                        <td className="px-3 py-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onDeleteExtra(extra.id)}
-                            className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100"
-                          >
-                            Remover
-                          </button>
-                        </td>
-                      )}
+                      {canExtra && (
+                      <td className="px-3 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onDeleteExtra(extra.id)}
+                          className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100"
+                        >
+                          Remover
+                        </button>
+                      </td>
+                    )}
                     </tr>
                   ))}
                 </React.Fragment>
