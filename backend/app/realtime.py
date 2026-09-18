@@ -259,9 +259,9 @@ async def subscribe_events(company_id: int) -> AsyncIterator[Optional[dict[str, 
     import redis.asyncio as _redis_async
 
     client = _redis_async.from_url(
-        REDIS_URL,
-        socket_timeout=30,
-        socket_connect_timeout=5,
+    REDIS_URL,
+    socket_timeout=90,
+    socket_connect_timeout=5,
     )
     pubsub = client.pubsub()
     await pubsub.subscribe(_channel(company_id))
@@ -269,7 +269,7 @@ async def subscribe_events(company_id: int) -> AsyncIterator[Optional[dict[str, 
         while True:
             msg = await pubsub.get_message(
                 ignore_subscribe_messages=True,
-                timeout=25.0,
+                timeout=20.0,
             )
             if msg is None:
                 yield None  # keepalive
