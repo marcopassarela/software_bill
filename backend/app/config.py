@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/gestao_logistica"
     auth_secret: str = "development-only-change-me"  # NUNCA use isso em produção
     cookie_secure: bool = False
-    access_token_minutes: int = 480
+    access_token_minutes: int = 1440
     cors_origins: str = "http://localhost:3000"
 
 @lru_cache

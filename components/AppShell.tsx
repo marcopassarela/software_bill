@@ -891,12 +891,15 @@ export default function AppShell({
     setEditingMovement(null);
   }, [page]);
 
-  // SSE global: qualquer usuário logado, qualquer tela — só atualiza se houve mudança
+  // SSE: só atualiza quando chega company_changed (mudança real).
+  // Reconexão NÃO recarrega dados (evita spam de /schedule/weeks).
   useEffect(() => {
     if (!user) return;
+
     let closed = false;
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
 
     const streamUrl = () => {
       const base = (
@@ -907,58 +910,40 @@ export default function AppShell({
       return `${base}/events/stream`;
     };
 
-    let hasConnectedOnce = false;
-
     const connect = () => {
       if (closed) return;
-    
+
       try {
         es = new EventSource(streamUrl(), { withCredentials: true });
-      
-        es.addEventListener('ready', () => {
-          console.log('[SSE] READY', new Date().toISOString());
 
-          if (!hasConnectedOnce) {
-            hasConnectedOnce = true;
-            return;
-          }
-        
-          window.dispatchEvent(
-            new CustomEvent('company-data-changed', {
-              detail: { module: '*' },
-            })
-          );
+        es.addEventListener('ready', () => {
+          // Conectou (ou reconectou). Não recarrega dados.
+          attempt = 0;
         });
-      
+
         es.addEventListener('company_changed', (ev) => {
           let mod = '*';
-        
           try {
-            const data = JSON.parse(
-              (ev as MessageEvent).data || '{}'
-            );
-          
+            const data = JSON.parse((ev as MessageEvent).data || '{}');
             mod = data.module || '*';
           } catch {
-            // ignore
+            /* ignore */
           }
-        
           window.dispatchEvent(
-            new CustomEvent('company-data-changed', {
-              detail: { module: mod },
-            })
+            new CustomEvent('company-data-changed', { detail: { module: mod } })
           );
         });
-      
+
         es.onerror = () => {
-          console.log('[SSE] ERROR/CLOSED', new Date().toISOString());
-                
+          // EventSource dispara onerror ao fechar; não é “erro de app”
           es?.close();
           es = null;
-                
-          if (!closed) {
-            retry = setTimeout(connect, 5000);
-          }
+          if (closed) return;
+
+          attempt += 1;
+          // backoff: 3s, 6s, 12s… máx 30s
+          const delay = Math.min(30000, 3000 * Math.pow(2, Math.min(attempt, 3)));
+          retry = setTimeout(connect, delay);
         };
       } catch {
         if (!closed) {
@@ -966,9 +951,11 @@ export default function AppShell({
         }
       }
     };
+
     connect();
 
     const onVis = () => {
+      // Só reconecta se o stream morreu; não força reload de weeks
       if (document.visibilityState === 'visible' && !es) connect();
     };
     document.addEventListener('visibilitychange', onVis);

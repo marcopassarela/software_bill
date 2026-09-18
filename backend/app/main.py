@@ -971,6 +971,19 @@ def login(
         )
     }
 
+def set_session_cookie(response: Response, user: User) -> str:
+    access = token_for(user)
+    response.set_cookie(
+        "gl_session",
+        access,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="none" if settings.cookie_secure else "lax",
+        max_age=settings.access_token_minutes * 60,
+        path="/",
+    )
+    return access
+
 
 # ============================================================
 # LOGOUT
