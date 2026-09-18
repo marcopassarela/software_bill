@@ -907,37 +907,63 @@ export default function AppShell({
       return `${base}/events/stream`;
     };
 
+    let hasConnectedOnce = false;
+
     const connect = () => {
       if (closed) return;
+    
       try {
         es = new EventSource(streamUrl(), { withCredentials: true });
-        // A Vercel pode encerrar uma função SSE por limite de duração ou
-        // reinício da instância. Ao conectar novamente, recarregamos uma vez
-        // para recuperar qualquer alteração ocorrida durante a desconexão.
+      
         es.addEventListener('ready', () => {
+          // Na primeira conexão, cada módulo já faz seu carregamento inicial.
+          // Portanto, não precisamos disparar um reload global.
+          if (!hasConnectedOnce) {
+            hasConnectedOnce = true;
+            return;
+          }
+        
+          // Nas reconexões, sincronizamos uma vez para recuperar
+          // alterações que possam ter ocorrido durante a desconexão.
           window.dispatchEvent(
-            new CustomEvent('company-data-changed', { detail: { module: '*' } })
+            new CustomEvent('company-data-changed', {
+              detail: { module: '*' },
+            })
           );
         });
+      
         es.addEventListener('company_changed', (ev) => {
           let mod = '*';
+        
           try {
-            const data = JSON.parse((ev as MessageEvent).data || '{}');
+            const data = JSON.parse(
+              (ev as MessageEvent).data || '{}'
+            );
+          
             mod = data.module || '*';
           } catch {
-            /* ignore */
+            // ignore
           }
+        
           window.dispatchEvent(
-            new CustomEvent('company-data-changed', { detail: { module: mod } })
+            new CustomEvent('company-data-changed', {
+              detail: { module: mod },
+            })
           );
         });
+      
         es.onerror = () => {
           es?.close();
           es = null;
-          if (!closed) retry = setTimeout(connect, 5000);
+        
+          if (!closed) {
+            retry = setTimeout(connect, 5000);
+          }
         };
       } catch {
-        if (!closed) retry = setTimeout(connect, 8000);
+        if (!closed) {
+          retry = setTimeout(connect, 8000);
+        }
       }
     };
     connect();
