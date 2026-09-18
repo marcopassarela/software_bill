@@ -916,15 +916,13 @@ export default function AppShell({
         es = new EventSource(streamUrl(), { withCredentials: true });
       
         es.addEventListener('ready', () => {
-          // Na primeira conexão, cada módulo já faz seu carregamento inicial.
-          // Portanto, não precisamos disparar um reload global.
+          console.log('[SSE] READY', new Date().toISOString());
+
           if (!hasConnectedOnce) {
             hasConnectedOnce = true;
             return;
           }
         
-          // Nas reconexões, sincronizamos uma vez para recuperar
-          // alterações que possam ter ocorrido durante a desconexão.
           window.dispatchEvent(
             new CustomEvent('company-data-changed', {
               detail: { module: '*' },
@@ -953,9 +951,11 @@ export default function AppShell({
         });
       
         es.onerror = () => {
+          console.log('[SSE] ERROR/CLOSED', new Date().toISOString());
+                
           es?.close();
           es = null;
-        
+                
           if (!closed) {
             retry = setTimeout(connect, 5000);
           }
