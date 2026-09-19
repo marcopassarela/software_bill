@@ -1,14 +1,28 @@
+# ------------------------------------------------------------------
+# DEPENDÊNCIAS DE PRODUÇÃO (função serverless da Vercel)
+# ------------------------------------------------------------------
+# A Vercel instala ESTE arquivo dentro do bundle da função Python. Tudo
+# que estiver aqui vira tamanho de deployment, e cada deployment ocupa
+# espaço na cota de Functions Storage (era isso que estava em 18,8 GB
+# de 10 GB permitidos).
+#
+# Foram retirados daqui, de propósito:
+#   - uvicorn[standard]: servidor local. Na Vercel quem executa o ASGI é
+#     a plataforma. O extra "standard" ainda puxava uvloop, httptools e
+#     watchfiles, que são binários grandes e completamente inúteis aqui.
+#   - alembic: só roda migration na sua máquina (alembic upgrade head).
+#   - pytest / httpx: só teste.
+#   - redis: só é necessário com REALTIME_SSE_ENABLED=1, que não deve ser
+#     ligado em serverless (ver backend/app/realtime.py).
+#
+# Para desenvolver localmente e rodar migrations, use:
+#     pip install -r backend/requirements.txt
 fastapi==0.115.6
-uvicorn[standard]==0.34.0
 sqlalchemy==2.0.36
 psycopg[binary]==3.2.3
-alembic==1.14.0
 pydantic==2.10.3
 pydantic-settings==2.7.0
 pwdlib[argon2]==0.2.1
 PyJWT==2.10.1
 slowapi==0.1.9
 email-validator==2.2.0
-redis==5.2.1
-pytest==8.3.4
-httpx==0.28.1

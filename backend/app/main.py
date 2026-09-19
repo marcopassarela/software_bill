@@ -257,10 +257,33 @@ def update_maintenance_status(
 
 @app.on_event("startup")
 def seed():
-    Base.metadata.create_all(engine)
+    """
+    ATENÇÃO — isto roda a CADA COLD START, não uma vez por dia.
 
-    with Session(engine) as db:
-        update_maintenance_status(db)
+    Em serverless, cada instância nova da função executa este bloco. Antes
+    ele fazia um create_all (que consulta o catálogo inteiro do Postgres
+    para descobrir quais tabelas faltam) mais um UPDATE de manutenção,
+    tudo em toda inicialização. Com o SSE antigo reconectando de minuto em
+    minuto por aba aberta, isso virava um fluxo constante de consultas no
+    Neon e de CPU na Vercel sem nenhum usuário pedindo nada.
+
+    Em produção o schema é gerenciado por migration (alembic upgrade head),
+    então create_all é redundante. Ele continua disponível para
+    desenvolvimento local definindo DB_AUTO_CREATE=1.
+
+    O status de manutenção passou a ser recalculado sob demanda, quando
+    alguém abre o módulo, em vez de na inicialização.
+    """
+    if os.environ.get("DB_AUTO_CREATE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        Base.metadata.create_all(engine)
+
+        with Session(engine) as db:
+            update_maintenance_status(db)
 
 
 # ============================================================
@@ -3849,9 +3872,53 @@ def debug_realtime(
     return info
 
 
+@app.get("/events/version")
+def events_version(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Substituto do SSE. Uma única leitura por chave primária na tabela
+    schedule_versions, que o listener de before_commit (models.py)
+    incrementa a cada escrita em qualquer módulo da empresa.
+
+    O frontend chama isto a cada ~25s (só com a aba visível) e só busca o
+    payload pesado quando o número muda. É a rota mais barata do sistema:
+    não serializa nada e toca uma linha só.
+    """
+    company = get_current_company(user, db)
+    row = db.get(ScheduleVersion, int(company.id))
+    return {"version": int(row.version) if row else 0}
+
+
 @app.get("/events/stream")
 async def events_stream(request: Request):
-    """SSE global: qualquer mudança na empresa. Zero query no Neon enquanto idle."""
+    """
+    DESATIVADO EM SERVERLESS.
+
+    Esta rota mantinha uma conexão HTTP aberta por aba. Na Vercel isso
+    segura uma instância de função viva pelo tempo de parede inteiro,
+    faturado em Active CPU e Provisioned Memory GB-Hrs — foi o que
+    estourou a cota do plano grátis. Substituída por GET /events/version.
+
+    Responder 410 na hora (em vez de simplesmente remover a rota) é
+    intencional: navegadores com o bundle JS antigo em cache continuam
+    tentando reconectar aqui. Assim cada tentativa custa ~100ms de função
+    em vez de 60 segundos, até o cliente atualizar a página.
+
+    Para religar o tempo real por SSE (só em servidor persistente, tipo
+    Render/Oracle/VPS com uvicorn), defina REALTIME_SSE_ENABLED=1.
+    """
+    from .realtime import SSE_ENABLED
+
+    if not SSE_ENABLED:
+        return JSONResponse(
+            status_code=410,
+            content={
+                "detail": "SSE desativado neste ambiente. Use GET /events/version.",
+            },
+        )
+
     import jwt as _jwt
     from .security import get_settings
 

@@ -891,80 +891,145 @@ export default function AppShell({
     setEditingMovement(null);
   }, [page]);
 
-  // SSE: só atualiza quando chega company_changed (mudança real).
-  // Reconexão NÃO recarrega dados (evita spam de /schedule/weeks).
+  // ------------------------------------------------------------------
+  // Tempo real barato (substitui o SSE que estourava a cota da Vercel)
+  // ------------------------------------------------------------------
+  // O que havia aqui antes: um EventSource apontando para /events/stream,
+  // ou seja, uma conexão HTTP aberta enquanto a aba existisse. Em função
+  // serverless, conexão aberta = instância viva, faturada por tempo de
+  // parede (Active CPU + Provisioned Memory GB-Hrs). Como o maxDuration
+  // era 60s, a conexão caía e o navegador reconectava, então cada aba
+  // aberta segurava uma função praticamente 100% do tempo, e ainda pagava
+  // um cold start do FastAPI a cada minuto.
+  //
+  // Agora: GET /events/version, que lê uma única linha por chave primária
+  // e responde um número. Só busca o payload de verdade quando o número
+  // muda. Três travas para o consumo não voltar a escalar:
+  //   1. pausa enquanto a aba está oculta (aba em segundo plano = 0 req);
+  //   2. hiberna após 15 min sem interação do usuário (aba esquecida
+  //      aberta a noite toda não gera nada) e acorda no primeiro clique,
+  //      tecla, toque ou scroll;
+  //   3. backoff progressivo em erro, até 2 min, em vez de insistir.
   useEffect(() => {
     if (!user) return;
 
-    let closed = false;
-    let es: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
+    const POLL_MS = 25_000; // intervalo normal com a aba em foco
+    const IDLE_AFTER_MS = 15 * 60_000; // hiberna após 15 min parado
+    const MAX_BACKOFF_MS = 120_000;
 
-    const streamUrl = () => {
-      const base = (
-        process.env.NEXT_PUBLIC_API_BROWSER ||
-        process.env.NEXT_PUBLIC_API_URL ||
-        'http://localhost:8000'
-      ).replace(/\/$/, '');
-      return `${base}/events/stream`;
-    };
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    let lastVersion: number | null = null;
+    let failures = 0;
+    let lastActivity = Date.now();
 
-    const connect = () => {
-      if (closed) return;
-
-      try {
-        es = new EventSource(streamUrl(), { withCredentials: true });
-
-        es.addEventListener('ready', () => {
-          // Conectou (ou reconectou). Não recarrega dados.
-          attempt = 0;
-        });
-
-        es.addEventListener('company_changed', (ev) => {
-          let mod = '*';
-          try {
-            const data = JSON.parse((ev as MessageEvent).data || '{}');
-            mod = data.module || '*';
-          } catch {
-            /* ignore */
-          }
-          window.dispatchEvent(
-            new CustomEvent('company-data-changed', { detail: { module: mod } })
-          );
-        });
-
-        es.onerror = () => {
-          // EventSource dispara onerror ao fechar; não é “erro de app”
-          es?.close();
-          es = null;
-          if (closed) return;
-
-          attempt += 1;
-          // backoff: 3s, 6s, 12s… máx 30s
-          const delay = Math.min(30000, 3000 * Math.pow(2, Math.min(attempt, 3)));
-          retry = setTimeout(connect, delay);
-        };
-      } catch {
-        if (!closed) {
-          retry = setTimeout(connect, 8000);
-        }
+    const clear = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
       }
     };
 
-    connect();
+    const isIdle = () => Date.now() - lastActivity > IDLE_AFTER_MS;
 
-    const onVis = () => {
-      // Só reconecta se o stream morreu; não força reload de weeks
-      if (document.visibilityState === 'visible' && !es) connect();
+    const schedule = (ms: number) => {
+      clear();
+      if (stopped) return;
+      timer = setTimeout(tick, ms);
     };
-    document.addEventListener('visibilitychange', onVis);
+
+    const tick = async () => {
+      if (stopped) return;
+
+      // Aba escondida ou usuário parado há muito tempo: não gasta função.
+      // Reagenda só para reavaliar daqui a pouco, sem fazer requisição.
+      if (document.visibilityState !== 'visible' || isIdle()) {
+        schedule(POLL_MS);
+        return;
+      }
+
+      if (inFlight) {
+        schedule(POLL_MS);
+        return;
+      }
+
+      inFlight = true;
+      try {
+        const res = await request('/events/version');
+        const version = Number(res?.version ?? 0);
+        failures = 0;
+
+        if (lastVersion === null) {
+          // Primeira leitura: só memoriza, não recarrega nada.
+          lastVersion = version;
+        } else if (version !== lastVersion) {
+          lastVersion = version;
+          // O contador é global da empresa, então não dá para saber qual
+          // módulo mudou: dispara '*', que o handler abaixo já trata como
+          // "recarregue a página aberta". Só acontece quando houve escrita
+          // de verdade, então não é um recarregamento à toa.
+          window.dispatchEvent(
+            new CustomEvent('company-data-changed', { detail: { module: '*' } })
+          );
+        }
+
+        schedule(POLL_MS);
+      } catch (err: any) {
+        // 401/403 → sessão caiu; o helper request() já avisa a aplicação.
+        // Não adianta continuar batendo no endpoint.
+        if (err?.status === 401 || err?.status === 403) {
+          stopped = true;
+          clear();
+          return;
+        }
+        failures += 1;
+        schedule(
+          Math.min(MAX_BACKOFF_MS, POLL_MS * Math.pow(2, Math.min(failures, 3)))
+        );
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const markActive = () => {
+      const wasIdle = isIdle();
+      lastActivity = Date.now();
+      // Estava hibernando e o usuário voltou: consulta na hora, para ele
+      // não ficar olhando dado velho até o próximo ciclo.
+      if (wasIdle && document.visibilityState === 'visible') schedule(0);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        lastActivity = Date.now();
+        schedule(0); // voltou para a aba: atualiza imediatamente
+      } else {
+        clear();
+        schedule(POLL_MS);
+      }
+    };
+
+    const activityEvents: (keyof DocumentEventMap)[] = [
+      'click',
+      'keydown',
+      'pointerdown',
+      'scroll',
+    ];
+    activityEvents.forEach((ev) =>
+      document.addEventListener(ev, markActive, { passive: true })
+    );
+    document.addEventListener('visibilitychange', onVisibility);
+
+    schedule(POLL_MS);
 
     return () => {
-      closed = true;
-      if (retry) clearTimeout(retry);
-      es?.close();
-      document.removeEventListener('visibilitychange', onVis);
+      stopped = true;
+      clear();
+      activityEvents.forEach((ev) =>
+        document.removeEventListener(ev, markActive)
+      );
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [user?.id]);
 

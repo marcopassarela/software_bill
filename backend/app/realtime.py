@@ -56,12 +56,52 @@ logger = logging.getLogger("realtime")
 # KV_URL, ou com outro prefixo dependendo de como foi conectado. Checamos
 # os nomes mais comuns nessa ordem, e uso o primeiro que existir.
 _ENV_CANDIDATES = ("REDIS_URL", "UPSTASH_REDIS_URL", "KV_URL", "STORAGE_URL")
-REDIS_URL = next((os.environ.get(name) for name in _ENV_CANDIDATES if os.environ.get(name)), None)
-_REDIS_URL_SOURCE = next((name for name in _ENV_CANDIDATES if os.environ.get(name)), None)
+
+# ------------------------------------------------------------------
+# DESLIGADO POR PADRÃO (mudança de arquitetura — leia antes de religar)
+# ------------------------------------------------------------------
+# O tempo real por SSE (GET /events/stream) mantinha uma conexão HTTP
+# aberta por aba de navegador. Em serverless (Vercel), uma conexão HTTP
+# aberta = uma instância da função viva, faturada por tempo de parede em
+# Active CPU e Provisioned Memory GB-Hrs. Com maxDuration=60 a conexão
+# morria a cada 60s e o navegador reconectava, então cada aba aberta
+# segurava uma função ~100% do tempo — e cada reconexão ainda pagava um
+# cold start do FastAPI inteiro mais duas consultas no Neon (decode do
+# JWT + get_current_company).
+#
+# O substituto é o poll barato em GET /events/version (uma leitura por
+# chave primária, ~100ms de função a cada 25s, só com a aba visível).
+#
+# Este módulo só volta a ligar se você definir REALTIME_SSE_ENABLED=1.
+# Faça isso apenas se o backend estiver rodando num servidor persistente
+# (Render, Oracle Cloud, VPS com uvicorn), NUNCA em função serverless.
+SSE_ENABLED = os.environ.get("REALTIME_SSE_ENABLED", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+if SSE_ENABLED:
+    REDIS_URL = next(
+        (os.environ.get(name) for name in _ENV_CANDIDATES if os.environ.get(name)),
+        None,
+    )
+    _REDIS_URL_SOURCE = next(
+        (name for name in _ENV_CANDIDATES if os.environ.get(name)), None
+    )
+else:
+    REDIS_URL = None
+    _REDIS_URL_SOURCE = None
+    logger.info(
+        "[realtime] SSE desligado (REALTIME_SSE_ENABLED não definido). "
+        "O frontend usa GET /events/version. Nenhuma conexão com Redis "
+        "será aberta."
+    )
 
 if REDIS_URL:
     logger.info("[realtime] usando Redis via env var %s", _REDIS_URL_SOURCE)
-else:
+elif SSE_ENABLED:
     logger.warning(
         "[realtime] nenhuma das env vars %s está configurada — caindo para "
         "o hub em memória (não sincroniza entre instâncias serverless).",
@@ -168,6 +208,12 @@ def notify_company_changed(
     conectados dessa empresa de que algo mudou em `module`. Publica no
     Redis quando configurado; senão usa o hub em memória local."""
     if not company_id:
+        return
+    # Com SSE desligado não existe ninguém escutando: o frontend descobre
+    # a mudança pelo contador em GET /events/version, que o próprio commit
+    # já incrementou (ver models.py). Sair aqui evita gastar CPU e uma ida
+    # à rede em toda escrita do sistema.
+    if not SSE_ENABLED:
         return
     try:
         if _redis_sync_client is not None:

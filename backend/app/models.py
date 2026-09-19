@@ -1433,17 +1433,31 @@ _SCHEDULE_WATCHED_MODELS = (
 @event.listens_for(_OrmSession, "before_commit")
 def _bump_schedule_version_on_commit(session: _OrmSession) -> None:
     """
-    Antes de cada commit, verifica se algum objeto de agendamento foi
+    Antes de cada commit, verifica se algum objeto observado foi
     criado/alterado/removido nesta sessão e, se sim, incrementa (ou cria)
     o contador ScheduleVersion da(s) empresa(s) afetada(s), dentro da
     mesma transação. Assim nenhum endpoint precisa lembrar de "avisar"
     manualmente — qualquer escrita nessas tabelas já atualiza a versão.
+
+    IMPORTANTE (mudança de arquitetura): este contador deixou de ser
+    exclusivo da agenda. Ele agora é o "relógio de mudanças" da empresa
+    inteira e é bumpado também para qualquer modelo listado em
+    MODEL_TO_MODULE (veículos, motoristas, rotas, manutenção,
+    combustível, estoque, clientes, configurações, usuários, pedidos,
+    auditoria). O motivo é que o tempo real deixou de usar SSE
+    (conexão HTTP aberta o tempo todo, que na Vercel mantém uma
+    instância de função viva e queima Active CPU + Provisioned Memory)
+    e passou a usar um poll muito barato em GET /events/version, que lê
+    só esta linha por chave primária.
     """
 
     touched_company_ids: set[int] = set()
 
     for obj in list(session.new) + list(session.dirty) + list(session.deleted):
-        if isinstance(obj, _SCHEDULE_WATCHED_MODELS):
+        watched = isinstance(obj, _SCHEDULE_WATCHED_MODELS) or (
+            type(obj) in MODEL_TO_MODULE
+        )
+        if watched:
             company_id = getattr(obj, "company_id", None)
             if company_id is not None:
                 touched_company_ids.add(company_id)
