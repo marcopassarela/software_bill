@@ -3985,14 +3985,15 @@ def schedule_rev(
     return {"hash": schedule_data_version(db, company.id)}
 
 
-@app.get("/schedule/weeks")
-def list_schedule_weeks(
-    status: str | None = None,
-    include_archived: bool = False,
-    client_hash: str | None = None,
+
+@app.post("/schedule/weeks")
+def create_schedule_week(
+    body: ScheduleWeekCreate,
+    request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+
 
     require("schedule")(user)
 
