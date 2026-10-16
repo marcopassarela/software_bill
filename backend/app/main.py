@@ -3986,24 +3986,21 @@ def schedule_rev(
 
 
 
-@app.post("/schedule/weeks")
-def create_schedule_week(
-    body: ScheduleWeekCreate,
-    request: Request,
+@app.get("/schedule/weeks")
+def list_schedule_weeks(
+    status: str | None = None,
+    include_archived: bool = False,
+    client_hash: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
-
     require("schedule")(user)
 
-    company = get_current_company(
-        user,
-        db,
-    )
+    company = get_current_company(user, db)
 
-    # Hash barato: se o cliente manda o mesmo, não serializa a agenda inteira
+    # Evita serializar a agenda inteira quando os dados não mudaram
     version = schedule_data_version(db, company.id)
+
     if client_hash and client_hash == version:
         return {
             "unchanged": True,
@@ -4012,55 +4009,46 @@ def create_schedule_week(
 
     q = (
         select(ScheduleWeek)
-        .where(
-            ScheduleWeek.company_id
-            == company.id
-        )
-        .order_by(
-            ScheduleWeek.start_date
-        )
+        .where(ScheduleWeek.company_id == company.id)
+        .order_by(ScheduleWeek.start_date)
     )
 
-    # status=ativa OU include_archived=false → só semanas ativas
-    if (status or "").strip().lower() in ("ativa", "ativas", "active"):
+    # Retorna apenas semanas ativas quando solicitado
+    if (status or "").strip().lower() in (
+        "ativa",
+        "ativas",
+        "active",
+    ):
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
     elif not include_archived:
         q = q.where(ScheduleWeek.status == WeekStatus.ATIVA)
 
-    weeks = db.scalars(
-        q
-    ).all()
+    weeks = db.scalars(q).all()
 
     return {
         "unchanged": False,
         "hash": version,
         "weeks": [
-            serialize_week(
-                w,
-                db,
-            )
+            serialize_week(w, db)
             for w in weeks
         ],
     }
 
 
+@app.post("/schedule/weeks")
 def create_schedule_week(
     body: ScheduleWeekCreate,
     request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     require(
         "schedule",
         write=True,
         action="schedule_week",
     )(user)
 
-    company = get_current_company(
-        user,
-        db,
-    )
+    company = get_current_company(user, db)
 
     w = ScheduleWeek(
         company_id=company.id,
@@ -4084,10 +4072,7 @@ def create_schedule_week(
     db.commit()
     notify_schedule_changed(company.id)
 
-    return serialize_week(
-        w,
-        db,
-    )
+    return serialize_week(w, db)
 
 
 @app.delete("/schedule/weeks/{week_id}")
