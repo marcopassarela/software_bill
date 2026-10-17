@@ -2,7 +2,7 @@ const { execSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const version = String(process.env.GITHUB_REF_NAME || '').replace(/^v/, '');
+const version = String(process.env.VERSION || process.env.GITHUB_REF_NAME || '').replace(/^v/, '');
 let notes = '';
 try {
   notes = execSync('git log -1 --pretty=%B').toString().trim();

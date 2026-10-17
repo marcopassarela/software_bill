@@ -2,33 +2,59 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'backend/**'
+      - 'api/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      - name: Calcular próxima versão
+        id: ver
+        shell: bash
+        run: |
+          git fetch --tags --force
+          LAST=$(git tag --list 'v*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          LAST=${LAST:-1.0.0}
+          IFS=. read -r MA MI PA <<< "$LAST"
+          NEXT="$MA.$MI.$((PA+1))"
+          echo "Última: $LAST -> Próxima: $NEXT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
       - name: Instalar dependências
         run: npm ci
 
-      - name: Definir versão a partir da tag
+      - name: Definir versão
         shell: bash
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+        run: npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Gerar notas da versão (O que mudou)
         shell: bash
         run: node scripts/make-whatsnew.cjs
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
 
       - name: Build do Next
         run: npm run build
