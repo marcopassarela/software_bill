@@ -1,0 +1,40 @@
+import './globals.css';
+
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Logísticas Bill',
+
+  description:
+    'Sistema interno de gestão logística — rotas, frota, manutenção, combustível e estoque.',
+
+  applicationName: 'Logísticas Bill',
+
+  manifest: '/manifest.json',
+
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
+
+  icons: {
+    icon: [
+      { url: '/icon2.png', sizes: '192x192', type: 'image/png' },
+    ],
+
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180' },
+    ],
+  },
+};
+
+export default function Layout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="pt-BR">
+      <body>{children}</body>
+    </html>
+  );
+}

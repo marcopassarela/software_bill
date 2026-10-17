@@ -1,0 +1,6279 @@
+'use client';
+import ProductionModule from './ProductionModule';
+import AvatarCropper from './AvatarCropper';
+import { StockMovementForm, printProductLabels } from './QrTools';
+import SettingsModule from '@/components/SettingsModule';
+import CriticalSettingsModule from '@/components/CriticalSettingsModule';
+import PlansModule from '@/components/PlansModule';
+import OrdersModule from '@/components/OrdersModule';
+import { ClipboardPen } from 'lucide-react'; // ou Package se preferir
+import React, { useEffect, useRef, useState } from 'react';
+import { request } from '@/lib/api';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import { autoTable } from 'jspdf-autotable';
+import {
+  LayoutDashboard,
+  CalendarDays,
+  ShoppingCart,
+  Truck,
+  UserRound,
+  Wrench,
+  Fuel,
+  Factory,
+  Boxes,
+  PackagePlus,
+  PackageMinus,
+  ArrowLeftRight,
+  FileBarChart,
+  Users,
+  Settings,
+  ShieldAlert,
+  CreditCard,
+  LogOut,
+  Menu,
+  X,
+  ChevronDown,
+  Camera,
+} from 'lucide-react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
+
+const items = [
+  ['dashboard', 'Dashboard', LayoutDashboard],
+  ['schedule', 'Agendamento', CalendarDays],
+  ['vehicles', 'Veículos', Truck],
+  ['drivers', 'Motoristas', UserRound],
+  ['maintenance', 'Manutenção', Wrench],
+  ['fuel', 'Combustível', Fuel],
+  ['production', 'Produção', Factory],
+  ['orders', 'Pedidos', ClipboardPen],
+  ['stock', 'Estoque', Boxes],
+  ['entry', 'Entradas', PackagePlus],
+  ['output', 'Saídas', PackageMinus],
+  ['movements', 'Movimentações', ArrowLeftRight],
+  ['reports', 'Relatórios', FileBarChart],
+  ['users', 'Usuários', Users],
+  ['settings', 'Configurações', Settings],
+  ['plans', 'Planos', CreditCard],
+  ['critical', 'Configurações críticas', ShieldAlert],
+] as const;
+
+const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
+  { id: 'main', label: 'Principal', keys: ['dashboard', 'schedule', 'orders'] },
+  { id: 'ops', label: 'Operação', keys: ['production'] },
+  {
+    id: 'fleet',
+    label: 'Frota',
+    keys: ['vehicles', 'drivers', 'maintenance', 'fuel'],
+  },
+  {
+    id: 'warehouse',
+    label: 'Almoxarifado',
+    keys: ['stock', 'entry', 'output', 'movements'],
+  },
+  { id: 'data', label: 'Dados', keys: ['reports', 'users'] },
+  { id: 'system', label: 'Sistema', keys: ['settings', 'plans', 'critical'] },
+];
+
+const resource: any = {
+  vehicles: 'vehicles',
+  drivers: 'drivers',
+  maintenance: 'maintenance',
+  fuel: 'fuel',
+  stock: 'products',
+  settings: 'settings',
+};
+
+const moduleAccess: any = {
+  ADMINISTRADOR: ['*'],
+  GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'production', 'orders'],
+  LOGISTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
+  ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
+  ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
+  MOTORISTA: [],
+  VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permissões finas
+  CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
+  MONTAGEM: ['production'],
+};
+
+export const PRODUCTION_MODELS = [
+  'MONO - 7MTs',
+  'TRIF - 7MTs',
+  'BI+MONO - 7MTs',
+  'MURETA',
+  'MONO 2CXs - 7MTs',
+  '3CXs - 7MTs',
+  'TRIF - 8MTs',
+  'BI+MONO - 8MTs',
+  '2CXs - 8MTs',
+  '3CXs - 8MTs',
+  'DUPLO T - 7MTs',
+  'DUPLO T - 8MTs',
+  'DUPLO T - 8.3MTs',
+  'DUPLO T - 9MTs',
+  'MURETA ÁGUA',
+] as const;
+
+function titleFor(k: string) {
+  return (
+    ({
+      dashboard: 'Dashboard',
+      schedule: 'Agendamento',
+      vehicles: 'Veículos',
+      drivers: 'Motoristas',
+      maintenance: 'Manutenção',
+      fuel: 'Combustível',
+      stock: 'Estoque',
+      settings: 'Configurações',
+      plans: 'Planos',
+      entry: 'Entradas',
+      output: 'Saídas',
+      movements: 'Movimentações',
+      production: 'Produção',
+      orders: 'Pedidos',
+      reports: 'Relatórios',
+      users: 'Usuários',
+      critical: 'Configurações críticas',
+    } as any)[k] || k
+  );
+}
+
+/** Grupos de permissão: aba → opções internas (botões / sub-abas) */
+const PERMISSION_GROUPS: {
+  module: string;
+  label: string;
+  children?: { value: string; label: string }[];
+}[] = [
+  {
+  module: 'dashboard',
+    label: 'Dashboard',
+    children: [
+      { value: 'dashboard_view', label: 'Visualizar' },
+    ],
+  },
+  {
+    module: 'schedule',
+    label: 'Agendamento',
+    children: [
+      { value: 'schedule_edit', label: 'Editar / adicionar clientes na rota' },
+      { value: 'schedule_week', label: 'Nova semana' },
+      { value: 'schedule_route', label: 'Nova rota' },
+      { value: 'schedule_print', label: 'Imprimir rota do dia' },
+      { value: 'schedule_export', label: 'Exportar TXT / PDF da rota' },
+      { value: 'schedule_delete', label: 'Excluir cliente / rota / semana' },
+      { value: 'schedule_transfer', label: 'Transferir' },
+      { value: 'schedule_extra', label: 'Extra' },
+      { value: 'schedule_archive', label: 'Arquivar semana (backup)' },
+      { value: 'schedule_close', label: 'Fechar / reabrir rota' },
+    ],
+  },
+  {
+  module: 'orders',
+    label: 'Pedidos',
+    children: [
+      { value: 'orders_view', label: 'Visualizar' },
+      { value: 'orders_create', label: 'Criar' },
+      { value: 'orders_edit', label: 'Editar' },
+      { value: 'orders_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'production',
+    label: 'Produção',
+    children: [
+      { value: 'production_view', label: 'Visualizar produção' },
+      { value: 'production_create', label: 'Lançar produção' },
+      { value: 'production_edit', label: 'Editar produção' },
+      { value: 'production_delete', label: 'Excluir produção' },
+      { value: 'assembly_view', label: 'Visualizar montagem' },
+      { value: 'assembly_create', label: 'Lançar montagem' },
+      { value: 'assembly_edit', label: 'Editar montagem' },
+      { value: 'assembly_delete', label: 'Excluir montagem' },
+    ],
+  },
+  {
+  module: 'vehicles',
+    label: 'Veículos',
+    children: [
+      { value: 'vehicles_view', label: 'Visualizar' },
+      { value: 'vehicles_create', label: 'Criar' },
+      { value: 'vehicles_edit', label: 'Editar' },
+      { value: 'vehicles_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'drivers',
+    label: 'Motoristas',
+    children: [
+      { value: 'drivers_view', label: 'Visualizar' },
+      { value: 'drivers_create', label: 'Criar' },
+      { value: 'drivers_edit', label: 'Editar' },
+      { value: 'drivers_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'maintenance',
+    label: 'Manutenção',
+    children: [
+      { value: 'maintenance_view', label: 'Visualizar' },
+      { value: 'maintenance_create', label: 'Criar' },
+      { value: 'maintenance_edit', label: 'Editar' },
+      { value: 'maintenance_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'fuel',
+    label: 'Combustível',
+    children: [
+      { value: 'fuel_view', label: 'Visualizar' },
+      { value: 'fuel_create', label: 'Criar' },
+      { value: 'fuel_edit', label: 'Editar' },
+      { value: 'fuel_delete', label: 'Excluir' },
+    ],
+  },
+  {
+  module: 'stock',
+    label: 'Estoque / movimentações',
+    children: [
+      { value: 'stock_view', label: 'Visualizar estoque' },
+      { value: 'stock_create', label: 'Cadastrar produto' },
+      { value: 'stock_edit', label: 'Editar produto' },
+      { value: 'stock_delete', label: 'Excluir produto' },
+
+      { value: 'entry_view', label: 'Visualizar entradas' },
+      { value: 'entry_create', label: 'Lançar entrada' },
+      { value: 'entry_edit', label: 'Editar entrada' },
+      { value: 'entry_delete', label: 'Excluir entrada' },
+
+      { value: 'output_view', label: 'Visualizar saídas' },
+      { value: 'output_create', label: 'Lançar saída' },
+      { value: 'output_edit', label: 'Editar saída' },
+      { value: 'output_delete', label: 'Excluir saída' },
+
+      { value: 'movements_view', label: 'Visualizar movimentações' },
+      { value: 'movements_create', label: 'Lançar movimentação' },
+      { value: 'movements_edit', label: 'Editar movimentação' },
+      { value: 'movements_delete', label: 'Excluir movimentação' },
+    ],
+  },
+  {
+  module: 'reports',
+    label: 'Relatórios',
+    children: [
+      { value: 'reports_view', label: 'Visualizar' },
+      { value: 'reports_export', label: 'Exportar' },
+      { value: 'reports_print', label: 'Imprimir' },
+    ],
+  },
+  {
+  module: 'settings',
+    label: 'Configurações',
+    children: [
+      { value: 'settings_view', label: 'Visualizar' },
+      { value: 'settings_edit', label: 'Editar' },
+    ],
+  },
+  {
+  module: 'users',
+    label: 'Usuários',
+    children: [
+      { value: 'users_view', label: 'Visualizar' },
+      { value: 'users_create', label: 'Criar' },
+      { value: 'users_edit', label: 'Editar' },
+      { value: 'users_delete', label: 'Excluir' },
+      { value: 'users_permissions', label: 'Gerenciar permissões' },
+    ],
+  },
+{
+  module: 'customers',
+    label: 'Clientes',
+    children: [
+      { value: 'customers_view', label: 'Visualizar' },
+      { value: 'customers_create', label: 'Criar' },
+      { value: 'customers_edit', label: 'Editar' },
+      { value: 'customers_delete', label: 'Excluir' },
+    ],
+  },
+{
+  module: 'routes',
+    label: 'Rotas',
+    children: [
+      { value: 'routes_view', label: 'Visualizar' },
+      { value: 'routes_create', label: 'Criar' },
+      { value: 'routes_edit', label: 'Editar' },
+      { value: 'routes_delete', label: 'Excluir' },
+    ],
+  },
+];
+
+/** Lista plana (compatível com expandPermissions / backend) */
+const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
+  { value: g.module, label: g.label },
+  ...(g.children || []),
+]);
+
+function expandPermissions(keys: string[]): string[] {
+  const s = new Set(keys);
+  if (s.has('stock')) {
+    s.add('entry');
+    s.add('output');
+    s.add('movements');
+  }
+  if (s.has('entry') || s.has('output') || s.has('movements')) {
+    s.add('stock');
+  }
+  return Array.from(s);
+}
+
+function resourceIdOf(page: string, row: any) {
+  return page === 'settings' ? row.key : row.id;
+}
+
+type FieldType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'datetime'
+  | 'select'
+  | 'textarea'
+  | 'vehicle'
+  | 'driver'
+  | 'product'
+  | 'modules';
+type FieldDef = {
+  key: string;
+  label: string;
+  type: FieldType;
+  required?: boolean;
+  options?: string[];
+  step?: string;
+};
+
+const FIELDS: Record<string, FieldDef[]> = {
+  vehicles: [
+    { key: 'plate', label: 'Placa', type: 'text', required: true },
+    { key: 'brand', label: 'Marca', type: 'text', required: true },
+    { key: 'model', label: 'Modelo', type: 'text', required: true },
+    { key: 'year', label: 'Ano', type: 'number' },
+    { key: 'type', label: 'Tipo', type: 'text' },
+    { key: 'capacity', label: 'Capacidade (kg)', type: 'number', step: '0.01' },
+    { key: 'average_consumption', label: 'Consumo médio (km/l)', type: 'number', step: '0.01' },
+    { key: 'current_km', label: 'KM atual', type: 'number', step: '0.01' },
+    {
+      key: 'fuel_type',
+      label: 'Combustível',
+      type: 'select',
+      options: ['Diesel', 'Gasolina', 'Etanol', 'Flex', 'Elétrico'],
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'select',
+      options: ['Disponível', 'Em rota', 'Manutenção', 'Inativo'],
+    },
+    { key: 'notes', label: 'Observações', type: 'textarea' },
+  ],
+  drivers: [
+    { key: 'name', label: 'Nome', type: 'text', required: true },
+    { key: 'cpf', label: 'CPF', type: 'text', required: true },
+    { key: 'phone', label: 'Telefone', type: 'text' },
+    { key: 'cnh', label: 'CNH', type: 'text', required: true },
+    {
+      key: 'category',
+      label: 'Categoria CNH',
+      type: 'select',
+      options: ['A', 'B', 'C', 'D', 'E', 'AB', 'AC', 'AD', 'AE'],
+    },
+    { key: 'cnh_expiry', label: 'Validade CNH', type: 'date' },
+    { key: 'vehicle_id', label: 'Veículo', type: 'vehicle' },
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'select',
+      options: ['Ativo', 'Inativo', 'Férias', 'Afastado'],
+    },
+    { key: 'notes', label: 'Observações', type: 'textarea' },
+  ],
+  maintenance: [
+    { key: 'vehicle_id', label: 'Veículo', type: 'vehicle', required: true },
+    {
+      key: 'type',
+      label: 'Tipo',
+      type: 'select',
+      options: ['Preventiva', 'Corretiva'],
+      required: true,
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      type: 'select',
+      options: ['Agendado', 'Em andamento', 'Concluído', 'Atrasado'],
+      required: true,
+    },
+    { key: 'description', label: 'Descrição', type: 'textarea', required: true },
+    { key: 'date', label: 'Data e hora agendada', type: 'datetime', required: true },
+    { key: 'km', label: 'KM no serviço', type: 'number', step: '0.01' },
+    { key: 'next_km', label: 'Próxima KM', type: 'number', step: '0.01' },
+    { key: 'next_date', label: 'Próxima data', type: 'date' },
+    { key: 'value', label: 'Valor', type: 'number', step: '0.01' },
+    { key: 'workshop', label: 'Oficina', type: 'text' },
+    { key: 'responsible', label: 'Responsável', type: 'text' },
+    { key: 'notes', label: 'Observações', type: 'textarea' },
+  ],
+  fuel: [
+    { key: 'vehicle_id', label: 'Veículo', type: 'vehicle', required: true },
+    { key: 'driver_id', label: 'Motorista', type: 'driver' },
+    { key: 'date', label: 'Data', type: 'date', required: true },
+    { key: 'km', label: 'KM', type: 'number', step: '0.01', required: true },
+    { key: 'liters', label: 'Litros', type: 'number', step: '0.001', required: true },
+    {
+      key: 'price_per_liter',
+      label: 'Preço por litro',
+      type: 'number',
+      step: '0.001',
+      required: true,
+    },
+    {
+      key: 'total_value',
+      label: 'Valor total',
+      type: 'number',
+      step: '0.01',
+      required: true,
+    },
+    { key: 'station', label: 'Posto', type: 'text' },
+    {
+      key: 'fuel_type',
+      label: 'Combustível',
+      type: 'select',
+      options: ['Diesel', 'Gasolina', 'Etanol', 'Flex'],
+    },
+  ],
+  stock: [
+    { key: 'code', label: 'Código', type: 'text', required: true },
+    { key: 'name', label: 'Nome', type: 'text', required: true },
+    { key: 'model', label: 'Modelo', type: 'text' },
+    { key: 'category', label: 'Categoria', type: 'text' },
+    { key: 'unit', label: 'Unidade', type: 'text' },
+    { key: 'minimum_stock', label: 'Estoque mínimo', type: 'number', step: '0.01' },
+    { key: 'location', label: 'Localização', type: 'text' },
+    { key: 'supplier', label: 'Fornecedor', type: 'text' },
+    { key: 'unit_value', label: 'Valor unitário', type: 'number', step: '0.01' },
+    { key: 'notes', label: 'Observações', type: 'textarea' },
+  ],
+  settings: [
+    { key: 'key', label: 'Chave', type: 'text', required: true },
+    { key: 'value', label: 'Valor', type: 'text' },
+  ],
+  entry: [
+    { key: 'product_id', label: 'Produto', type: 'product', required: true },
+    { key: 'quantity', label: 'Quantidade', type: 'number', step: '0.01', required: true },
+    { key: 'responsible', label: 'Responsável', type: 'text' },
+    { key: 'sector', label: 'Setor', type: 'text' },
+    { key: 'unit_value', label: 'Valor unitário', type: 'number', step: '0.01' },
+    { key: 'observation', label: 'Observação', type: 'textarea' },
+  ],
+  output: [
+    { key: 'product_id', label: 'Produto', type: 'product', required: true },
+    { key: 'quantity', label: 'Quantidade', type: 'number', step: '0.01', required: true },
+    { key: 'responsible', label: 'Responsável (quem entregou)', type: 'text' },
+    { key: 'sector', label: 'Setor', type: 'text' },
+    { key: 'vehicle_id', label: 'Veículo (se aplicável)', type: 'vehicle' },
+    {
+      key: 'recipient',
+      label: 'Retirado por (nome de quem está pegando o material)',
+      type: 'text',
+      required: true,
+    },
+    { key: 'observation', label: 'Observação', type: 'textarea' },
+  ],
+  users: [
+    { key: 'name', label: 'Nome', type: 'text', required: true },
+    { key: 'username', label: 'Usuário', type: 'text', required: true },
+    { key: 'email', label: 'E-mail', type: 'text', required: true },
+    { key: 'password', label: 'Senha temporária', type: 'text', required: true },
+    {
+      key: 'role',
+      label: 'Perfil',
+      type: 'select',
+      options: [
+        'ADMINISTRADOR',
+        'GERENTE',
+        'LOGÍSTICA',
+        'ALMOXARIFADO',
+        'MOTORISTA',
+        'VENDEDOR',
+        'MONTAGEM',
+      ],
+      required: true,
+    },
+    { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
+  ],
+};
+
+const USER_EDIT_FIELDS: FieldDef[] = [
+  { key: 'name', label: 'Nome completo', type: 'text', required: true },
+  { key: 'username', label: 'Nome de usuário (login)', type: 'text', required: true },
+  { key: 'email', label: 'E-mail', type: 'text', required: true },
+  {
+    key: 'role',
+    label: 'Perfil',
+    type: 'select',
+    options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR', 'MONTAGEM'],
+    required: true,
+  },
+  { key: 'permissions', label: 'Permissões específicas', type: 'modules' },
+  { key: 'active', label: 'Ativo', type: 'select', options: ['Sim', 'Não'], required: true },
+  {
+    key: 'password',
+    label: 'Nova senha (deixe em branco para manter a atual)',
+    type: 'text',
+  },
+];
+
+const LABELS: Record<string, string> = {
+  id: 'ID',
+  name: 'Nome',
+  username: 'Usuário',
+  role: 'Perfil',
+  active: 'Ativo',
+  must_change_password: 'Trocar senha',
+  permissions: 'Permissões',
+  is_main_admin: 'Admin. Principal',
+  status: 'Status',
+  plate: 'Placa',
+  brand: 'Marca',
+  model: 'Modelo',
+  year: 'Ano',
+  type: 'Tipo',
+  capacity: 'Capacidade',
+  average_consumption: 'Consumo médio',
+  current_km: 'KM atual',
+  fuel_type: 'Combustível',
+  notes: 'Observações',
+  cpf: 'CPF',
+  phone: 'Telefone',
+  cnh: 'CNH',
+  category: 'Categoria',
+  cnh_expiry: 'Validade CNH',
+  vehicle_id: 'Veículo',
+  description: 'Descrição',
+  date: 'Data',
+  km: 'KM',
+  next_km: 'Próxima KM',
+  next_date: 'Próxima data',
+  value: 'Valor',
+  workshop: 'Oficina',
+  responsible: 'Responsável',
+  liters: 'Litros',
+  price_per_liter: 'Preço/litro',
+  total_value: 'Valor total',
+  station: 'Posto',
+  recipient: 'Retirado por',
+  code: 'Código',
+  minimum_stock: 'Estoque mínimo',
+  location: 'Localização',
+  supplier: 'Fornecedor',
+  unit_value: 'Valor unitário',
+  unit: 'Unidade',
+  quantity: 'Quantidade',
+  key: 'Chave',
+  created_at: 'Criado em',
+  occurred_at: 'Data',
+  product_id: 'Produto',
+  user_id: 'Registrado por',
+  invoice: 'Nota fiscal',
+  observation: 'Observação',
+  sector: 'Setor',
+  email: 'E-mail',
+};
+
+function labelFor(k: string) {
+  return LABELS[k] || k.replace(/_/g, ' ');
+}
+
+const HIDDEN_TABLE_COLUMNS: Record<string, string[]> = {
+  users: ['permissions', 'avatar_data'],
+};
+
+const TABLE_COLUMNS: Record<string, string[]> = {
+  stock: [
+    'code',
+    'name',
+    'model',
+    'quantity',
+    'minimum_stock',
+    'location',
+    'category',
+  ],
+  output: [
+    'occurred_at',
+    'product_id',
+    'quantity',
+    'responsible',
+    'recipient',
+    'sector',
+    'observation',
+  ],
+  entry: [
+    'occurred_at',
+    'product_id',
+    'quantity',
+    'responsible',
+    'sector',
+    'observation',
+  ],
+  movements: [
+    'occurred_at',
+    'type',
+    'product_id',
+    'quantity',
+    'responsible',
+    'recipient',
+    'sector',
+  ],
+};
+
+function isIsoDateTime(x: any) {
+  return typeof x === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(x);
+}
+
+function readable(x: any): string {
+  if (x === null || x === undefined) return '—';
+  if (typeof x === 'boolean') return x ? 'Sim' : 'Não';
+  if (isIsoDateTime(x)) {
+    const d = new Date(x);
+    return isNaN(d.getTime())
+      ? x
+      : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+  if (typeof x === 'object') return JSON.stringify(x);
+  return String(x);
+}
+
+function onlyDigits(v: string) {
+  return String(v || '').replace(/\D/g, '');
+}
+
+/** Mostra CPF mascarado na listagem: ***.***.***-XX */
+function maskCpf(v: any): string {
+  const d = onlyDigits(String(v || ''));
+  if (d.length < 2) return '—';
+  const end = d.slice(-2);
+  if (d.length >= 11) return `***.***.***-${end}`;
+  return `***-${end}`;
+}
+
+function resolveCell(key: string, value: any, lookups: any): string {
+  if (value === null || value === undefined) return '—';
+  if (key === 'cpf') return maskCpf(value);
+  if (key === 'vehicle_id') {
+    const v = (lookups.vehicles || []).find((x: any) => x.id === value);
+    return v ? `${v.plate} — ${v.brand} ${v.model}` : readable(value);
+  }
+  if (key === 'driver_id') {
+    const d = (lookups.drivers || []).find((x: any) => x.id === value);
+    return d ? d.name : readable(value);
+  }
+  if (key === 'product_id') {
+    const p = (lookups.products || []).find((x: any) => x.id === value);
+    return p ? `${p.id} — ${p.name}` : readable(value);
+  }
+  return readable(value);
+}
+
+function statusClasses(v: string): string {
+  const s = (v || '').toLowerCase();
+  if (['concluído', 'concluido', 'disponível', 'disponivel', 'ativo'].includes(s))
+    return 'bg-green-100 text-green-700';
+  if (['em andamento', 'em rota'].includes(s)) return 'bg-blue-100 text-blue-700';
+  if (['atrasado', 'inativo', 'manutenção', 'manutencao'].includes(s))
+    return 'bg-red-100 text-red-700';
+  return 'bg-slate-100 text-slate-700';
+}
+
+export default function AppShell({
+  user,
+  onLogout,
+  onUserUpdate,
+}: {
+  user: any;
+  onLogout: () => void;
+  onUserUpdate: (u: any) => void;
+}) {
+  const isMainAdmin = !!user.is_main_admin;
+
+  const allowed = (key: string) => {
+    if (isMainAdmin) return true;
+    const perms = user.permissions
+      ? user.permissions.split(',').filter(Boolean)
+      : null;
+    if (perms) {
+      if (perms.includes(key)) return true;
+      if (key === 'production' && perms.includes('assembly')) return true;
+      if (
+        key === 'orders' &&
+        (perms.includes('orders_create') || perms.includes('orders_list'))
+      )
+        return true;
+      return false;
+    }
+    const roleMods = moduleAccess[user.role] || [];
+    if (roleMods.includes('*') || roleMods.includes(key)) return true;
+    if (key === 'production' && roleMods.includes('assembly')) return true;
+    return false;
+  };
+
+  // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
+  // já entra direto na primeira aba que ele efetivamente pode ver.
+  const [page, setPage] = useState<string>(() => {
+    const first = items.find(([k]) => {
+      if (k === 'critical') return isMainAdmin;
+      return allowed(k);
+    });
+    return first ? first[0] : '';
+  });
+
+  useEffect(() => {
+    if (isMainAdmin) return;
+    const ok = page && (page === 'critical' ? isMainAdmin : allowed(page));
+    if (ok) return;
+    const first = items.find(([k]) => {
+      if (k === 'critical') return false;
+      return allowed(k);
+    });
+    setPage(first ? first[0] : '');
+  }, [user, page]);
+
+  const [rows, setRows] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<any>();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [lookups, setLookups] = useState<{
+    vehicles: any[];
+    drivers: any[];
+    products: any[];
+  }>({ vehicles: [], drivers: [], products: [] });
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editingResource, setEditingResource] = useState<any>(null);
+  const [editingMovement, setEditingMovement] = useState<any>(null);
+  const [showAccount, setShowAccount] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    main: true,
+    ops: false,
+    fleet: false,
+    warehouse: false,
+    data: false,
+    system: false,
+  });
+
+  function toggleGroup(id: string) {
+    setOpenGroups((s) => ({ ...s, [id]: !s[id] }));
+  }
+
+  useEffect(() => {
+    const g = NAV_GROUPS.find((x) => x.keys.includes(page));
+    if (g) setOpenGroups((s) => ({ ...s, [g.id]: true }));
+  }, [page]);
+
+  const [deletePasswordModal, setDeletePasswordModal] = useState<{
+  open: boolean;
+  title: string;
+  message: string;
+  onConfirm: (password: string) => Promise<void>;
+  } | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  // Bloqueio de usuários
+  const [blockModal, setBlockModal] = useState<any>(null);
+  const [blockMode, setBlockMode] = useState<'manual' | 'scheduled' | 'permanent'>('manual');
+  const [blockedUntil, setBlockedUntil] = useState('');
+  const [blockReason, setBlockReason] = useState('');
+  const [blockBusy, setBlockBusy] = useState(false);
+
+  async function load(p = page) {
+    setError('');
+    setLoading(true);
+    try {
+      if (p === 'dashboard') setMetrics(await request('/dashboard'));
+      else if (p === 'movements') setRows(await request('/stock/movements'));
+      else if (p === 'entry')
+        setRows(
+          ((await request('/stock/movements')) as any[]).filter((m) => m.type === 'ENTRADA')
+        );
+      else if (p === 'output')
+        setRows(
+          ((await request('/stock/movements')) as any[]).filter((m) => m.type === 'SAÍDA')
+        );
+      else if (p === 'users') setRows(await request('/users'));
+      else if (resource[p]) setRows(await request('/' + resource[p]));
+      else setRows([]);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!showAccount) return;
+    function onDoc(e: MouseEvent) {
+      if (
+        accountMenuRef.current &&
+        !accountMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowAccount(false);
+      }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [showAccount]);
+
+  async function onPickAvatar(file: File | null) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 128;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > max) {
+            h = Math.round((h * max) / w);
+            w = max;
+          }
+        } else if (h > max) {
+          w = Math.round((w * max) / h);
+          h = max;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+    try {
+      const u = await request('/auth/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ avatar_data: dataUrl }),
+      });
+      onUserUpdate?.(u);
+      setShowAccount(false);
+    } catch (e: any) {
+      setError?.(e.message);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    setEditingUser(null);
+    setEditingResource(null);
+    setEditingMovement(null);
+  }, [page]);
+
+  // ------------------------------------------------------------------
+  // Tempo real barato (substitui o SSE que estourava a cota da Vercel)
+  // ------------------------------------------------------------------
+  // O que havia aqui antes: um EventSource apontando para /events/stream,
+  // ou seja, uma conexão HTTP aberta enquanto a aba existisse. Em função
+  // serverless, conexão aberta = instância viva, faturada por tempo de
+  // parede (Active CPU + Provisioned Memory GB-Hrs). Como o maxDuration
+  // era 60s, a conexão caía e o navegador reconectava, então cada aba
+  // aberta segurava uma função praticamente 100% do tempo, e ainda pagava
+  // um cold start do FastAPI a cada minuto.
+  //
+  // Agora: GET /events/version, que lê uma única linha por chave primária
+  // e responde um número. Só busca o payload de verdade quando o número
+  // muda. Três travas para o consumo não voltar a escalar:
+  //   1. pausa enquanto a aba está oculta (aba em segundo plano = 0 req);
+  //   2. hiberna após 15 min sem interação do usuário (aba esquecida
+  //      aberta a noite toda não gera nada) e acorda no primeiro clique,
+  //      tecla, toque ou scroll;
+  //   3. backoff progressivo em erro, até 2 min, em vez de insistir.
+  useEffect(() => {
+    if (!user) return;
+
+    const POLL_MS = 25_000; // intervalo normal com a aba em foco
+    const IDLE_AFTER_MS = 15 * 60_000; // hiberna após 15 min parado
+    const MAX_BACKOFF_MS = 120_000;
+
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    let lastVersion: number | null = null;
+    let failures = 0;
+    let lastActivity = Date.now();
+
+    const clear = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const isIdle = () => Date.now() - lastActivity > IDLE_AFTER_MS;
+
+    const schedule = (ms: number) => {
+      clear();
+      if (stopped) return;
+      timer = setTimeout(tick, ms);
+    };
+
+    const tick = async () => {
+      if (stopped) return;
+
+      // Aba escondida ou usuário parado há muito tempo: não gasta função.
+      // Reagenda só para reavaliar daqui a pouco, sem fazer requisição.
+      if (document.visibilityState !== 'visible' || isIdle()) {
+        schedule(POLL_MS);
+        return;
+      }
+
+      if (inFlight) {
+        schedule(POLL_MS);
+        return;
+      }
+
+      inFlight = true;
+      try {
+        const res = await request('/events/version');
+        const version = Number(res?.version ?? 0);
+        failures = 0;
+
+        if (lastVersion === null) {
+          // Primeira leitura: só memoriza, não recarrega nada.
+          lastVersion = version;
+        } else if (version !== lastVersion) {
+          lastVersion = version;
+          // O contador é global da empresa, então não dá para saber qual
+          // módulo mudou: dispara '*', que o handler abaixo já trata como
+          // "recarregue a página aberta". Só acontece quando houve escrita
+          // de verdade, então não é um recarregamento à toa.
+          window.dispatchEvent(
+            new CustomEvent('company-data-changed', { detail: { module: '*' } })
+          );
+        }
+
+        schedule(POLL_MS);
+      } catch (err: any) {
+        // 401/403 → sessão caiu; o helper request() já avisa a aplicação.
+        // Não adianta continuar batendo no endpoint.
+        if (err?.status === 401 || err?.status === 403) {
+          stopped = true;
+          clear();
+          return;
+        }
+        failures += 1;
+        schedule(
+          Math.min(MAX_BACKOFF_MS, POLL_MS * Math.pow(2, Math.min(failures, 3)))
+        );
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const markActive = () => {
+      const wasIdle = isIdle();
+      lastActivity = Date.now();
+      // Estava hibernando e o usuário voltou: consulta na hora, para ele
+      // não ficar olhando dado velho até o próximo ciclo.
+      if (wasIdle && document.visibilityState === 'visible') schedule(0);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        lastActivity = Date.now();
+        schedule(0); // voltou para a aba: atualiza imediatamente
+      } else {
+        clear();
+        schedule(POLL_MS);
+      }
+    };
+
+    const activityEvents: (keyof DocumentEventMap)[] = [
+      'click',
+      'keydown',
+      'pointerdown',
+      'scroll',
+    ];
+    activityEvents.forEach((ev) =>
+      document.addEventListener(ev, markActive, { passive: true })
+    );
+    document.addEventListener('visibilitychange', onVisibility);
+
+    schedule(POLL_MS);
+
+    return () => {
+      stopped = true;
+      clear();
+      activityEvents.forEach((ev) =>
+        document.removeEventListener(ev, markActive)
+      );
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+  const handler = (ev: Event) => {
+    const mod = (ev as CustomEvent).detail?.module || '*';
+
+    const match =
+      mod === '*' ||
+      mod === page ||
+      (mod === 'stock' && ['stock', 'entry', 'output', 'movements'].includes(page)) ||
+      (mod === 'schedule' && page === 'schedule') ||
+      (mod === 'customers' && page === 'schedule') ||
+      (mod === 'production' && page === 'production') ||
+      (mod === 'orders' && page === 'orders') ||
+      (mod === 'audit' && page === 'settings');
+
+    if (!match) return;
+
+    if (page === 'schedule') {
+      window.dispatchEvent(new Event('reload-schedule'));
+      return;
+    }
+
+    if (page === 'production') {
+      window.dispatchEvent(new Event('reload-production'));
+      return;
+    }
+
+    if (page === 'orders') {
+      window.dispatchEvent(new Event('reload-orders'));
+      return;
+    }
+
+    if (mod === 'audit') {
+      // Aba Auditoria fica dentro de Configurações; só o próprio
+      // SettingsModule sabe se o usuário está de fato na sub-aba
+      // "audit" no momento, então só repassamos o evento.
+      window.dispatchEvent(new Event('reload-audit'));
+      return;
+    }
+
+    if (page === 'dashboard') {
+      request('/dashboard').then(setMetrics).catch(() => {});
+      return;
+    }
+
+    load(page);
+  };
+
+  window.addEventListener('company-data-changed', handler);
+
+  return () => window.removeEventListener('company-data-changed', handler);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [page]);
+
+
+  useEffect(() => {
+    Promise.all([
+      request('/vehicles').catch(() => []),
+      request('/drivers').catch(() => []),
+      request('/products').catch(() => []),
+    ]).then(([vehicles, drivers, products]) =>
+      setLookups({ vehicles, drivers, products })
+    );
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('sidebarCollapsed') === '1') setSidebarCollapsed(true);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+    } catch {}
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!showAccount) return;
+    function onDoc(e: MouseEvent) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setShowAccount(false);
+      }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [showAccount]);
+
+
+    useEffect(() => {
+    try {
+      if (localStorage.getItem('geo_coords') || localStorage.getItem('geo_denied') === '1') {
+        return;
+      }
+    } catch {
+      return;
+    }
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        try {
+          localStorage.setItem(
+            'geo_coords',
+            JSON.stringify({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            })
+          );
+        } catch {
+          /* ignore */
+        }
+      },
+      () => {
+        try {
+          localStorage.setItem('geo_denied', '1');
+        } catch {
+          /* ignore */
+        }
+      },
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 86400000 }
+    );
+  }, []);
+
+  async function create(data: any) {
+    setError('');
+    try {
+      if (page === 'entry' || page === 'output')
+        await request('/stock/' + page, { method: 'POST', body: JSON.stringify(data) });
+      else
+        await request('/' + (page === 'users' ? 'users' : resource[page]), {
+          method: 'POST',
+          body: JSON.stringify(page === 'users' ? data : { data }),
+        });
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function updateUser(id: number, data: any) {
+    setError('');
+    try {
+      await request('/users/' + id, { method: 'PATCH', body: JSON.stringify({ data }) });
+      setEditingUser(null);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function deleteUser(id: number) {
+    askPassword(
+      'Excluir usuário',
+      'Digite sua senha de administrador para confirmar a exclusão deste usuário.',
+      async (password: string) => {
+        await request(`/users/${id}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ password }),
+        });
+        setEditingUser(null);
+        await load('users');
+      }
+    );
+  }
+
+  async function confirmBlock() {
+    if (!blockModal) return;
+    if (blockMode === 'scheduled' && !blockedUntil) {
+      setError('Informe data e hora do desbloqueio.');
+      return;
+    }
+    setBlockBusy(true);
+    setError('');
+    try {
+      await request(`/users/${blockModal.id}/block`, {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: blockMode,
+          blocked_until:
+            blockMode === 'scheduled'
+            ? new Date(blockedUntil).toISOString()
+            : null,
+        }),
+      });
+      setBlockModal(null);
+      setBlockedUntil('');
+      setBlockReason('');
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function unblockUser(id: number) {
+    if (!confirm('Desbloquear este usuário?')) return;
+    setError('');
+    try {
+      await request(`/users/${id}/block`, {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'unblock' }),
+      });
+      await load('users');
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function updateResource(id: string | number, data: any) {
+    setError('');
+    try {
+      await request('/' + resource[page] + '/' + id, {
+        method: 'PATCH',
+        body: JSON.stringify({ data }),
+      });
+      setEditingResource(null);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function deleteResource(id: string | number) {
+    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
+    setError('');
+    try {
+      await request('/' + resource[page] + '/' + id, { method: 'DELETE' });
+      load();
+    } catch (e: any) {
+      setError(e.message || 'Não foi possível excluir');
+    }
+  }
+
+  async function updateMovement(id: number, data: any) {
+    setError('');
+    try {
+      await request('/stock/movements/' + id, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+      setEditingMovement(null);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function deleteMovement(id: number) {
+    askPassword(
+      'Excluir movimentação',
+      'Confirme sua senha. O estoque será ajustado de volta.',
+      async (pwd: string) => {
+        await request('/stock/movements/' + id + '/delete', {
+          method: 'POST',
+          body: JSON.stringify({ password: pwd }),
+        });
+        setEditingMovement(null);
+        load();
+      }
+    );
+  }
+
+  function askPassword(
+    title: string,
+    message: string,
+    onConfirm: (password: string) => Promise<void>
+  ) {
+    setDeletePassword('');
+    setDeletePasswordModal({ open: true, title, message, onConfirm });
+  }
+
+  async function confirmDeleteWithPassword() {
+    if (!deletePasswordModal || !deletePassword) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await deletePasswordModal.onConfirm(deletePassword);
+      setDeletePasswordModal(null);
+      setDeletePassword('');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function logout() {
+    await request('/auth/logout', { method: 'POST' }).catch(() => {});
+    onLogout();
+  }
+
+  function goTo(k: string) {
+    setPage(k);
+    setMobileMenuOpen(false);
+  }
+
+    return (
+    <div className="min-h-screen md:flex">
+      <div className="flex items-center justify-between bg-navy p-4 text-white md:hidden">
+        <span className="flex items-center gap-2 font-bold">
+          <img
+            src="/icon2.png"
+            alt="Logísticas Bill"
+            className="h-8 w-auto object-contain"
+          />
+          <span>LOGÍSTICAS BILL</span>
+        </span>
+        <button onClick={() => setMobileMenuOpen(true)} aria-label="Abrir menu">
+          <Menu size={24} />
+        </button>
+      </div>
+
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 max-w-[85vw] overflow-hidden bg-navy text-slate-200 transition-[width,transform] duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:self-start md:translate-x-0 ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${sidebarCollapsed ? 'w-72 md:w-20' : 'w-72 md:w-64'}`}
+      >
+        <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden px-3">
+          <img
+            src="/icon2.png"
+            alt="Logísticas Bill"
+            className="h-9 w-9 shrink-0 object-contain"
+          />
+          <span
+            className={`min-w-0 flex-1 truncate text-sm font-bold text-white transition-opacity duration-300 ${
+              sidebarCollapsed ? 'md:pointer-events-none md:opacity-0' : 'opacity-100'
+            }`}
+          >
+            LOGÍSTICAS BILL
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg p-1.5 text-slate-300 hover:bg-slate-700 md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Fechar menu"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <nav className="flex h-[calc(100%-8rem)] flex-col gap-1 overflow-y-auto px-2 pb-3">
+          {NAV_GROUPS.map((group) => {
+            const visibleItems = items.filter(([k]) => {
+              if (!group.keys.includes(k)) return false;
+              if (k === 'critical') return isMainAdmin;
+              return allowed(k);
+            });
+            if (!visibleItems.length) return null;
+
+            const isOpen = sidebarCollapsed || !!openGroups[group.id];
+
+            return (
+              <div key={group.id} className="mb-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!sidebarCollapsed) toggleGroup(group.id);
+                  }}
+                  className={`mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${
+                    sidebarCollapsed ? 'md:hidden' : 'hover:text-slate-300'
+                  }`}
+                >
+                  <span>{group.label}</span>
+                  {!sidebarCollapsed && (
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    />
+                  )}
+                </button>
+
+                {isOpen &&
+                  visibleItems.map(([k, label, Icon]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => goTo(k)}
+                      title={label}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+                        page === k
+                          ? 'bg-cyan-700 text-white'
+                          : 'text-slate-300 hover:bg-slate-700/80 hover:text-white'
+                      } ${sidebarCollapsed ? 'md:justify-center md:px-2' : ''}`}
+                    >
+                      <Icon size={18} className="shrink-0 opacity-90" />
+                      <span
+                        className={`truncate transition-opacity duration-200 ${
+                          sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+                        }`}
+                      >
+                        {label}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
+        </nav>
+
+        
+
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed((s) => !s)}
+          title={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
+          aria-label={sidebarCollapsed ? 'Abrir menu' : 'Fechar menu'}
+          className={`mt-2 hidden w-full items-center gap-3 border-t border-slate-700 px-4 py-3 pt-4 text-sm text-slate-400 hover:bg-slate-700 hover:text-white md:flex ${
+            sidebarCollapsed ? 'md:justify-center md:px-2' : ''
+          }`}
+        >
+          {sidebarCollapsed ? (
+            <Menu size={18} className="shrink-0" />
+          ) : (
+            <X size={18} className="shrink-0" />
+          )}
+          <span
+            className={`whitespace-nowrap transition-opacity duration-200 ${
+              sidebarCollapsed ? 'md:hidden md:opacity-0' : 'opacity-100'
+            }`}
+          >
+            {sidebarCollapsed ? 'Abrir' : 'Fechar'}
+          </span>
+        </button>
+      </aside>
+
+      <main className="min-w-0 flex-1 p-4 md:p-8">
+
+        <header className="mb-7 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">
+              {page ? titleFor(page) : 'Sem acesso'}
+            </h1>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+              
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative" ref={accountMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowAccount((s) => !s)}
+                className="flex items-center gap-1.5 rounded-full bg-white py-1 pl-1 pr-2 text-sm shadow-sm hover:bg-slate-50"
+                aria-label="Menu da conta"
+              >
+                {user.avatar_data ? (
+                  <img
+                    src={user.avatar_data}
+                    alt=""
+                    className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200"
+                  />
+                ) : (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
+                    {(user.name || user.username || '?').slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <ChevronDown size={16} className="text-slate-500" />
+              </button>
+              {showAccount && (
+                <AccountPanel
+                  user={user}
+                  onClose={() => setShowAccount(false)}
+                  onUserUpdate={onUserUpdate}
+                  onLogout={logout}
+                />
+              )}
+            </div>
+          </div>
+        </header>
+
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</div>
+        )}
+
+        {!page ? (
+          <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+            <p className="text-sm text-slate-600">
+              Seu usuário não tem permissão para nenhum módulo. Solicite liberação ao
+              administrador.
+            </p>
+          </div>
+        ) : page === 'schedule' ? (
+          <ScheduleModule user={user} lookups={lookups} />
+        ) : page === 'orders' ? (
+          <OrdersModule user={user} askPassword={askPassword} />
+        ) : page === 'production' ? (
+          <ProductionModule user={user} />
+        ) : page === 'settings' ? (
+          <SettingsModule user={user} />
+        ) : page === 'critical' ? (
+          <CriticalSettingsModule user={user} />
+        ) : page === 'plans' ? (
+          <PlansModule user={user} />
+        ) : page === 'dashboard' ? (
+          <Dashboard metrics={metrics} onNavigate={setPage} />
+        ) : (
+          <Module
+            page={page}
+            rows={rows}
+            loading={loading}
+            create={create}
+            isAdmin={isMainAdmin}
+            lookups={lookups}
+            editingUser={editingUser}
+            setEditingUser={setEditingUser}
+            updateUser={updateUser}
+            deleteUser={deleteUser}
+            setBlockModal={setBlockModal}
+            setBlockMode={setBlockMode}
+            setBlockedUntil={setBlockedUntil}
+            setBlockReason={setBlockReason}
+            unblockUser={unblockUser}
+            editingResource={editingResource}
+            setEditingResource={setEditingResource}
+            updateResource={updateResource}
+            deleteResource={deleteResource}
+            editingMovement={editingMovement}
+            setEditingMovement={setEditingMovement}
+            updateMovement={updateMovement}
+            deleteMovement={deleteMovement}
+          />
+        )}
+      </main>
+    {deletePasswordModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">
+              {deletePasswordModal.title}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">{deletePasswordModal.message}</p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Senha *</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                className="w-full rounded-lg border p-2"
+                placeholder="Digite sua senha"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmDeleteWithPassword();
+                }}
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeletePasswordModal(null);
+                  setDeletePassword('');
+                }}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deleting || !deletePassword}
+                onClick={confirmDeleteWithPassword}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {blockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">
+              Bloquear usuário
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {blockModal.name}
+              {blockModal.username ? (
+                <span className="text-slate-400"> (@{blockModal.username})</span>
+              ) : null}
+            </p>
+
+            <div className="mt-5 space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Tipo de bloqueio
+              </p>
+
+              {(
+                [
+                  {
+                    id: 'manual' as const,
+                    title: 'Bloquear',
+                    desc: 'Só desbloqueia manualmente pelo painel',
+                  },
+                  {
+                    id: 'scheduled' as const,
+                    title: 'Programar desbloqueio',
+                    desc: 'Escolha data e hora para liberar automaticamente',
+                  },
+                  {
+                    id: 'permanent' as const,
+                    title: 'Bloquear permanentemente',
+                    desc: 'Bloqueio forte; ainda pode desbloquear depois',
+                  },
+                ] as const
+              ).map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                    blockMode === opt.id
+                      ? 'border-amber-500 bg-amber-50'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="blockMode"
+                    className="mt-1 h-4 w-4 shrink-0 accent-amber-600"
+                    checked={blockMode === opt.id}
+                    onChange={() => setBlockMode(opt.id)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-slate-900">
+                      {opt.title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      {opt.desc}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {blockMode === 'scheduled' && (
+              <label className="mt-4 block text-sm">
+                <span className="mb-1 block font-medium text-slate-700">
+                  Desbloquear em *
+                </span>
+                <input
+                  type="datetime-local"
+                  value={blockedUntil}
+                  onChange={(e) => setBlockedUntil(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 p-2.5 text-sm"
+                />
+              </label>
+            )}
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block font-medium text-slate-700">
+                Motivo <span className="font-normal text-slate-400">(opcional)</span>
+              </span>
+              <input
+                value={blockReason}
+                onChange={(e) => setBlockReason(e.target.value)}
+                placeholder="Ex.: férias, segurança, uso indevido…"
+                className="w-full rounded-lg border border-slate-200 p-2.5 text-sm"
+              />
+            </label>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBlockModal(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={blockBusy}
+                onClick={confirmBlock}
+                className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+              >
+                {blockBusy ? 'Salvando…' : 'Confirmar bloqueio'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+
+function AccountPanel({
+  user,
+  onClose,
+  onUserUpdate,
+  onLogout,
+}: {
+  user: any;
+  onClose: () => void;
+  onUserUpdate: (u: any) => void;
+  onLogout: () => void;
+}) {
+  const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [nameMsg, setNameMsg] = useState('');
+  const [nameErr, setNameErr] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [tab, setTab] = useState<'conta' | 'senha' | 'foto'>('conta');
+
+  async function submitName(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingName(true);
+    setNameErr('');
+    setNameMsg('');
+    try {
+      const updated = await request('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+        }),
+      });
+      onUserUpdate(updated);
+      setNameMsg('Dados atualizados.');
+    } catch (e: any) {
+      setNameErr(e.message);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function submitPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setErr('');
+    setMsg('');
+    try {
+      await request('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: current,
+          new_password: next,
+        }),
+      });
+      setMsg('Senha alterada com sucesso.');
+      setCurrent('');
+      setNext('');
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onPickAvatar(file: File | null) {
+    if (!file || !file.type.startsWith('image/')) return;
+    setErr('');
+    setPendingAvatarFile(file); // abre o modal de recorte; o envio só acontece em saveCroppedAvatar
+  }
+
+  async function saveCroppedAvatar(dataUrl: string) {
+    setPendingAvatarFile(null);
+    setAvatarBusy(true);
+    setErr('');
+    try {
+      if (dataUrl.length > 300000) {
+        throw new Error('Imagem ainda grande demais. Escolha outra mais leve.');
+      }
+      const updated = await request('/auth/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ avatar_data: dataUrl }),
+      });
+      onUserUpdate(updated);
+      setMsg('Foto atualizada.');
+    } catch (e: any) {
+      setErr(e.message || 'Erro ao enviar foto');
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarBusy(true);
+    setErr('');
+    try {
+      const updated = await request('/auth/avatar', { method: 'DELETE' });
+      onUserUpdate(updated);
+      setMsg('Foto removida.');
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  return (
+    <div className="absolute right-0 top-12 z-50 w-[min(20rem,90vw)] rounded-xl border bg-white p-4 shadow-lg">
+      <div className="mb-3 flex items-center gap-3 border-b pb-3">
+        {user.avatar_data ? (
+          <img
+            src={user.avatar_data}
+            alt=""
+            className="h-11 w-11 rounded-full object-cover ring-2 ring-slate-100"
+          />
+        ) : (
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
+            {(user.name || user.username || '?').slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-slate-800">{user.name}</p>
+          <p className="truncate text-xs text-slate-500">@{user.username}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-600">
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-0.5">
+        {(
+          [
+            ['conta', 'Conta'],
+            ['senha', 'Senha'],
+            ['foto', 'Foto'],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            className={`flex-1 rounded-md px-1 py-1.5 text-[11px] font-semibold ${
+              tab === k
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="max-h-64 overflow-y-auto">
+        {tab === 'conta' && (
+          <form onSubmit={submitName} className="space-y-2" autoComplete="off">
+            {nameErr && <p className="text-xs text-red-600">{nameErr}</p>}
+            {nameMsg && <p className="text-xs text-green-600">{nameMsg}</p>}
+            <label className="block text-xs text-slate-600">
+              Nome
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="mt-1 w-full rounded-lg border p-2 text-sm"
+              />
+            </label>
+            <label className="block text-xs text-slate-600">
+              E-mail
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="mt-1 w-full rounded-lg border p-2 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={savingName}
+              className="w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+            >
+              {savingName ? 'Salvando…' : 'Salvar dados'}
+            </button>
+          </form>
+        )}
+
+        {tab === 'senha' && (
+          <form onSubmit={submitPassword} className="space-y-2" autoComplete="off">
+            {err && <p className="text-xs text-red-600">{err}</p>}
+            {msg && <p className="text-xs text-green-600">{msg}</p>}
+            <input
+              type="password"
+              placeholder="Senha atual"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              required
+              className="w-full rounded-lg border p-2 text-sm"
+            />
+            <input
+              type="password"
+              placeholder="Nova senha"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              required
+              minLength={3}
+              className="w-full rounded-lg border p-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+            >
+              {saving ? 'Salvando…' : 'Atualizar senha'}
+            </button>
+          </form>
+        )}
+
+        {tab === 'foto' && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
+                {avatarBusy ? 'Enviando…' : 'Alterar foto'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  disabled={avatarBusy}
+                  onChange={(e) => {
+                    onPickAvatar(e.target.files?.[0] || null);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {user.avatar_data && (
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={removeAvatar}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                >
+                  Remover
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400">JPEG ou PNG, arquivo leve.</p>
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onLogout}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
+      >
+        <LogOut size={14} />
+        Sair
+      </button>
+
+      {pendingAvatarFile && (
+        <AvatarCropper
+          file={pendingAvatarFile}
+          onCancel={() => setPendingAvatarFile(null)}
+          onConfirm={saveCroppedAvatar}
+        />
+      )}
+    </div>
+  );
+}
+
+
+function Dashboard({
+  metrics,
+  onNavigate,
+}: {
+  metrics: any;
+  onNavigate: (page: string) => void;
+}) {
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    setDismissed(localStorage.getItem('maint_alert_dismissed') === today);
+  }, []);
+
+  function dismiss() {
+    localStorage.setItem(
+      'maint_alert_dismissed',
+      new Date().toISOString().slice(0, 10)
+    );
+    setDismissed(true);
+  }
+
+  const cards = [
+    {
+      label: 'Veículos disponíveis',
+      value: metrics?.available,
+      icon: '🚚',
+      page: 'vehicles',
+      color: 'from-emerald-500 to-emerald-600',
+    },
+    {
+      label: 'Em manutenção',
+      value: metrics?.maintenance,
+      icon: '🔧',
+      page: 'maintenance',
+      color: 'from-amber-500 to-amber-600',
+    },
+    {
+      label: 'Manutenções concluídas',
+      value: metrics?.maintenance_completed,
+      icon: '✅',
+      page: 'maintenance',
+      color: 'from-blue-500 to-blue-600',
+    },
+    {
+      label: 'Produtos em estoque',
+      value: metrics?.products,
+      icon: '📦',
+      page: 'stock',
+      color: 'from-cyan-500 to-cyan-600',
+    },
+    {
+      label: 'Estoque baixo',
+      value: metrics?.low_stock,
+      icon: '⚠️',
+      page: 'stock',
+      color: 'from-red-500 to-red-600',
+    },
+    {
+      label: 'Custo combustível',
+      value: metrics?.fuel_cost?.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+      }),
+      icon: '💲',
+      page: 'fuel',
+      color: 'from-slate-600 to-slate-800',
+    },
+  ];
+
+  const fleetData = [
+    { name: 'Disponíveis', value: Number(metrics?.available ?? 0), color: '#22c55e' },
+    { name: 'Em manutenção', value: Number(metrics?.maintenance ?? 0), color: '#f59e0b' },
+    {
+      name: 'Concluídas',
+      value: Number(metrics?.maintenance_completed ?? 0),
+      color: '#3b82f6',
+    },
+  ].filter((d) => d.value > 0);
+
+  const stockData = [
+    { name: 'Em estoque', value: Number(metrics?.products ?? 0) },
+    { name: 'Estoque baixo', value: Number(metrics?.low_stock ?? 0) },
+  ];
+
+  const hasAlerts =
+    !dismissed &&
+    (metrics?.maintenance_today > 0 ||
+      metrics?.maintenance_overdue > 0 ||
+      metrics?.maintenance_alerts?.length > 0);
+
+  return (
+    <div className="space-y-6">
+      {hasAlerts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-2xl">
+                ⚠️
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Aviso de manutenção</h2>
+                <p className="text-sm text-slate-500">
+                  Existem manutenções que precisam da sua atenção.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {metrics?.maintenance_today > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="font-semibold text-amber-800">📅 Manutenções de hoje</div>
+                  <div className="mt-1 text-sm text-amber-700">
+                    Existem <strong>{metrics.maintenance_today}</strong> manutenções
+                    agendada(s) para hoje.
+                  </div>
+                </div>
+              )}
+              {metrics?.maintenance_overdue > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                  <div className="font-semibold text-red-800">🚨 Manutenções atrasadas</div>
+                  <div className="mt-1 text-sm text-red-700">
+                    Existem <strong>{metrics.maintenance_overdue}</strong> manutenções
+                    atrasada(s).
+                  </div>
+                </div>
+              )}
+              {metrics?.maintenance_alerts?.length > 0 && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="font-semibold text-blue-800">🔧 Manutenções em andamento</div>
+                  <div className="mt-1 text-sm text-blue-700">
+                    Existem <strong>{metrics.maintenance_alerts.length}</strong>{' '}
+                    manutenções atualmente em andamento.
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={dismiss}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => {
+                  dismiss();
+                  onNavigate('maintenance');
+                }}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Ver manutenções
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card, idx) => (
+          <article
+            key={card.label}
+            onClick={() => onNavigate(card.page)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate(card.page);
+              }
+            }}
+            style={{
+              animationDelay: `${idx * 80}ms`,
+              animationFillMode: 'both',
+            }}
+            className="group cursor-pointer rounded-2xl bg-white p-5 shadow-sm opacity-0 animate-[dashIn_0.5s_ease-out_forwards] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl active:scale-[0.98]"
+          >
+            <div className="flex items-start justify-between">
+              <div
+                className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${card.color} text-xl text-white shadow-md transition-transform duration-300 group-hover:scale-110`}
+              >
+                {card.icon}
+              </div>
+            </div>
+            <div className="mt-4 text-2xl font-bold text-slate-900 tabular-nums">
+              {card.value ?? '—'}
+            </div>
+            <div className="mt-1 text-sm text-slate-500">{card.label}</div>
+          </article>
+        ))}
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="dash-chart-enter rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+          <h3 className="mb-1 font-semibold text-slate-800">Frota / Manutenção</h3>
+          <p className="mb-4 text-xs text-slate-500">
+            Visão geral da frota — meta: até 5 manutenções no período
+          </p>
+          <div className="h-64">
+            {fleetData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                Sem dados para exibir
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={fleetData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    innerRadius={50}
+                    paddingAngle={3}
+                    label={false}
+                    isAnimationActive
+                    activeIndex={undefined}
+                    onClick={undefined}
+                    style={{ outline: 'none', cursor: 'default' }}
+                  >
+                    {fleetData.map((e, i) => (
+                      <Cell
+                        key={i}
+                        fill={e.color}
+                        stroke="none"
+                        style={{ outline: 'none', cursor: 'default' }}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number, name: string) => [value, name]}
+                    contentStyle={{
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0',
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    formatter={(value) => (
+                      <span className="text-xs text-slate-600">{value}</span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          {Number(metrics?.maintenance ?? 0) > 5 && (
+            <p className="mt-2 text-center text-xs font-medium text-amber-600">
+              Atenção: mais de 5 veículos em manutenção
+            </p>
+          )}
+          {Number(metrics?.maintenance_completed ?? 0) > 5 && (
+            <p className="mt-1 text-center text-xs text-slate-500">
+              Manutenções concluídas no período: {metrics.maintenance_completed} (acima da
+              meta de 5)
+            </p>
+          )}
+        </div>
+
+        <div className="dash-chart-enter rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+          <h3 className="mb-1 font-semibold text-slate-800">Estoque</h3>
+          <p className="mb-4 text-xs text-slate-500">
+            Produtos cadastrados e alertas de mínimo
+          </p>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stockData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value: number) => [value, 'Quantidade']}
+                  labelFormatter={(label) => String(label)}
+                  contentStyle={{
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    fontSize: 12,
+                  }}
+                />
+                <Bar
+                  dataKey="value"
+                  name="Quantidade"
+                  fill="#0ea5e9"
+                  radius={[8, 8, 0, 0]}
+                  maxBarSize={64}
+                  isAnimationActive
+                  style={{ cursor: 'default' }}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const REPORT_SOURCES = [
+  { value: 'vehicles', label: 'Veículos', path: '/vehicles' },
+  { value: 'drivers', label: 'Motoristas', path: '/drivers' },
+  { value: 'maintenance', label: 'Manutenção', path: '/maintenance' },
+  { value: 'fuel', label: 'Combustível', path: '/fuel' },
+  { value: 'products', label: 'Estoque', path: '/products' },
+  { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
+  { value: 'movements', label: 'Movimentações de estoque', path: '/stock/movements' },
+];
+
+function cleanRowForReport(r: any, lookups: any) {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k === 'password_hash') continue;
+    let val: any = v;
+    if (k === 'vehicle_id' || k === 'driver_id' || k === 'product_id') {
+      val = resolveCell(k, v, lookups);
+    } else if (isIsoDateTime(v)) {
+      const d = new Date(v as string);
+      val = isNaN(d.getTime()) ? v : d.toLocaleDateString('pt-BR');
+    } else if (v === null || v === undefined) {
+      val = '';
+    } else if (typeof v === 'boolean') {
+      val = v ? 'Sim' : 'Não';
+    }
+    out[labelFor(k)] = val;
+  }
+  return out;
+}
+
+function exportExcelMulti(datasets: { cfg: any; rows: any[] }[]) {
+  const book = XLSX.utils.book_new();
+  const today = new Date().toLocaleDateString('pt-BR');
+  const data: any[][] = [];
+
+  data.push(['LOGÍSTICAS BILL']);
+  data.push([`Relatório geral`]);
+  data.push([`Gerado em: ${today}`]);
+  data.push([]);
+
+  datasets.forEach(({ cfg, rows }) => {
+    data.push([cfg.label]);
+    if (!rows.length) {
+      data.push(['Nenhum registro encontrado.']);
+      data.push([]);
+      return;
+    }
+    const headers = Object.keys(rows[0]);
+    data.push(headers);
+    rows.forEach((row) => {
+      data.push(headers.map((header) => row[header] ?? ''));
+    });
+    data.push([]);
+    data.push([]);
+  });
+
+  const sheet = XLSX.utils.aoa_to_sheet(data);
+  const columnCount = Math.max(...data.map((row) => row.length));
+  const widths = Array.from({ length: columnCount }, (_, colIndex) => {
+    let maxLength = 10;
+    data.forEach((row) => {
+      const value = row[colIndex];
+      if (value !== undefined && value !== null) {
+        const length = String(value).length;
+        if (length > maxLength) maxLength = length;
+      }
+    });
+    return { wch: Math.min(Math.max(maxLength + 2, 10), 35) };
+  });
+  sheet['!cols'] = widths;
+  sheet['!rows'] = data.map(() => ({ hpt: 18 }));
+  sheet['!freeze'] = { xSplit: 0, ySplit: 4 };
+
+  XLSX.utils.book_append_sheet(book, sheet, 'Relatório');
+  XLSX.writeFile(
+    book,
+    `Bill_Logistica_Relatorio_${today.replace(/\//g, '-')}.xlsx`
+  );
+}
+
+function exportPdfMulti(
+  datasets: { cfg: any; rows: any[] }[],
+  fontSizeOption: 'small' | 'medium' | 'large'
+) {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+  const today = new Date().toLocaleDateString('pt-BR');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 6;
+  const availableWidth = pageWidth - margin * 2;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('LOGÍSTICAS BILL', margin, 10);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('Relatório geral', margin, 15);
+  doc.text(`Gerado em: ${today}`, pageWidth - margin, 15, { align: 'right' });
+
+  let currentY = 20;
+
+  datasets.forEach(({ cfg, rows }) => {
+    if (currentY > pageHeight - 25) {
+      doc.addPage();
+      currentY = 12;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(cfg.label, margin, currentY);
+    currentY += 3;
+
+    if (!rows.length) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text('Nenhum registro encontrado.', margin, currentY + 4);
+      currentY += 10;
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+    const body = rows.map((row) =>
+      headers.map((header) => String(row[header] ?? ''))
+    );
+
+    const columnLengths = headers.map((header, index) => {
+      let max = String(header).length;
+      body.forEach((row) => {
+        const value = String(row[index] ?? '');
+        if (value.length > max) max = value.length;
+      });
+      return Math.min(max, 40);
+    });
+
+    const totalLength = columnLengths.reduce((sum, value) => sum + value, 0) || 1;
+    const columnStyles: any = {};
+    headers.forEach((_, index) => {
+      let width = (columnLengths[index] / totalLength) * availableWidth;
+      width = Math.max(width, 10);
+      width = Math.min(width, 45);
+      columnStyles[index] = { cellWidth: width };
+    });
+
+    let totalColumnWidth = 0;
+    headers.forEach((_, index) => {
+      totalColumnWidth += columnStyles[index].cellWidth;
+    });
+    if (totalColumnWidth > availableWidth) {
+      const scale = availableWidth / totalColumnWidth;
+      headers.forEach((_, index) => {
+        columnStyles[index].cellWidth *= scale;
+      });
+    }
+
+    let fontSize = 6;
+    if (fontSizeOption === 'small') fontSize = 5;
+    if (fontSizeOption === 'medium') fontSize = 6;
+    if (fontSizeOption === 'large') fontSize = 7.5;
+
+    if (headers.length >= 12) fontSize = Math.min(fontSize, 5);
+    if (headers.length >= 16) fontSize = Math.min(fontSize, 4.5);
+
+    autoTable(doc, {
+      head: [headers],
+      body,
+      startY: currentY + 2,
+      margin: { left: margin, right: margin, top: 5, bottom: 8 },
+      tableWidth: availableWidth,
+      horizontalPageBreak: false,
+      theme: 'grid',
+      styles: {
+        font: 'helvetica',
+        fontSize,
+        cellPadding: 0.8,
+        overflow: 'linebreak',
+        valign: 'middle',
+        lineWidth: 0.1,
+        lineColor: [80, 80, 80],
+        minCellHeight: 4,
+      },
+      headStyles: {
+        font: 'helvetica',
+        fontStyle: 'bold',
+        fontSize,
+        fillColor: [15, 40, 70],
+        textColor: [255, 255, 255],
+        halign: 'center',
+        valign: 'middle',
+        cellPadding: 0.8,
+      },
+      bodyStyles: {
+        fontSize,
+        cellPadding: 0.8,
+        valign: 'middle',
+      },
+      columnStyles,
+      pageBreak: 'auto',
+      rowPageBreak: 'avoid',
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || currentY + 10;
+    currentY = finalY + 6;
+
+    if (currentY > pageHeight - 15) {
+      doc.addPage();
+      currentY = 12;
+    }
+  });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  doc.text(
+    'LOGÍSTICAS BILL — Relatório gerado automaticamente',
+    margin,
+    pageHeight - 4
+  );
+
+  return doc;
+}
+
+const SCHEDULE_REPORT_FIELDS = [
+  { key: 'Semana', label: 'Semana' },
+  { key: 'Status_Semana', label: 'Status da semana' },
+  { key: 'Data', label: 'Data' },
+  { key: 'Região', label: 'Região' },
+  { key: 'Rota', label: 'Rota' },
+  { key: 'Posição', label: 'Posição' },
+  { key: 'Cliente', label: 'Cliente' },
+  { key: 'Serviço', label: 'Serviço' },
+  { key: 'Telefone', label: 'Telefone' },
+  { key: 'Localização', label: 'Localização' },
+  { key: 'Comanda', label: 'Comanda' },
+  { key: 'Pago', label: 'Pago' },
+  { key: 'Cooperativa', label: 'Cooperativa' },
+  { key: 'Sem Comanda', label: 'Sem Comanda' },
+  { key: 'Status', label: 'Status' },
+  { key: 'Observação', label: 'Observação' },
+  { key: 'Vagas', label: 'Vagas' },
+];
+
+const COMMERCIAL_REPORT_FIELDS = [
+  { key: 'Código', label: 'Código' },
+  { key: 'Produto', label: 'Produto' },
+  { key: 'Qtd', label: 'Quantidade' },
+  { key: 'Preço unit.', label: 'Preço unitário' },
+  { key: 'Total', label: 'Total' },
+  { key: 'Agendamentos', label: 'Nº de agendamentos' },
+];
+
+function ClosingReport() {
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [data, setData] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setErr('');
+    try {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set('date_from', dateFrom);
+      if (dateTo) qs.set('date_to', dateTo);
+      setData(await request(`/commercial/closing-report?${qs}`));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const money = (n: number) =>
+    (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  return (
+    <div className="mb-8 rounded-xl border bg-white p-5">
+      <h3 className="font-semibold text-slate-800">Fechamento do mês</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        Compara a descrição do serviço agendado com os produtos cadastrados em Comercial.
+      </p>
+      <form onSubmit={run} className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-600">De</span>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border p-2" />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-600">Até</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border p-2" />
+        </label>
+        <button type="submit" disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+          {busy ? 'Gerando…' : 'Gerar fechamento'}
+        </button>
+      </form>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+
+      {data && (
+        <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Qtd. total</p>
+              <p className="text-xl font-bold">{data.summary?.quantity_total ?? 0}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Valor total</p>
+              <p className="text-xl font-bold text-emerald-700">{money(data.summary?.revenue_total)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Sem produto correspondente</p>
+              <p className="text-xl font-bold text-amber-700">{data.summary?.entries_unmatched ?? 0}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Produto</th>
+                  <th className="px-3 py-2">Qtd</th>
+                  <th className="px-3 py-2">Preço unit.</th>
+                  <th className="px-3 py-2">Total</th>
+                  <th className="px-3 py-2">Agendamentos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.lines || []).map((l: any) => (
+                  <tr key={l.product_id} className="border-t">
+                    <td className="px-3 py-2">{l.code || '—'}</td>
+                    <td className="px-3 py-2 font-medium">{l.name}</td>
+                    <td className="px-3 py-2">{l.quantity}</td>
+                    <td className="px-3 py-2">{money(l.unit_price)}</td>
+                    <td className="px-3 py-2 font-medium">{money(l.line_total)}</td>
+                    <td className="px-3 py-2">{l.entries}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {!!data.unmatched?.length && (
+            <details className="mt-4 text-sm">
+              <summary className="cursor-pointer text-amber-800">
+                Serviços sem produto cadastrado ({data.unmatched.length})
+              </summary>
+              <ul className="mt-2 max-h-40 overflow-auto text-xs text-slate-600">
+                {data.unmatched.map((u: any, i: number) => (
+                  <li key={i}>
+                    {u.date} — {u.client}: {u.service}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReportsExport({ lookups }: { lookups: any }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [format, setFormat] = useState<'xlsx' | 'pdf'>('xlsx');
+  const [exporting, setExporting] = useState(false);
+  const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [err, setErr] = useState('');
+  const [preview, setPreview] = useState<{ cfg: any; rows: any[] }[] | null>(null);
+  const [scheduleFields, setScheduleFields] = useState<string[]>(SCHEDULE_REPORT_FIELDS.map((f) => f.key)
+);
+  const [commercialFields, setCommercialFields] = useState<string[]>(
+    COMMERCIAL_REPORT_FIELDS.map((f) => f.key)
+  );
+  const [commercialFrom, setCommercialFrom] = useState('');
+  const [commercialTo, setCommercialTo] = useState('');
+
+  function toggleCommercialField(key: string) {
+    setCommercialFields((s) =>
+      s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
+    );
+  }
+  function selectAllCommercialFields() {
+    setCommercialFields(COMMERCIAL_REPORT_FIELDS.map((f) => f.key));
+  }
+  function clearCommercialFields() {
+    setCommercialFields([]);
+  }
+
+  function toggleScheduleField(key: string) {
+    setScheduleFields((s) =>
+      s.includes(key) ? s.filter((x) => x !== key) : [...s, key]
+    );
+  }
+  function selectAllScheduleFields() {
+    setScheduleFields(SCHEDULE_REPORT_FIELDS.map((f) => f.key));
+  }
+  function clearScheduleFields() {
+    setScheduleFields([]);
+  }
+  function toggle(v: string) {
+    setSelected((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]));
+  }
+  
+  async function loadPreview() {
+    if (!selected.length) {
+      setErr('Selecione pelo menos um módulo.');
+      return;
+    }
+    setExporting(true);
+    setErr('');
+    try {
+      const datasets = await Promise.all(
+                selected.map(async (v) => {
+          const cfg = REPORT_SOURCES.find((s) => s.value === v)!;
+
+          if (v === 'schedule') {
+            if (!scheduleFields.length) {
+              throw new Error('Selecione pelo menos um campo do Agendamento.');
+            }
+            const weeks = (await request(cfg.path)) as any[];
+            const flat: any[] = [];
+            weeks.forEach((week) => {
+              (week.route_slots || []).forEach((slot: any) => {
+                (slot.entries || []).forEach((e: any) => {
+                  const full: Record<string, any> = {
+                    Semana: week.label || week.start_date,
+                    Status_Semana: week.status,
+                    Data: slot.date,
+                    'Região': slot.region_code,
+                    Rota: slot.route_label || slot.vehicle?.plate || '',
+                    'Posição': e.position,
+                    Cliente: e.client_name,
+                    'Serviço': e.service_description,
+                    Telefone: e.phone || '',
+                    'Localização': e.location_link || '',
+                    Comanda: e.comanda || '',
+                    Pago: e.pago ? 'Sim' : 'Não',
+                    Cooperativa: e.cooperativa_nome || '',
+                    'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
+                    Status: e.status || '',
+                    'Observação': e.observation || '',
+                    Vagas: e.slots_consumed || 1,
+                  };
+                  const row: Record<string, any> = {};
+                  scheduleFields.forEach((key) => {
+                    if (key in full) row[key] = full[key];
+                  });
+                  flat.push(row);
+                });
+              });
+            });
+            return { cfg, rows: flat };
+          }
+
+          if (v === 'commercial') {
+            if (!commercialFields.length) {
+              throw new Error('Selecione pelo menos um campo do Comercial.');
+            }
+            const qs = new URLSearchParams();
+            if (commercialFrom) qs.set('date_from', commercialFrom);
+            if (commercialTo) qs.set('date_to', commercialTo);
+            const data = await request(`/commercial/closing-report?${qs.toString()}`);
+            const flat = (data.lines || []).map((l: any) => {
+              const full: Record<string, any> = {
+                'Código': l.code || '',
+                Produto: l.name || '',
+                Qtd: l.quantity,
+                'Preço unit.': l.unit_price,
+                Total: l.line_total,
+                Agendamentos: l.entries,
+              };
+              const row: Record<string, any> = {};
+              commercialFields.forEach((key) => {
+                if (key in full) row[key] = full[key];
+              });
+              return row;
+            });
+            if (data.summary) {
+              const tot: Record<string, any> = {};
+              if (commercialFields.includes('Produto')) tot['Produto'] = 'TOTAL';
+              if (commercialFields.includes('Qtd')) tot['Qtd'] = data.summary.quantity_total;
+              if (commercialFields.includes('Total')) tot['Total'] = data.summary.revenue_total;
+              if (commercialFields.includes('Agendamentos'))
+                tot['Agendamentos'] = data.summary.entries_matched;
+              flat.push(tot);
+            }
+            return { cfg, rows: flat };
+          }
+
+          const rows = (await request(cfg.path)) as any[];
+          return { cfg, rows: rows.map((r) => cleanRowForReport(r, lookups)) };
+        })
+      );
+      setPreview(datasets);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function downloadExcel() {
+    if (!preview) return;
+    exportExcelMulti(preview);
+  }
+
+  function downloadPdf() {
+    if (!preview) return;
+    const doc = exportPdfMulti(preview, fontSize);
+    const today = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    doc.save(`Bill_Logistica_Relatorio_${today}.pdf`);
+  }
+
+  function printPdf() {
+    if (!preview) return;
+    const doc = exportPdfMulti(preview, fontSize);
+    doc.autoPrint();
+    window.open(doc.output('bloburl'), '_blank');
+  }
+
+  return (
+    <div className="p-5 text-sm text-slate-600">
+      <p className="mb-3">
+        Selecione um ou mais módulos. Ao clicar em <strong>Gerar relatório</strong> você verá o
+        preview completo antes de salvar ou imprimir.
+      </p>
+      {err && <p className="mb-2 text-red-600">{err}</p>}
+
+      <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border p-3 sm:grid-cols-3">
+        {REPORT_SOURCES.map((s) => (
+          <label key={s.value} className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={selected.includes(s.value)}
+              onChange={() => toggle(s.value)}
+              className="h-4 w-4"
+            />
+            {s.label}
+          </label>
+        ))}
+      </div>
+
+      {selected.includes('schedule') && (
+      <div className="mb-4 rounded-lg border p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium text-slate-700">
+            Campos do Agendamento
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={selectAllScheduleFields}
+              className="text-xs text-brand hover:underline"
+            >
+              Marcar todos
+            </button>
+            <button
+              type="button"
+              onClick={clearScheduleFields}
+              className="text-xs text-slate-500 hover:underline"
+            >
+              Limpar
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+          {SCHEDULE_REPORT_FIELDS.map((f) => (
+            <label
+              key={f.key}
+              className="flex items-center gap-2 text-xs text-slate-700"
+            >
+              <input
+                type="checkbox"
+                checked={scheduleFields.includes(f.key)}
+                onChange={() => toggleScheduleField(f.key)}
+                className="h-4 w-4"
+              />
+              {f.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      )}
+
+        {selected.includes('commercial') && (
+        <div className="mb-4 rounded-lg border p-3">
+          <p className="mb-2 text-xs font-medium text-slate-700">
+            Comercial — período e campos
+          </p>
+          <div className="mb-3 flex flex-wrap gap-3">
+            <label className="text-xs">
+              <span className="mb-1 block text-slate-600">Data inicial</span>
+              <input
+                type="date"
+                value={commercialFrom}
+                onChange={(e) => setCommercialFrom(e.target.value)}
+                className="rounded-lg border p-2 text-sm"
+              />
+            </label>
+            <label className="text-xs">
+              <span className="mb-1 block text-slate-600">Data final</span>
+              <input
+                type="date"
+                value={commercialTo}
+                onChange={(e) => setCommercialTo(e.target.value)}
+                className="rounded-lg border p-2 text-sm"
+              />
+            </label>
+          </div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-slate-700">Campos do Comercial</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={selectAllCommercialFields}
+                className="text-xs text-brand hover:underline"
+              >
+                Marcar todos
+              </button>
+              <button
+                type="button"
+                onClick={clearCommercialFields}
+                className="text-xs text-slate-500 hover:underline"
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {COMMERCIAL_REPORT_FIELDS.map((f) => (
+              <label
+                key={f.key}
+                className="flex items-center gap-2 text-xs text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={commercialFields.includes(f.key)}
+                  onChange={() => toggleCommercialField(f.key)}
+                  className="h-4 w-4"
+                />
+                {f.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mb-4">
+        <label className="mb-2 block text-xs font-medium text-slate-600">
+          Tamanho da fonte do PDF
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <button
+              key={size}
+              type="button"
+              onClick={() => setFontSize(size)}
+              className={`rounded-lg border px-4 py-2 text-xs ${
+                fontSize === size
+                  ? 'border-brand bg-brand text-white'
+                  : 'bg-white text-slate-600'
+              }`}
+            >
+              {size === 'small' ? 'Pequena' : size === 'medium' ? 'Média' : 'Grande'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={loadPreview}
+        disabled={exporting}
+        className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-60"
+      >
+        {exporting ? 'Carregando…' : 'Gerar relatório'}
+      </button>
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3">
+          <div className="flex h-[96vh] w-[98vw] max-w-none flex-col rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Preview do relatório</h3>
+                <p className="text-xs text-slate-500">
+                  Confira os dados abaixo. Depois escolha salvar em Excel, PDF ou imprimir.
+                </p>
+              </div>
+              <button
+                onClick={() => setPreview(null)}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {preview.map(({ cfg, rows }) => (
+                <div key={cfg.value} className="mb-6">
+                  <h4 className="mb-2 font-semibold text-slate-800">
+                    {cfg.label}{' '}
+                    <span className="text-sm font-normal text-slate-500">
+                      ({rows.length} registro{rows.length !== 1 ? 's' : ''})
+                    </span>
+                  </h4>
+                  {!rows.length ? (
+                    <p className="text-sm text-slate-400">Nenhum registro encontrado.</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border">
+                      <table className="min-w-full text-left text-[12px]">
+                        <thead className="bg-slate-100 sticky top-0">
+                          <tr>
+                            {Object.keys(rows[0]).map((h) => (
+                              <th
+                                key={h}
+                                className="whitespace-nowrap border-b px-2 py-1.5 font-semibold text-slate-700"
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => (
+                            <tr key={i} className="border-t hover:bg-slate-50">
+                              {Object.keys(rows[0]).map((h) => (
+                                <td
+                                  key={h}
+                                  className="max-w-[220px] whitespace-pre-wrap break-words px-2 py-1 text-slate-700"
+                                  title={String(row[h] ?? '')}
+                                >
+                                  {String(row[h] ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-4">
+              <button
+                onClick={() => setPreview(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={downloadExcel}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Salvar Excel
+              </button>
+              <button
+                onClick={downloadPdf}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Salvar PDF
+              </button>
+              <button
+                onClick={printPdf}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Imprimir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Module({
+  setBlockModal,
+  setBlockMode,
+  setBlockedUntil,
+  setBlockReason,
+  unblockUser,
+  page,
+  rows,
+  loading,
+  create,
+  isAdmin,
+  lookups,
+  editingUser,
+  setEditingUser,
+  updateUser,
+  deleteUser,
+  editingResource,
+  setEditingResource,
+  updateResource,
+  deleteResource,
+  editingMovement,
+  setEditingMovement,
+  updateMovement,
+  deleteMovement,
+}: {
+  page: string;
+  rows: any[];
+  loading: boolean;
+  create: (data: any) => Promise<void>;
+  isAdmin: boolean;
+  lookups: any;
+  editingUser: any;
+  setEditingUser: (u: any) => void;
+  updateUser: (id: number, data: any) => Promise<void>;
+  deleteUser: (id: number) => Promise<void>;
+  editingResource: any;
+  setEditingResource: (r: any) => void;
+  updateResource: (id: string | number, data: any) => Promise<void>;
+  deleteResource: (id: string | number) => Promise<void>;
+  editingMovement: any;
+  setEditingMovement: (m: any) => void;
+  updateMovement: (id: number, data: any) => Promise<void>;
+  deleteMovement: (id: number) => Promise<void>;
+  setBlockModal: (u: any) => void;
+  setBlockMode: (m: 'manual' | 'scheduled' | 'permanent') => void;
+  setBlockedUntil: (v: string) => void;
+  setBlockReason: (v: string) => void;
+  unblockUser: (id: number) => Promise<void>;
+}) {
+  const createAllowed =
+    !['movements', 'reports'].includes(page) && (page !== 'users' || isAdmin);
+  const isUsers = page === 'users';
+  const isResourceModule = !!resource[page];
+  const isMovementModule = page === 'entry' || page === 'output';
+  const showActions =
+    (isUsers && isAdmin) || isResourceModule || isMovementModule;
+  const hidden = HIDDEN_TABLE_COLUMNS[page] || [];
+  const cols =
+    TABLE_COLUMNS[page] ||
+    Object.keys(rows[0] || { id: 'ID', 'informação': 'Informação' })
+      .filter((k) => !hidden.includes(k))
+      .slice(0, 7);
+
+  {createAllowed && (
+        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
+        <h3 className="font-semibold">Novo registro</h3>
+        {(page === 'entry' || page === 'output')
+        ? <StockMovementForm page={page as 'entry' | 'output'} lookups={lookups} onSubmit={create} />
+        : <ResourceForm page={page} lookups={lookups} onSubmit={create} />}
+        </section>
+      )}
+
+    return (
+    <>
+      {createAllowed && (
+        <section className="mb-6 rounded-xl bg-white p-5 shadow-sm">
+          <h3 className="mb-3 font-semibold">
+            {page === 'stock'
+              ? 'Novo produto no estoque'
+              : page === 'entry'
+              ? 'Nova entrada'
+              : page === 'output'
+              ? 'Nova saída'
+              : 'Novo registro'}
+          </h3>
+          {page === 'entry' || page === 'output' ? (
+            <StockMovementForm
+              page={page as 'entry' | 'output'}
+              lookups={lookups}
+              onSubmit={create}
+            />
+          ) : (
+            <ResourceForm page={page} lookups={lookups} onSubmit={create} />
+          )}
+        </section>
+      )}
+
+      <section className="overflow-hidden rounded-xl bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b p-5">
+          <h2 className="font-semibold">
+            {page === 'reports' ? 'Relatórios' : titleFor(page)}
+          </h2>
+          <div className="flex items-center gap-3">
+            {page === 'stock' && rows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => printProductLabels(rows)}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+              >
+                Imprimir etiquetas QR (todos)
+              </button>
+            )}
+            {page !== 'reports' && (
+              <span className="text-sm text-slate-500">{rows.length} registros</span>
+            )}
+          </div>
+        </div>
+
+        {page === 'reports' ? (
+          <ReportsExport lookups={lookups} />
+        ) : (
+          <div className="w-full max-w-full overflow-x-auto overflow-y-hidden">
+            <table
+              className={`w-full ${
+                page === 'maintenance' || page === 'vehicles'
+                 ? 'min-w-[1200px]'
+                 : 'min-w-[900px]'
+              } table-fixed border-collapse text-left text-sm`}
+            >
+              <thead className="bg-slate-50">
+                <tr>
+                  {cols.map((k) => (
+                    <th
+                      key={k}
+                      className={`whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500 ${
+                          k === 'id' || k === 'code'
+                          ? 'w-14 max-w-[3.5rem] px-2'
+                          : k === 'active'
+                          ? 'w-20 max-w-[5rem] px-2 text-center'
+                          : k === 'vehicle_id'
+                          ? 'w-[280px] min-w-[280px] max-w-[280px]'
+                          : k === 'type'
+                          ? 'w-[140px] min-w-[140px] max-w-[140px]'
+                          : ''
+                      }`}
+                    >
+                      {labelFor(k)}
+                    </th>
+                  ))}
+                  {showActions && (
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Ações
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={resourceIdOf(page, r) || i} className="border-t border-slate-100">
+                    {cols.map((k) => {
+                      const long =
+                        k === 'description' ||
+                        k === 'observation' ||
+                        k === 'notes' ||
+                        k === 'name' ||
+                        k === 'recipient' ||
+                        k === 'responsible';
+                      const cell = resolveCell(k, r[k], lookups);
+                      return (
+                        <td
+                          key={k}
+                          className={`px-3 py-2.5 align-top text-sm text-slate-800 ${
+                            k === 'id' || k === 'code'
+                              ? 'w-14 max-w-[3.5rem] whitespace-nowrap px-2 text-center tabular-nums'
+                              : k === 'vehicle_id'
+                              ? 'w-[440px] min-w-[440px] max-w-[440px] whitespace-normal break-words overflow-visible'
+                              : k === 'brand' || k === 'model'
+                              ? 'w-[190px] min-w-[190px] max-w-[190px] whitespace-normal break-words'
+                              : k === 'type'
+                              ? 'w-[140px] min-w-[140px] max-w-[140px] whitespace-normal break-words'
+                              : k === 'description'
+                              ? 'min-w-[280px] max-w-[360px] whitespace-normal break-words'
+                              : long
+                              ? 'max-w-[220px] truncate'
+                              : 'whitespace-nowrap'
+                          }`}
+                          title={long || k === 'description' ? String(cell || '') : undefined}
+                        >
+                          {k === 'status' ? (
+                            <span
+                              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusClasses(
+                                r[k]
+                              )}`}
+                            >
+                              {r[k] || '—'}
+                            </span>
+                          ) : (
+                            cell
+                          )}
+                        </td>
+                      );
+                    })}
+                    {showActions && (
+                        <td className="whitespace-nowrap px-3 py-2.5 align-top">
+                          <div className="flex min-w-max items-center gap-2">
+                            {page === 'stock' && (
+                              <button
+                                type="button"
+                                onClick={() => printProductLabels([r])}
+                                className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                              >
+                                QR Code
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                isUsers
+                                  ? setEditingUser(r)
+                                  : isMovementModule
+                                  ? setEditingMovement(r)
+                                  : setEditingResource(r)
+                              }
+                              className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                            >
+                              Editar
+                            </button>
+
+                            {isUsers && !r.is_main_admin && (
+                              r.active !== false ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBlockModal(r);
+                                    setBlockMode('manual');
+                                    setBlockedUntil('');
+                                    setBlockReason('');
+                                  }}
+                                  className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                                >
+                                  Bloquear
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => unblockUser(r.id)}
+                                  className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                                >
+                                  Reativar
+                                </button>
+                              )
+                            )}
+                            
+                            {!(isUsers && r.is_main_admin) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isUsers
+                                    ? deleteUser(r.id)
+                                    : isMovementModule
+                                    ? deleteMovement(r.id)
+                                    : deleteResource(resourceIdOf(page, r))
+                                }
+                                className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                              >
+                                Excluir
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                {!rows.length && (
+                  <tr>
+                    <td
+                      colSpan={cols.length + (showActions ? 1 : 0)}
+                      className="p-5 text-slate-500"
+                    >
+                      Nenhum registro encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {isUsers && isAdmin && editingUser && (
+        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold">Editar usuário: {editingUser.name}</h3>
+            <button
+              onClick={() => setEditingUser(null)}
+              className="text-sm text-slate-500 hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
+          <EditUserForm
+            user={editingUser}
+            onSubmit={(data) => updateUser(editingUser.id, data)}
+          />
+        </section>
+      )}
+
+      {isResourceModule && editingResource && (
+        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold">Editar registro</h3>
+            <button
+              onClick={() => setEditingResource(null)}
+              className="text-sm text-slate-500 hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
+          <ResourceForm
+            page={page}
+            lookups={lookups}
+            initial={editingResource}
+            onSubmit={(data) =>
+              updateResource(resourceIdOf(page, editingResource), data)
+            }
+            submitLabel="Salvar alterações"
+          />
+        </section>
+      )}
+
+      {isMovementModule && editingMovement && (
+        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold">Editar movimentação</h3>
+            <button
+              onClick={() => setEditingMovement(null)}
+              className="text-sm text-slate-500 hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
+          <MovementEditForm
+            movement={editingMovement}
+            lookups={lookups}
+            onSubmit={(data) => updateMovement(editingMovement.id, data)}
+          />
+        </section>
+      )}
+    </>
+  );
+}
+
+function emptyValues(page: string, initial?: any) {
+  const out: any = {};
+  (FIELDS[page] || []).forEach((f) => {
+    if (initial && initial[f.key] !== undefined && initial[f.key] !== null)
+      out[f.key] = String(initial[f.key]).slice(0, f.type === 'datetime' ? 16 : undefined);
+    else out[f.key] = '';
+  });
+  return out;
+}
+
+function ModuleCheckboxes({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const list = value ? value.split(',').filter(Boolean) : [];
+  const [focus, setFocus] = useState<string | null>('schedule');
+
+  function toggle(key: string, on: boolean, alsoRemove?: string[]) {
+    const next = new Set(list);
+    if (on) next.add(key);
+    else {
+      next.delete(key);
+      (alsoRemove || []).forEach((k) => next.delete(k));
+    }
+    onChange(Array.from(next).join(','));
+  }
+
+  const group = PERMISSION_GROUPS.find((g) => g.module === focus) || PERMISSION_GROUPS[0];
+
+  return (
+    <div className="grid gap-3 rounded-lg border border-slate-200 p-3 lg:grid-cols-5">
+      {/* Coluna esquerda: só as abas */}
+      <div className="flex flex-col gap-1 lg:col-span-2">
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Módulos
+        </p>
+        {PERMISSION_GROUPS.map((g) => {
+          const on =
+            list.includes(g.module) ||
+            (g.module === 'orders' &&
+              (list.includes('orders_create') || list.includes('orders_list'))) ||
+            (g.module === 'production' &&
+              (list.includes('production') || list.includes('assembly')));
+          const selected = focus === g.module;
+          return (
+            <button
+              key={g.module}
+              type="button"
+              onClick={() => setFocus(g.module)}
+              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${
+                selected ? 'bg-brand/10 ring-1 ring-brand/30' : 'hover:bg-slate-50'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0"
+                checked={on}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  setFocus(g.module);
+                  if (g.module === 'orders') {
+                    if (e.target.checked) {
+                      toggle('orders', true);
+                      if (!list.includes('orders_list') && !list.includes('orders_create')) {
+                        toggle('orders_list', true);
+                      }
+                    } else {
+                      toggle('orders', false, ['orders_create', 'orders_list']);
+                    }
+                    return;
+                  }
+                  if (!e.target.checked && g.children?.length) {
+                    toggle(
+                      g.module,
+                      false,
+                      g.children.map((c) => c.value)
+                    );
+                  } else {
+                    toggle(g.module, e.target.checked);
+                  }
+                }}
+              />
+              <span className={`leading-tight ${on ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
+                {g.label}
+              </span>
+              {g.children?.length ? (
+                <span className="ml-auto text-[10px] text-slate-400">●</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Coluna direita: opções da aba selecionada */}
+      <div className="rounded-lg bg-slate-50 p-3 lg:col-span-3">
+        <p className="mb-2 text-sm font-semibold text-slate-800">{group.label}</p>
+        {!group.children?.length ? (
+          <p className="text-xs text-slate-500">
+            Sem opções extras. Marque o módulo à esquerda para liberar a aba inteira.
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {group.children.map((c) => (
+              <label
+                key={c.value}
+                className="flex items-start gap-2 rounded-md border border-slate-200/80 bg-white px-2.5 py-2 text-xs text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  checked={list.includes(c.value)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      if (group.module === 'orders') toggle('orders', true);
+                      else if (group.module !== 'production' && group.module !== 'stock') {
+                        toggle(group.module, true);
+                      }
+                    }
+                    toggle(c.value, e.target.checked);
+                  }}
+                />
+                <span className="leading-snug">{c.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PermissionsField({
+  value,
+  onChange,
+  startOpen,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  startOpen: boolean;
+}) {
+  const [open, setOpen] = useState(startOpen);
+  return (
+    <div>
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-xs font-medium text-brand hover:underline"
+        >
+          Personalizar permissões específicas (opcional)
+        </button>
+      ) : (
+        <>
+          <ModuleCheckboxes value={value} onChange={onChange} />
+          <button
+            type="button"
+            onClick={() => {
+              onChange('');
+              setOpen(false);
+            }}
+            className="mt-2 text-xs text-slate-500 hover:underline"
+          >
+            Usar módulos padrão do perfil
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ResourceForm({
+  page,
+  lookups,
+  onSubmit,
+  initial,
+  submitLabel,
+}: {
+  page: string;
+  lookups: any;
+  onSubmit: (data: any) => Promise<void>;
+  initial?: any;
+  submitLabel?: string;
+}) {
+  const fields = FIELDS[page] || [];
+  const [values, setValues] = useState<any>(() => emptyValues(page, initial));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValues(emptyValues(page, initial));
+  }, [page]);
+
+  function set(key: string, v: string) {
+    setValues((s: any) => ({ ...s, [key]: v }));
+  }
+
+  function optionsFor(type: string) {
+    if (type === 'vehicle')
+      return (lookups.vehicles || []).map((v: any) => ({
+        value: v.id,
+        label: `${v.plate} — ${v.brand} ${v.model}`,
+      }));
+    if (type === 'driver')
+      return (lookups.drivers || []).map((d: any) => ({
+        value: d.id,
+        label: d.name,
+      }));
+    if (type === 'product')
+      return (lookups.products || []).map((p: any) => ({
+        value: p.id,
+        label: `${p.id} — ${p.name}`,
+      }));
+    return [];
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const data: any = {};
+    for (const f of fields) {
+      let v: any = values[f.key];
+      if (f.type === 'modules') {
+        data[f.key] = v
+          ? expandPermissions(String(v).split(',').filter(Boolean)).join(',')
+          : null;
+        continue;
+      }
+      if (v === '') {
+        data[f.key] = null;
+        continue;
+      }
+      if (f.type === 'number' || ['vehicle', 'driver', 'product'].includes(f.type))
+        v = Number(v);
+      data[f.key] = v;
+    }
+    try {
+      await onSubmit(data);
+      if (!initial) setValues(emptyValues(page));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!fields.length)
+    return (
+      <p className="text-sm text-slate-500">
+        Este módulo ainda não possui formulário de cadastro.
+      </p>
+    );
+
+  return (
+    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+      {fields.map((f) => {
+        const isLookup = ['vehicle', 'driver', 'product'].includes(f.type);
+        const Wrapper: any = f.type === 'modules' ? 'div' : 'label';
+        return (
+          <Wrapper
+            key={f.key}
+            className={`text-sm ${
+              f.type === 'textarea' || f.type === 'modules' ? 'sm:col-span-2' : ''
+            }`}
+          >
+            <span className="mb-1 block text-slate-600">
+              {f.label}
+              {f.required ? ' *' : ''}
+            </span>
+            {f.type === 'modules' ? (
+              <PermissionsField
+                value={values[f.key]}
+                onChange={(v) => set(f.key, v)}
+                startOpen={!!values[f.key]}
+              />
+            ) : f.type === 'textarea' ? (
+              <textarea
+                required={f.required}
+                value={values[f.key]}
+                onChange={(e) => set(f.key, e.target.value)}
+                className="h-20 w-full rounded-lg border p-2"
+              />
+            ) : f.type === 'select' ? (
+              <select
+                required={f.required}
+                value={values[f.key]}
+                onChange={(e) => set(f.key, e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="">Selecione</option>
+                {(f.options || []).map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            ) : isLookup ? (
+              <select
+                required={f.required}
+                value={values[f.key]}
+                onChange={(e) => set(f.key, e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="">Selecione</option>
+                {optionsFor(f.type).map((o: any) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                required={f.required}
+                value={values[f.key]}
+                onChange={(e) => set(f.key, e.target.value)}
+                type={
+                  f.type === 'number'
+                    ? 'number'
+                    : f.type === 'date'
+                    ? 'date'
+                    : f.type === 'datetime'
+                    ? 'datetime-local'
+                    : 'text'
+                }
+                step={f.step}
+                className="w-full rounded-lg border p-2"
+              />
+            )}
+          </Wrapper>
+        );
+      })}
+      <div className="sm:col-span-2">
+        <button
+          disabled={saving}
+          className="mt-1 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {saving ? 'Salvando…' : submitLabel || 'Salvar registro'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function EditUserForm({
+  user,
+  onSubmit,
+}: {
+  user: any;
+  onSubmit: (data: any) => Promise<void>;
+}) {
+  const [values, setValues] = useState<any>({
+    name: user.name || '',
+    username: user.username || '',
+    email: user.email || '',
+    role: user.role || '',
+    permissions: user.permissions || '',
+    active: user.active ? 'Sim' : 'Não',
+    password: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(key: string, v: string) {
+    setValues((s: any) => ({ ...s, [key]: v }));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const data: any = {
+      name: values.name,
+      username: values.username,
+      email: (values.email || '').trim().toLowerCase(),
+      role: values.role,
+      permissions: values.permissions
+        ? expandPermissions(String(values.permissions).split(',').filter(Boolean)).join(
+            ','
+          )
+        : null,
+      active: values.active === 'Sim',
+    };
+    if (values.password) data.password = values.password;
+    try {
+      await onSubmit(data);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" autoComplete="off">
+      {USER_EDIT_FIELDS.map((f) => {
+        const Wrapper: any = f.type === 'modules' ? 'div' : 'label';
+        return (
+        <Wrapper
+          key={f.key}
+          className={`text-sm ${f.type === 'modules' ? 'sm:col-span-2' : ''}`}
+        >
+          <span className="mb-1 block text-slate-600">
+            {f.label}
+            {f.required ? ' *' : ''}
+          </span>
+          {f.type === 'modules' ? (
+            <PermissionsField
+              value={values[f.key]}
+              onChange={(v) => set(f.key, v)}
+              startOpen={!!user.permissions}
+            />
+          ) : f.type === 'select' ? (
+            <select
+              required={f.required}
+              value={values[f.key]}
+              onChange={(e) => set(f.key, e.target.value)}
+              className="w-full rounded-lg border p-2"
+            >
+              {f.key !== 'active' && <option value="">Selecione</option>}
+              {(f.options || []).map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              required={f.required}
+              value={values[f.key]}
+              onChange={(e) => set(f.key, e.target.value)}
+              type={f.key === 'password' ? 'password' : 'text'}
+              autoComplete="off"
+              className="w-full rounded-lg border p-2"
+            />
+          )}
+        </Wrapper>
+        );
+      })}
+      <div className="sm:col-span-2">
+        <button
+          disabled={saving}
+          className="mt-1 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {saving ? 'Salvando…' : 'Salvar alterações'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function MovementEditForm({
+  movement,
+  lookups,
+  onSubmit,
+}: {
+  movement: any;
+  lookups: any;
+  onSubmit: (data: any) => Promise<void>;
+}) {
+  const [values, setValues] = useState<any>({
+    quantity: String(movement.quantity ?? ''),
+    responsible: movement.responsible || '',
+    recipient: movement.recipient || '',
+    sector: movement.sector || '',
+    vehicle_id: movement.vehicle_id ? String(movement.vehicle_id) : '',
+    observation: movement.observation || '',
+    invoice: movement.invoice || '',
+    unit_value: movement.unit_value != null ? String(movement.unit_value) : '',
+    password: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(key: string, v: string) {
+    setValues((s: any) => ({ ...s, [key]: v }));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const data: any = { password: values.password };
+    if (values.quantity !== '') data.quantity = Number(values.quantity);
+    if (values.responsible !== '') data.responsible = values.responsible;
+    if (values.recipient !== '') data.recipient = values.recipient;
+    if (values.sector !== '') data.sector = values.sector;
+    if (values.vehicle_id !== '') data.vehicle_id = Number(values.vehicle_id);
+    if (values.observation !== '') data.observation = values.observation;
+    if (values.invoice !== '') data.invoice = values.invoice;
+    if (values.unit_value !== '') data.unit_value = Number(values.unit_value);
+    try {
+      await onSubmit(data);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" autoComplete="off">
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Quantidade</span>
+        <input
+          type="number"
+          step="0.01"
+          value={values.quantity}
+          onChange={(e) => set('quantity', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Responsável (quem entregou)</span>
+        <input
+          value={values.responsible}
+          onChange={(e) => set('responsible', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Retirado por</span>
+        <input
+          value={values.recipient}
+          onChange={(e) => set('recipient', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Setor</span>
+        <input
+          value={values.sector}
+          onChange={(e) => set('sector', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Veículo</span>
+        <select
+          value={values.vehicle_id}
+          onChange={(e) => set('vehicle_id', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        >
+          <option value="">Selecione</option>
+          {(lookups.vehicles || []).map((v: any) => (
+            <option key={v.id} value={v.id}>
+              {v.plate} — {v.brand} {v.model}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="text-sm sm:col-span-2">
+        <span className="mb-1 block text-slate-600">Observação</span>
+        <textarea
+          value={values.observation}
+          onChange={(e) => set('observation', e.target.value)}
+          className="h-16 w-full rounded-lg border p-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-slate-600">Valor unitário</span>
+        <input
+          type="number"
+          step="0.01"
+          value={values.unit_value}
+          onChange={(e) => set('unit_value', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        />
+      </label>
+      <label className="text-sm sm:col-span-2">
+        <span className="mb-1 block text-slate-600">Confirme sua senha para salvar *</span>
+        <input
+          type="password"
+          required
+          autoComplete="off"
+          value={values.password}
+          onChange={(e) => set('password', e.target.value)}
+          className="w-full rounded-lg border p-2"
+        />
+      </label>
+      <div className="sm:col-span-2">
+        <button
+          disabled={saving}
+          className="mt-1 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {saving ? 'Salvando…' : 'Salvar alterações'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ============================================================
+// MÓDULO DE AGENDAMENTO — VERSÃO COMPLETA E MELHORADA
+// ============================================================
+
+const COOPERATIVAS = [
+  'COOPERA', 'COOPERALIANÇA', 'CERPALO', 'CERMOFUL',
+  'CERTREL', 'CELESC', 'CERBRANORTE', 'CEGERO',
+  'CERGAL', 'CERGRAL', 'COOPERCOCAL', 'EFLUL',
+  'COOPERZEM', 'CEGERO',
+];
+
+function calcularVagas(service: string): number {
+  const match = (service || '').trim().match(/^(\d+)/);
+  return match ? Math.max(0, parseInt(match[1], 10)) : 0;
+}
+
+function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
+  const [showArchiveWeek, setShowArchiveWeek] = useState(false);
+  const [archiveWeekId, setArchiveWeekId] = useState<number | null>(null);
+  const [archivingWeek, setArchivingWeek] = useState(false);
+  const [weeks, setWeeks] = useState<any[]>([]);
+  const scheduleHashRef = useRef<string>('');
+  const lastScheduleFetchRef = useRef<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [showDeleteWeek, setShowDeleteWeek] = useState(false);
+  const [deleteWeekId, setDeleteWeekId] = useState<number | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingWeek, setDeletingWeek] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
+  const [filterName, setFilterName] = useState('');
+  const [filterPhone, setFilterPhone] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterComanda, setFilterComanda] = useState('');
+  const [filterPlate, setFilterPlate] = useState('');
+  const [filterWeekday, setFilterWeekday] = useState('');
+
+  const [showNewWeek, setShowNewWeek] = useState(false);
+  const [showNewSlot, setShowNewSlot] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<any>(null);
+  const [addingEntryTo, setAddingEntryTo] = useState<number | null>(null);
+  const [editingEntry, setEditingEntry] = useState<any>(null);
+  const [addingExtraTo, setAddingExtraTo] = useState<number | null>(null);
+  const [transferEntry, setTransferEntry] = useState<any>(null);
+  const [transferSlot, setTransferSlot] = useState<any>(null);
+  const [transferTargetSlotId, setTransferTargetSlotId] = useState('');
+  const [transferNewDate, setTransferNewDate] = useState('');
+  const [transferWeekId, setTransferWeekId] = useState('');
+  const [transferring, setTransferring] = useState(false);
+  const [showPrintDay, setShowPrintDay] = useState(false);
+  const [printDate, setPrintDate] = useState('');
+  const [printSlotId, setPrintSlotId] = useState('all'); // 'all' ou id da rota
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [printFields, setPrintFields] = useState({
+    position: true,
+    client: true,
+    service: true,
+    phone: true,
+    location: false,
+    comanda: true,
+    cooperativa: true,
+    pago: true,
+    status: false,
+    observation: true,
+    extras: true,
+  });
+
+  const perms = (user.permissions || '').split(',').filter(Boolean);
+  const isMainAdmin = !!user.is_main_admin;
+
+  // Apenas o Administrador Principal (id 1) tem acesso total automático ao
+  // Agendamento. Todo o resto — incluindo os perfis ADMINISTRADOR e GERENTE —
+  // depende exclusivamente das permissões específicas marcadas no cadastro
+  // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
+  // schedule_archive).
+  const canEdit =
+    isMainAdmin || perms.includes('schedule_edit');
+
+  const canNewWeek =
+    isMainAdmin || perms.includes('schedule_week');
+
+  const canNewRoute =
+    isMainAdmin || perms.includes('schedule_route');
+
+  const canTransfer =
+    isMainAdmin || perms.includes('schedule_transfer');
+
+  const canExtra =
+    isMainAdmin || perms.includes('schedule_extra');
+
+  const canDelete =
+    isMainAdmin || perms.includes('schedule_delete');
+
+  const canArchive =
+    isMainAdmin || perms.includes('schedule_archive');
+
+  const canClose =
+    isMainAdmin || perms.includes('schedule_close');
+
+  const canPrint =
+    isMainAdmin || perms.includes('schedule_print');
+
+  const canExport =
+    isMainAdmin || perms.includes('schedule_export');
+
+  const canWrite =
+  canEdit ||
+  canNewWeek ||
+  canNewRoute ||
+  canTransfer ||
+  canExtra ||
+  canDelete ||
+  canArchive ||
+  canClose;
+
+    function forceReloadSchedule() {
+      scheduleHashRef.current = '';
+      return load({ silent: true });
+    }
+
+    async function load(opts?: { silent?: boolean }) {
+    const silent = !!(opts?.silent || weeks.length > 0);
+    // NÃO guardar scroll no início: se o usuário rolar durante o fetch,
+    // restaurar a posição antiga puxa a página para cima de novo.
+
+    if (!silent) setLoading(true);
+    if (!silent) setError('');
+    try {
+      lastScheduleFetchRef.current = Date.now();
+      const hashQ = scheduleHashRef.current
+        ? `&client_hash=${encodeURIComponent(scheduleHashRef.current)}`
+        : '';
+      const raw = await request(
+        `/schedule/weeks?include_archived=${includeArchived}${hashQ}`
+      );
+
+      // Backend: { unchanged, hash, weeks } — se igual, não reprocessa
+      if (raw && raw.unchanged) {
+        if (raw.hash) scheduleHashRef.current = raw.hash;
+        return;
+      }
+
+      const data: any[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.weeks)
+        ? raw.weeks
+        : [];
+      if (raw?.hash) scheduleHashRef.current = raw.hash;
+
+      // posição ATUAL (depois do await)
+      const scrollY =
+        typeof window !== 'undefined'
+          ? window.scrollY || document.documentElement.scrollTop || 0
+          : 0;
+
+      setWeeks(data);
+
+      if (data.length) {
+        setSelectedWeekId((prev: number | null) => {
+          if (prev !== null && data.some((w: any) => w.id === prev)) {
+            return prev;
+          }
+          const active = data.find((w: any) => w.status === 'Ativa') || data[0];
+          return active.id;
+        });
+      }
+
+      // Só corrige scroll se houve re-render real
+      if (typeof window !== 'undefined' && scrollY > 0) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.scrollTo(0, scrollY);
+          });
+        });
+      }
+    } catch (e: any) {
+      if (!silent) setError(e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('sidebarCollapsed');
+      if (v === '1') setSidebarCollapsed(true);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+    } catch {}
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    scheduleHashRef.current = '';
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeArchived]);
+
+  // Atualização vem do SSE global (AppShell) → evento reload-schedule
+  useEffect(() => {
+    const onReload = () => forceReloadSchedule();
+    window.addEventListener('reload-schedule', onReload);
+    return () => window.removeEventListener('reload-schedule', onReload);
+  }, []);
+
+  const selectedWeek = weeks.find((w) => w.id === selectedWeekId);
+
+  const slotsByDate = selectedWeek
+    ? selectedWeek.route_slots.reduce((acc: Record<string, any[]>, slot: any) => {
+        const key = slot.date;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(slot);
+        return acc;
+      }, {})
+    : {};
+
+  // ordem fixa dentro do dia (ordem de criação)
+  Object.keys(slotsByDate).forEach((key) => {
+    slotsByDate[key].sort((a: any, b: any) => Number(a.id) - Number(b.id));
+  });
+
+  const dates = Object.keys(slotsByDate).sort();
+
+  function entryMatches(e: any) {
+    const name = filterName.trim().toLowerCase();
+    const phone = filterPhone.trim().replace(/\D/g, '');
+    const comanda = filterComanda.trim().toLowerCase();
+    const st = filterStatus.trim();
+    if (name && !(e.client_name || '').toLowerCase().includes(name)) return false;
+    if (phone) {
+      const p = String(e.phone || '').replace(/\D/g, '');
+      if (!p.includes(phone)) return false;
+    }
+    if (st && String(e.status || '') !== st) return false;
+    if (comanda) {
+      const c = String(e.comanda || '').toLowerCase();
+      const sem = e.no_comanda ? 'sem comanda' : '';
+      if (!c.includes(comanda) && !sem.includes(comanda)) return false;
+    }
+    return true;
+  }
+
+  function slotMatchesFilters(slot: any, dateKey: string) {
+    const plateQ = filterPlate.trim().toLowerCase().replace(/[^a-z0-9]/gi, '');
+    if (plateQ) {
+      const plate = String(slot.vehicle?.plate || slot.route_label || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/gi, '');
+      if (!plate.includes(plateQ)) return false;
+    }
+    if (filterWeekday !== '') {
+      const parts = String(dateKey || slot.date || '').slice(0, 10).split('-');
+      if (parts.length === 3) {
+        const [y, m, d] = parts.map(Number);
+        const dow = new Date(y, m - 1, d).getDay(); // 0=Dom ... 6=Sáb
+        if (String(dow) !== filterWeekday) return false;
+      }
+    }
+    return true;
+  }
+
+  const hasEntryFilter = !!(
+    filterName.trim() ||
+    filterPhone.trim() ||
+    filterStatus ||
+    filterComanda.trim()
+  );
+  const hasAgendaFilter = !!(
+    hasEntryFilter ||
+    filterPlate.trim() ||
+    filterWeekday !== ''
+  );
+
+  const filteredSlotsByDate: Record<string, any[]> = {};
+  if (selectedWeek) {
+    Object.keys(slotsByDate).forEach((date) => {
+      const slots = slotsByDate[date]
+        .map((slot: any) => {
+          if (!slotMatchesFilters(slot, date)) return null;
+          if (!hasEntryFilter) return slot;
+          const entries = (slot.entries || []).filter(entryMatches);
+          if (!entries.length) return null;
+          return { ...slot, entries };
+        })
+        .filter(Boolean) as any[];
+      if (slots.length) filteredSlotsByDate[date] = slots;
+    });
+  }
+  const filteredDates = Object.keys(filteredSlotsByDate).sort();
+
+
+  async function createWeek(data: { start_date: string; label?: string }) {
+    try {
+      await request('/schedule/weeks', { method: 'POST', body: JSON.stringify(data) });
+      setShowNewWeek(false);
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+    async function confirmArchiveWeek() {
+    if (!archiveWeekId) return;
+    setArchivingWeek(true);
+    try {
+      await request(`/schedule/weeks/${archiveWeekId}/archive`, { method: 'POST' });
+      setShowArchiveWeek(false);
+      setArchiveWeekId(null);
+      setSelectedWeekId(null);
+      forceReloadSchedule();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setArchivingWeek(false);
+    }
+  }
+
+  async function confirmDeleteWeek() {
+    if (!deleteWeekId || !deletePassword) return;
+    setDeletingWeek(true);
+    try {
+      await request(`/schedule/weeks/${deleteWeekId}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      setShowDeleteWeek(false);
+      setDeleteWeekId(null);
+      setDeletePassword('');
+      setSelectedWeekId(null);
+      forceReloadSchedule();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDeletingWeek(false);
+    }
+  }
+
+  function exportWeekPdf(week: any) {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const margin = 8;
+    let y = 12;
+
+    doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('LOGÍSTICAS BILL — Agenda de Instalações', margin, y);
+      y += 7;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+
+      const weekTitle =
+        week.label && String(week.label).trim()
+          ? String(week.label).trim()
+          : formatDate(week.start_date);
+
+      doc.text(`Semana: ${weekTitle}`, margin, y);
+      y += 5;
+      doc.text(`Status: ${week.status || '—'}`, margin, y);
+      y += 8;
+
+    const slots = week.route_slots || [];
+    const byDate: Record<string, any[]> = {};
+    slots.forEach((s: any) => {
+      if (!byDate[s.date]) byDate[s.date] = [];
+      byDate[s.date].push(s);
+    });
+
+    Object.keys(byDate)
+      .sort()
+      .forEach((date) => {
+        if (y > 180) {
+          doc.addPage();
+          y = 12;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(formatDate(date), margin, y);
+        y += 5;
+
+        byDate[date].forEach((slot: any) => {
+          const plate = slot.vehicle?.plate || slot.route_label || '';
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.text(
+            `${String(slot.total_slots).padStart(2, '0')} - (${slot.region_code}) ${plate}`,
+            margin,
+            y
+          );
+          y += 4;
+
+          const rows = (slot.entries || []).map((e: any) => [
+            `${String(e.position).padStart(2, '0')}°`,
+            e.client_name || '',
+            e.service_description || '',
+            e.phone || '',
+            e.comanda || '',
+            e.pago ? 'Sim' : 'Não',
+            e.cooperativa_nome || '',
+            e.observation || '',
+          ]);
+
+          if (rows.length) {
+            autoTable(doc, {
+              startY: y,
+              head: [['Pos', 'Cliente', 'Serviço', 'Telefone', 'Comanda', 'Pago', 'Cooperativa', 'Obs']],
+              body: rows,
+              margin: { left: margin, right: margin },
+              styles: { fontSize: 7, cellPadding: 1 },
+              headStyles: { fillColor: [30, 30, 30] },
+            });
+            y = (doc as any).lastAutoTable.finalY + 6;
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.text('Sem clientes', margin + 2, y);
+            y += 5;
+          }
+        });
+      });
+
+    doc.save(`Agenda_${week.label || week.start_date}.pdf`);
+  }
+
+    function togglePrintField(key: keyof typeof printFields) {
+    setPrintFields((s) => ({ ...s, [key]: !s[key] }));
+  }
+
+  function openPrintDay() {
+    const first = dates[0] || '';
+    setPrintDate(first);
+    setPrintSlotId('all');
+    setShowPrintDay(true);
+  }
+
+  function printDayRoutes() {
+    if (!selectedWeek || !printDate) return;
+
+    const slots = (selectedWeek.route_slots || []).filter((s: any) => {
+      if (s.date !== printDate) return false;
+      if (printSlotId !== 'all' && String(s.id) !== String(printSlotId)) return false;
+      return true;
+    });
+
+    if (!slots.length) {
+      setError('Nenhuma rota encontrada para essa data / caminhão.');
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const margin = 10;
+    let y = 12;
+    const pageW = doc.internal.pageSize.getWidth();
+
+    const dateLabel = formatDate(printDate);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('LOGÍSTICAS BILL — Rota do dia', margin, y);
+    y += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(
+      `Data: ${dateLabel}  |  Semana: ${selectedWeek.label || selectedWeek.start_date}`,
+      margin,
+      y
+    );
+    y += 10;
+
+    const head: string[] = [];
+    
+    if (printFields.position) head.push('Pos');
+    if (printFields.client) head.push('Cliente');
+    if (printFields.service) head.push('Serviço');
+    if (printFields.phone) head.push('Telefone');
+    if (printFields.location) head.push('Localização');
+    if (printFields.comanda) head.push('Comanda');
+    if (printFields.cooperativa) head.push('Cooperativa');
+    if (printFields.pago) head.push('Pago');
+    if (printFields.status) head.push('Status');
+    if (printFields.observation) head.push('Obs');
+    if (printFields.extras) head.push('Extras');
+
+    slots.forEach((slot: any, slotIdx: number) => {
+      if (y > 250) {
+        doc.addPage();
+        y = 12;
+      }
+
+      const plate = slot.vehicle?.plate || slot.route_label || '';
+      const driver = slot.driver?.name || '—';
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(
+        `${String(slot.total_slots).padStart(2, '0')} - (${slot.region_code}) ${plate}`,
+        margin,
+        y
+      );
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Motorista: ${driver}${slot.second_driver?.name ? ' | ' + slot.second_driver.name : ''}`, margin, y);
+      y += 6;
+
+      const body = (slot.entries || []).map((e: any) => {
+        const row: string[] = [];
+        if (printFields.position) row.push(`${String(e.position).padStart(2, '0')}°`);
+        if (printFields.client) row.push(e.client_name || '');
+        if (printFields.service) row.push(e.service_description || '');
+        if (printFields.phone) row.push(e.phone || '');
+        if (printFields.location) row.push(e.location_link || '');
+        if (printFields.comanda) row.push(e.no_comanda ? 'SEM COMANDA' : e.comanda || '');
+        if (printFields.cooperativa) row.push(e.cooperativa_nome || '');
+        if (printFields.pago) row.push(e.pago ? 'Sim' : 'Não');
+        if (printFields.status) row.push(e.status || '');
+        if (printFields.observation) row.push(e.observation || '');
+        if (printFields.extras) {
+          const extras = (e.extras || []).map((x: any) => x.description).join('; ');
+          row.push(extras);
+        }
+        return row;
+      });
+
+      if (body.length && head.length) {
+        autoTable(doc, {
+          startY: y,
+          head: [head],
+          body,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 7, cellPadding: 1.2, overflow: 'linebreak' },
+          headStyles: { fillColor: [15, 40, 70], textColor: 255 },
+          columnStyles: printFields.observation
+            ? { [head.indexOf('Obs')]: { cellWidth: 35 } }
+            : {},
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      } else {
+        doc.setFontSize(8);
+        doc.text('Sem clientes nesta rota', margin, y);
+        y += 8;
+      }
+
+      if (slotIdx < slots.length - 1) {
+        doc.setDrawColor(200);
+        doc.line(margin, y - 4, pageW - margin, y - 4);
+      }
+    });
+
+    const safeDate = printDate.replace(/-/g, '');
+    doc.save(`Rota_${safeDate}.pdf`);
+    setShowPrintDay(false);
+  }
+
+  const printSlotsForDate = selectedWeek
+    ? (selectedWeek.route_slots || []).filter((s: any) => s.date === printDate)
+    : [];
+
+  async function createSlot(data: any) {
+    try {
+      await request('/schedule/route-slots', { method: 'POST', body: JSON.stringify(data) });
+      setShowNewSlot(false);
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function updateSlot(slotId: number, data: any) {
+    try {
+      await request(`/schedule/route-slots/${slotId}`, { method: 'PATCH', body: JSON.stringify(data) });
+      setEditingSlot(null);
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function deleteSlot(slotId: number) {
+    if (!confirm('Excluir esta rota e todos os clientes dela?')) return;
+    try {
+      await request(`/schedule/route-slots/${slotId}`, { method: 'DELETE' });
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function createEntry(data: any) {
+    try {
+      await request('/schedule/entries', { method: 'POST', body: JSON.stringify(data) });
+      setAddingEntryTo(null);
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function updateEntry(entryId: number, data: any) {
+    try {
+      await request(`/schedule/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(data) });
+      setEditingEntry(null);
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function deleteEntry(entryId: number) {
+    if (!confirm('Remover este cliente da rota? A vaga será liberada.')) return;
+    try {
+      await request(`/schedule/entries/${entryId}`, { method: 'DELETE' });
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function moveEntry(entryId: number, direction: 'up' | 'down') {
+    try {
+      await request(`/schedule/entries/${entryId}/move`, {
+        method: 'POST',
+        body: JSON.stringify({ direction }),
+      });
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function reorderEntries(routeSlotId: number, orderedIds: number[]) {
+    try {
+      await request('/schedule/entries/reorder', {
+        method: 'POST',
+        body: JSON.stringify({
+          route_slot_id: routeSlotId,
+          ordered_ids: orderedIds,
+        }),
+      });
+      forceReloadSchedule();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+    async function confirmTransferEntry() {
+    if (!transferEntry || !transferTargetSlotId) return;
+    setTransferring(true);
+    setError('');
+    try {
+      await request(`/schedule/entries/${transferEntry.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          target_route_slot_id: Number(transferTargetSlotId),
+        }),
+      });
+      setTransferEntry(null);
+      setTransferTargetSlotId('');
+      forceReloadSchedule();
+    } catch (e: any) {
+      setError(
+        e.message ||
+          'Não foi possível transferir. Rota destino fechada ou sem vagas.'
+      );
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  async function confirmTransferSlot() {
+    if (!transferSlot || !transferNewDate) return;
+    setTransferring(true);
+    setError('');
+    try {
+      const payload: any = { new_date: transferNewDate };
+      if (transferWeekId) payload.week_id = Number(transferWeekId);
+      await request(`/schedule/route-slots/${transferSlot.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setTransferSlot(null);
+      setTransferNewDate('');
+      setTransferWeekId('');
+      forceReloadSchedule();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  function formatSlotDateLabel(d: string) {
+    const [y, m, day] = d.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(day));
+    const texto = date.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  }
+
+    const slotsByDayForTransfer = (() => {
+    const acc: Record<string, any[]> = {};
+    for (const w of weeks) {
+      // só semanas ativas (não arquivadas)
+      if (w.status === 'Arquivada') continue;
+      for (const s of w.route_slots || []) {
+        const key = `${w.id}_${s.date}`; // semana + data
+        if (!acc[key]) acc[key] = [];
+        acc[key].push({
+          id: s.id,
+          plate: s.vehicle?.plate || s.route_label || '',
+          region: s.region_code,
+          vagas: s.total_slots,
+          livres: s.slots_available ?? Math.max((s.total_slots || 0) - (s.slots_used || 0), 0),
+          closed: !!s.closed,
+          weekLabel: w.label || `Semana ${w.start_date}`,
+          date: s.date,
+        });
+      }
+    }
+    return acc;
+  })();
+
+  const transferDayKeys = Object.keys(slotsByDayForTransfer).sort((a, b) => {
+    const dateA = a.split('_')[1] || a;
+    const dateB = b.split('_')[1] || b;
+    return dateA.localeCompare(dateB);
+  });
+
+  async function createExtra(data: any) {
+    try {
+      await request('/schedule/extras', { method: 'POST', body: JSON.stringify(data) });
+      setAddingExtraTo(null);
+      forceReloadSchedule();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function deleteExtra(extraId: number) {
+    if (!confirm('Remover este item extra?')) return;
+    try {
+      await request(`/schedule/extras/${extraId}`, { method: 'DELETE' });
+      forceReloadSchedule()
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function exportSlot(slotId: number, slot: any) {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ''}/schedule/route-slots/${slotId}/export`,
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error('Falha ao exportar');
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rota_${slot.region_code}_${slot.date}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e.message || 'Erro ao exportar rota');
+    }
+  }
+
+  function formatDate(d: string) {
+    if (!d) return '—';
+    const [y, m, day] = d.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(day));
+    if (isNaN(date.getTime())) return d;
+
+    const weekday = date
+      .toLocaleDateString('pt-BR', { weekday: 'long' })
+      .replace(/^\w/, (c) => c.toUpperCase()); // Segunda-feira
+
+    const dd = String(day).padStart(2, '0');
+    const mm = String(m).padStart(2, '0');
+
+    // Segunda-feira | 24-08-2026
+    return `${weekday} | ${dd}-${mm}-${y}`;
+  }
+
+  if (loading && weeks.length === 0) {
+    return <div className="rounded-xl bg-white p-8 shadow-sm">Carregando agenda…</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {error && <div className="rounded-lg bg-red-50 p-3 text-red-700">
+        {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}</div>}
+
+      <section className="rounded-xl bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-semibold">Agenda de Instalações</h2>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} className="h-4 w-4" />
+              Mostrar arquivadas
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canWrite && (
+              <>
+                {canNewWeek && (
+                  <button
+                    onClick={() => setShowNewWeek(true)}
+                    className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    + Nova semana
+                  </button>
+                )}
+
+                {canNewRoute && selectedWeek && selectedWeek.status === 'Ativa' && (
+                  <button
+                    onClick={() => setShowNewSlot(true)}
+                    className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    + Nova rota
+                  </button>
+                )}
+              </>
+            )}
+            {selectedWeek && dates.length > 0 && canPrint && (
+              <button
+                type="button"
+                onClick={openPrintDay}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Imprimir rota do dia
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[...weeks]
+            .sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))
+            .map((w) => (
+            <button
+              key={w.id}
+              onClick={() => setSelectedWeekId(w.id)}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                selectedWeekId === w.id
+                  ? 'border-brand bg-brand text-white'
+                  : w.status === 'Arquivada'
+                  ? 'border-slate-200 bg-slate-50 text-slate-500'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-brand'
+              }`}
+            >
+              {w.label || `Semana ${w.start_date}`}
+              {w.status === 'Arquivada' && <span className="ml-2 text-xs opacity-70">(Arquivada)</span>}
+            </button>
+          ))}
+        </div>
+
+        {selectedWeek && (
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            {selectedWeek.status === 'Ativa' && canArchive && (
+              <button
+                type="button"
+                onClick={() => {
+                  setArchiveWeekId(selectedWeek.id);
+                  setShowArchiveWeek(true);
+                }}
+                className="text-sm text-amber-700 hover:underline"
+              >
+                Arquivar esta semana (backup)
+              </button>
+            )}
+            {selectedWeek.status === 'Arquivada' && (
+              <button
+                onClick={() => exportWeekPdf(selectedWeek)}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Baixar PDF da semana
+              </button>
+            )}
+            {isMainAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteWeekId(selectedWeek.id);
+                  setDeletePassword('');
+                  setShowDeleteWeek(true);
+                }}
+                className="text-sm text-red-600 hover:underline"
+              >
+                Excluir semana permanentemente
+              </button>
+            )}
+                  {showPrintDay && selectedWeek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Imprimir rota do dia</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Escolha o dia, o caminhão (ou todos) e os campos do PDF.
+            </p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Dia *</span>
+              <select
+                value={printDate}
+                onChange={(e) => {
+                  setPrintDate(e.target.value);
+                  setPrintSlotId('all');
+                }}
+                className="w-full rounded-lg border p-2"
+              >
+                {dates.map((d) => {
+                  const [y, m, day] = d.split('-');
+                  const dt = new Date(Number(y), Number(m) - 1, Number(day));
+                  const label = dt.toLocaleDateString('pt-BR', {
+                    weekday: 'long',
+                    day: '2-digit',
+                    month: '2-digit',
+                  });
+                  return (
+                    <option key={d} value={d}>
+                      {label.charAt(0).toUpperCase() + label.slice(1)}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Caminhão / rota</span>
+              <select
+                value={printSlotId}
+                onChange={(e) => setPrintSlotId(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="all">Todos os caminhões do dia</option>
+                {printSlotsForDate.map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    ({s.region_code}) {s.vehicle?.plate || s.route_label || ''} —{' '}
+                    {s.total_slots} vagas
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-4">
+              <span className="mb-2 block text-sm text-slate-600">Campos no PDF</span>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {(
+                  [
+                    ['position', 'Posição'],
+                    ['client', 'Cliente'],
+                    ['service', 'Serviço'],
+                    ['phone', 'Telefone'],
+                    ['location', 'Localização'],
+                    ['comanda', 'Comanda'],
+                    ['cooperativa', 'Cooperativa'],
+                    ['pago', 'Pago'],
+                    ['status', 'Status'],
+                    ['observation', 'Observação'],
+                    ['extras', 'Extras'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={printFields[key]}
+                      onChange={() => togglePrintField(key)}
+                      className="h-4 w-4"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPrintDay(false)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={printDayRoutes}
+                disabled={!printDate}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                Gerar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+          </div>
+        )}
+        </section>
+
+      {selectedWeek ? (
+        <div className="space-y-6">
+          {selectedWeek && (
+            <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
+              <p className="mb-3 text-sm font-medium text-slate-700">Buscar na agenda</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Nome</span>
+                  <input
+                    value={filterName}
+                    onChange={(e) => setFilterName(e.target.value)}
+                    placeholder="Cliente"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Telefone</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={filterPhone}
+                    onChange={(e) =>
+                      setFilterPhone(e.target.value.replace(/\D/g, ''))
+                    }
+                    placeholder="Somente numeros"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Situação</span>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  >
+                    <option value="">Todas</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Reagendamento">Reagendamento</option>
+                    <option value="Pendente">Pendente</option>
+                    <option value="Fechado">Fechado</option>
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Número da comanda</span>
+                  <input
+                    value={filterComanda}
+                    onChange={(e) => setFilterComanda(e.target.value)}
+                    placeholder="Sem comanda"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Placa do caminhão</span>
+                  <input
+                    value={filterPlate}
+                    onChange={(e) => setFilterPlate(e.target.value)}
+                    placeholder="Ex.: ABC1D23"
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">Dia da semana</span>
+                  <select
+                    value={filterWeekday}
+                    onChange={(e) => setFilterWeekday(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 p-2"
+                  >
+                    <option value="">Todos</option>
+                    <option value="1">Segunda-feira</option>
+                    <option value="2">Terça-feira</option>
+                    <option value="3">Quarta-feira</option>
+                    <option value="4">Quinta-feira</option>
+                    <option value="5">Sexta-feira</option>
+                    <option value="6">Sábado</option>
+                    <option value="0">Domingo</option>
+                  </select>
+                </label>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterName('');
+                      setFilterPhone('');
+                      setFilterStatus('');
+                      setFilterComanda('');
+                      setFilterPlate('');
+                      setFilterWeekday('');
+                    }}
+                    className="w-full rounded-lg border px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
+              </div>
+              {hasAgendaFilter && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Mostrando apenas clientes que batem com o filtro nesta semana.
+                </p>
+              )}
+            </div>
+          )}
+
+          {hasAgendaFilter && filteredDates.length === 0 && dates.length > 0 && (
+            <p className="mb-4 rounded-xl bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+              Nenhum cliente encontrado com esse filtro.
+            </p>
+          )}
+
+          {dates.length === 0 ? (
+            <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm">
+              Nenhuma rota cadastrada nesta semana.
+              {canNewRoute && (
+                <div className="mt-3">
+                  <button onClick={() => setShowNewSlot(true)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
+                    Criar primeira rota
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+              filteredDates.map((date, dayIndex) => (
+              <div key={date}>
+                {dayIndex > 0 && (
+                  <div className="my-6 flex items-center gap-3">
+                    <div className="h-0.5 flex-1 bg-slate-300" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Próximo dia
+                    </span>
+                    <div className="h-0.5 flex-1 bg-slate-300" />
+                  </div>
+                )}
+                <section
+                  className={`overflow-hidden rounded-xl border-2 border-slate-200 bg-white shadow-sm ${
+                    dayIndex > 0 ? 'border-t-4 border-t-brand' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3 border-b-2 border-slate-200 bg-slate-100 px-5 py-3.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
+                      {dayIndex + 1}
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Dia da semana
+                      </p>
+                      <h3 className="text-base font-bold capitalize text-slate-900">
+                        {formatDate(date)}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    {filteredSlotsByDate[date].map((slot: any) => (
+                      <RouteSlotCard
+                        key={slot.id}
+                        slot={slot}
+                        canWrite={canWrite}
+                        canEdit={canEdit}
+                        canDelete={canDelete}
+                        canTransfer={canTransfer}
+                        canExtra={canExtra}
+                        canClose={canClose}
+                        canExport={canExport}
+                        onEdit={() => setEditingSlot(slot)}
+                        onDelete={() => deleteSlot(slot.id)}
+                        onAddEntry={() => setAddingEntryTo(slot.id)}
+                        onEditEntry={(entry: any) => setEditingEntry(entry)}
+                        onAddExtra={(entryId: number) => setAddingExtraTo(entryId)}
+                        onDeleteEntry={deleteEntry}
+                        onDeleteExtra={deleteExtra}
+                        onMoveEntry={moveEntry}
+                        onReorderEntries={(orderedIds: number[]) =>
+                          reorderEntries(slot.id, orderedIds)
+                        }
+                        onTransferEntry={(entry: any) => {
+                          setTransferEntry(entry);
+                          setTransferTargetSlotId('');
+                        }}
+                        onTransferSlot={() => {
+                          setTransferSlot(slot);
+                          setTransferNewDate(slot.date || '');
+                          setTransferWeekId(String(selectedWeek?.id || ''));
+                        }}
+                        onExport={() => exportSlot(slot.id, slot)}
+                        onToggleClosed={() =>
+                          updateSlot(slot.id, { closed: !slot.closed })
+                        }
+                      />
+                    ))}
+                  </div>
+                </section>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm">
+          Selecione ou crie uma semana para começar.
+        </div>
+      )}
+
+      {showNewWeek && <NewWeekModal onClose={() => setShowNewWeek(false)} onSubmit={createWeek} />}
+      {showNewSlot && selectedWeek && (
+        <NewSlotModal weekId={selectedWeek.id} lookups={lookups} onClose={() => setShowNewSlot(false)} onSubmit={createSlot} />
+      )}
+      {editingSlot && (
+        <EditSlotModal slot={editingSlot} lookups={lookups} onClose={() => setEditingSlot(null)} onSubmit={(data: any) => updateSlot(editingSlot.id, data)} />
+      )}
+      {addingEntryTo && (
+        <EntryFormModal routeSlotId={addingEntryTo} onClose={() => setAddingEntryTo(null)} onSubmit={createEntry} title="Adicionar cliente" />
+      )}
+      {editingEntry && (
+        <EntryFormModal routeSlotId={editingEntry.route_slot_id} initial={editingEntry} onClose={() => setEditingEntry(null)} onSubmit={(data: any) => updateEntry(editingEntry.id, data)} title="Editar cliente" />
+      )}
+      {addingExtraTo && (
+        <NewExtraModal
+          entryId={addingExtraTo}
+          onClose={() => setAddingExtraTo(null)}
+          onSubmit={createExtra}
+        />
+      )}
+            {transferEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Transferir cliente</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {transferEntry.client_name} — escolha a rota/data de destino
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Rota de destino *</span>
+              <select
+                value={transferTargetSlotId}
+                onChange={(e) => setTransferTargetSlotId(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                <option value="">Selecione</option>
+                {transferDayKeys.map((key) => {
+                  const list = slotsByDayForTransfer[key] || [];
+                  const first = list[0];
+                  const dayLabel = first
+                    ? `${first.weekLabel} — ${formatSlotDateLabel(first.date)}`
+                    : key;
+                  return (
+                    <optgroup key={key} label={dayLabel}>
+                      {list
+                        .filter((s: any) => s.id !== transferEntry.route_slot_id)
+                        .map((s: any) => (
+                          <option
+                            key={s.id}
+                            value={s.id}
+                            disabled={s.closed || (s.livres != null && s.livres <= 0)}
+                          >
+                            ({s.region}) {s.plate} — {s.livres ?? s.vagas} livres
+                            {s.closed ? ' — FECHADA' : ''}
+                          </option>
+                        ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTransferEntry(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={transferring || !transferTargetSlotId}
+                onClick={confirmTransferEntry}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {transferring ? 'Transferindo…' : 'Transferir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transferSlot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Transferir rota completa</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              ({transferSlot.region_code}){' '}
+              {transferSlot.vehicle?.plate || transferSlot.route_label || ''} — todos os
+              clientes vão junto
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Nova data *</span>
+              <input
+                type="date"
+                value={transferNewDate}
+                onChange={(e) => setTransferNewDate(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              />
+            </label>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Semana</span>
+              <select
+                value={transferWeekId}
+                onChange={(e) => setTransferWeekId(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                {weeks
+                  .filter((w) => w.status === 'Ativa')
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.label || w.start_date}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTransferSlot(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={transferring || !transferNewDate}
+                onClick={confirmTransferSlot}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {transferring ? 'Transferindo…' : 'Transferir rota'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+            {transferSlot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Transferir rota completa</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              ({transferSlot.region_code}){' '}
+              {transferSlot.vehicle?.plate || transferSlot.route_label || ''} — todos os
+              clientes vão junto
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">Nova data *</span>
+              <input
+                type="date"
+                value={transferNewDate}
+                onChange={(e) => setTransferNewDate(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              />
+            </label>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-slate-600">Semana</span>
+              <select
+                value={transferWeekId}
+                onChange={(e) => setTransferWeekId(e.target.value)}
+                className="w-full rounded-lg border p-2"
+              >
+                {weeks
+                  .filter((w) => w.status === 'Ativa')
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.label || w.start_date}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTransferSlot(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={transferring || !transferNewDate}
+                onClick={confirmTransferSlot}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {transferring ? 'Transferindo…' : 'Transferir rota'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteWeek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-700">
+              Excluir semana permanentemente
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Esta ação apaga a semana e todas as rotas/clientes. Não tem volta.
+            </p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">
+                Senha do Administrador Principal *
+              </span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                className="w-full rounded-lg border p-2"
+                placeholder="Digite sua senha"
+                autoFocus
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteWeek(false);
+                  setDeletePassword('');
+                }}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletingWeek || !deleteWeekId || !deletePassword}
+                onClick={confirmDeleteWeek}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deletingWeek ? 'Excluindo…' : 'Excluir definitivamente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {showArchiveWeek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-amber-800">
+              Arquivar esta semana (backup)
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              A semana sai da lista ativa e fica só para consulta. Você ainda poderá baixar o PDF.
+              Não apaga rotas nem clientes.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowArchiveWeek(false);
+                  setArchiveWeekId(null);
+                }}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={archivingWeek || !archiveWeekId}
+                onClick={confirmArchiveWeek}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {archivingWeek ? 'Arquivando…' : 'Confirmar arquivamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteWeek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-700">
+              Excluir semana permanentemente
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Apaga a semana e <strong>todas</strong> as rotas e clientes. Esta ação{' '}
+              <strong>não tem volta</strong>.
+            </p>
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-slate-600">
+                Senha do Administrador Principal *
+              </span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                className="w-full rounded-lg border p-2"
+                placeholder="Digite sua senha"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmDeleteWeek();
+                }}
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteWeek(false);
+                  setDeletePassword('');
+                  setDeleteWeekId(null);
+                }}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletingWeek || !deleteWeekId || !deletePassword}
+                onClick={confirmDeleteWeek}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {deletingWeek ? 'Excluindo…' : 'Excluir definitivamente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RouteSlotCard({
+  slot,
+  canWrite,
+  canEdit,
+  canDelete,
+  canTransfer,
+  canExtra,
+  canClose,
+  canExport,
+  onEdit,
+  onDelete,
+  onAddEntry,
+  onEditEntry,
+  onAddExtra,
+  onDeleteEntry,
+  onDeleteExtra,
+  onMoveEntry,
+  onReorderEntries,
+  onTransferEntry,
+  onTransferSlot,
+  onExport,
+  onToggleClosed,
+}: any) {
+  const [dragId, setDragId] = useState<number | null>(null);
+  const entries = slot.entries || [];
+  const used = entries.reduce(
+    (sum: number, e: any) =>
+      sum + (e.slots_consumed || calcularVagas(e.service_description || '')),
+    0
+  );
+  const total = slot.total_slots || 0;
+  const available = Math.max(total - used, 0);
+  const isFull = total > 0 && used >= total;
+  const isClosed = slot.closed;
+  const driverName = slot.driver?.name || '—';
+  const secondName = slot.second_driver?.name;
+  const vehiclePlate = slot.vehicle?.plate || slot.route_label || '';
+
+  function handleDragStart(e: React.DragEvent, entryId: number) {
+    if (!canEdit) return;
+    setDragId(entryId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(entryId));
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleDrop(e: React.DragEvent, targetId: number) {
+    e.preventDefault();
+    const fromId = Number(e.dataTransfer.getData('text/plain') || dragId);
+    setDragId(null);
+    if (!fromId || fromId === targetId || !onReorderEntries) return;
+    const ids = entries.map((x: any) => x.id);
+    const from = ids.indexOf(fromId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, fromId);
+    onReorderEntries(next);
+  }
+
+  return (
+    <div className={`p-4 ${isClosed ? 'bg-slate-50' : ''}`}>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-bold text-slate-900">
+              {String(total).padStart(2, '0')} - ({slot.region_code})
+              {vehiclePlate ? ` - ${vehiclePlate}` : ''}
+            </span>
+            {isClosed && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                Fechada
+              </span>
+            )}
+            {isFull && !isClosed && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                Lotada
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-sm text-slate-600">
+            {driverName}
+            {secondName ? ` | ${secondName}` : ''}
+          </div>
+          <div className="mt-2 inline-flex items-center gap-2 rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Vagas
+            </span>
+            <span
+              className={`text-xl font-bold ${
+                available === 0
+                  ? 'text-red-600'
+                  : available <= 2
+                  ? 'text-amber-600'
+                  : 'text-green-600'
+              }`}
+            >
+              {used}/{total || 'Ôê×'}
+            </span>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                available === 0
+                  ? 'bg-red-100 text-red-700'
+                  : available <= 2
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-green-100 text-green-700'
+              }`}
+            >
+              {available} livres
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {canExport && (
+              <button
+                type="button"
+                onClick={onExport}
+                disabled={!canExport}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Exportar Rota
+              </button>
+            )}
+          {canWrite && (
+            <>
+               {canClose && (
+                 <button
+                   type="button"
+                   onClick={onToggleClosed}
+                   disabled={!canClose}
+                   className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                 >
+                   {isClosed ? 'Reabrir' : 'Fechar rota'}
+                 </button>
+               )}
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  disabled={!canEdit}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Editar
+                </button>
+              )}
+              {canTransfer && (
+                <button
+                  type="button"
+                  onClick={onTransferSlot}
+                  disabled={!canTransfer}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Transferir rota
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={!canDelete}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Excluir
+                </button>
+              )}
+              {canEdit && !isClosed && !isFull && (
+                <button
+                  type="button"
+                  onClick={onAddEntry}
+                  disabled={!canEdit}
+                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  + Cliente
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border -mx-1">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr>
+              <th className="w-14 px-3 py-2">Pos</th>
+              <th className="min-w-[200px] px-3 py-2">Cliente / Serviço</th>
+              <th className="min-w-[110px] whitespace-nowrap px-3 py-2">Telefone</th>
+              <th className="px-3 py-2">Localização</th>
+              <th className="px-3 py-2">Flags</th>
+              <th className="min-w-[180px] px-3 py-2">Observação</th>
+              {(canEdit || canTransfer || canExtra || canDelete) && (
+                <th className="w-52 px-3 py-2">Ações</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry: any, idx: number) => {
+              const isReagendamento = entry.status === 'Reagendamento';
+              const hasComanda = !!entry.comanda;
+              const slots =
+                entry.slots_consumed ||
+                calcularVagas(entry.service_description || '');
+
+              return (
+                <React.Fragment key={entry.id}>
+                  <tr
+                    draggable={!!canEdit}
+                    onDragStart={(e) => handleDragStart(e, entry.id)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, entry.id)}
+                    onDragEnd={() => setDragId(null)}
+                    className={`border-t ${
+                      dragId === entry.id ? 'opacity-50' : ''
+                    } ${
+                      isReagendamento
+                        ? 'bg-amber-50'
+                        : entry.pago
+                        ? 'bg-green-50/50'
+                        : 'hover:bg-slate-50/50'
+                    } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  >
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col items-center gap-1">
+                        <span
+                          className="text-[10px] text-slate-400"
+                          title="Arraste para reordenar"
+                        >
+                          ⋮⋮
+                        </span>
+                        <span className="font-bold text-slate-800">
+                          {String(entry.position).padStart(2, '0')}°
+                        </span>
+                        {slots > 1 && (
+                          <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
+                            {slots} vagas
+                          </span>
+                        )}
+                        {canEdit && (
+                          <div className="flex gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => onMoveEntry(entry.id, 'up')}
+                              disabled={idx === 0}
+                              className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30"
+                              title="Subir"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onMoveEntry(entry.id, 'down')}
+                              disabled={idx === entries.length - 1}
+                              className="rounded bg-slate-100 px-1 text-[10px] disabled:opacity-30"
+                              title="Descer"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-900">
+                        {entry.client_name}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {entry.service_description}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 align-middle text-center">
+                      {entry.phone ? (
+                        <a
+                          href={`tel:${String(entry.phone).replace(/\D/g, '')}`}
+                          className="font-medium text-emerald-600 hover:text-emerald-700"
+                        >
+                          {entry.phone}
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-center">
+                      {entry.location_link ? (
+                        <a
+                          href={entry.location_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-brand hover:underline"
+                        >
+                          Maps
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-center">
+                      <div className="flex flex-wrap justify-center gap-1">
+                        {entry.no_comanda && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                            SEM COMANDA
+                          </span>
+                        )}
+                        {hasComanda && (
+                          <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
+                            {entry.comanda}
+                          </span>
+                        )}
+                        {entry.cooperativa_nome && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                            {entry.cooperativa_nome}
+                          </span>
+                        )}
+                        {entry.pago && (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            PAGO
+                          </span>
+                        )}
+                        {isReagendamento && (
+                          <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                            REAGENDAMENTO
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div
+                        className="max-w-[240px] whitespace-pre-wrap break-words text-xs text-slate-600"
+                        title={entry.observation || ''}
+                      >
+                        {entry.observation || '—'}
+                      </div>
+                    </td>
+                    {(canEdit || canTransfer || canExtra || canDelete) && (
+                      <td className="px-3 py-2">
+                        <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onEditEntry(entry)}
+                              disabled={!canEdit}
+                              className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-40"
+                            >
+                              Editar
+                            </button>
+                          )}
+                          {canTransfer && (
+                            <button
+                              type="button"
+                              onClick={() => onTransferEntry(entry)}
+                              disabled={!canTransfer}
+                              className="rounded bg-indigo-50 px-2 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                            >
+                              Transferir
+                            </button>
+                          )}
+                          {canExtra && (
+                            <button
+                              type="button"
+                              onClick={() => onAddExtra(entry.id)}
+                              disabled={!canExtra}
+                              className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+                            >
+                              + Extra
+                            </button>
+                          )}
+                          {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteEntry(entry.id)}
+                            disabled={!canDelete}
+                            className="rounded bg-red-50 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 disabled:opacity-40"
+                          >
+                            Remover
+                          </button>
+                        )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                  {(entry.extras || []).map((extra: any) => (
+                    <tr key={extra.id} className="bg-slate-50/80 text-xs">
+                      <td className="px-3 py-1.5"></td>
+                      <td className="px-3 py-1.5 text-slate-600" colSpan={4}>
+                        <span className="text-slate-400">↳</span>{' '}
+                        <span className="font-medium">+ {extra.description}</span>
+                        {extra.observation && (
+                          <span className="ml-2 text-slate-400">
+                            ({extra.observation})
+                          </span>
+                        )}
+                      </td>
+                      {canExtra && (
+                      <td className="px-3 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onDeleteExtra(extra.id)}
+                          className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100"
+                        >
+                          Remover
+                        </button>
+                      </td>
+                    )}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+            {entries.length === 0 && (
+              <tr>
+                <td
+                  colSpan={canWrite ? 7 : 6}
+                  className="px-3 py-6 text-center text-slate-400"
+                >
+                  Nenhum cliente agendado nesta rota
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any) {
+  const [form, setForm] = useState({
+    service_description: initial?.service_description || '',
+    client_name: initial?.client_name || '',
+    phone: initial?.phone || '',
+    location_link: initial?.location_link || '',
+    no_comanda: initial?.no_comanda || false,
+    comanda: initial?.comanda || '',
+    cooperativa_nome: initial?.cooperativa_nome || '',
+    pago: initial?.pago || false,
+    status: initial?.status || 'Normal',
+    observation: initial?.observation || '',
+    slots_consumed: initial?.slots_consumed ?? calcularVagas(initial?.service_description || ''),
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(key: string, v: any) {
+    setForm((s) => {
+      const next = { ...s, [key]: v };
+      if (key === 'service_description') next.slots_consumed = calcularVagas(v);
+      return next;
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit({
+        route_slot_id: routeSlotId,
+        service_description: form.service_description,
+        client_name: form.client_name,
+        phone: form.phone || null,
+        location_link: form.location_link || null,
+        no_comanda: form.no_comanda,
+        comanda: form.comanda || null,
+        cooperativa_nome: form.cooperativa_nome || null,
+        pago: form.pago,
+        status: form.status,
+        observation: form.observation || null,
+        slots_consumed: form.slots_consumed ?? calcularVagas(form.service_description),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="text-lg font-semibold">{title}</h3>
+        <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-1 block text-slate-600">Nome do cliente *</span>
+            <input type="text" required value={form.client_name} onChange={(e) => set('client_name', e.target.value)} className="w-full rounded-lg border p-2" />
+          </label>
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-1 block text-slate-600">Descrição do serviço *</span>
+            <input type="text" required value={form.service_description} onChange={(e) => set('service_description', e.target.value)} className="w-full rounded-lg border p-2" placeholder="2 MONO 1CX 8M AE - (GAROPABA)" />
+            <span className="mt-1 block text-xs text-slate-500">
+              Vagas que este cliente consome: <strong className="text-brand">{form.slots_consumed ?? calcularVagas(form.service_description)}</strong>
+            </span>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Telefone</span>
+            <input type="text" value={form.phone} onChange={(e) => set('phone', e.target.value)} className="w-full rounded-lg border p-2" placeholder="48999999999" />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Status</span>
+            <select value={form.status} onChange={(e) => set('status', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="Normal">Normal</option>
+              <option value="Reagendamento">Reagendamento</option>
+              <option value="Pendente">Pendente</option>
+              <option value="Fechado">Fechado</option>
+            </select>
+          </label>
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-1 block text-slate-600">Link de localização (Maps)</span>
+            <input type="url" value={form.location_link} onChange={(e) => set('location_link', e.target.value)} className="w-full rounded-lg border p-2" placeholder="https://maps.app.goo.gl/..." />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Nº da Comanda</span>
+            <input type="text" value={form.comanda} onChange={(e) => set('comanda', e.target.value)} className="w-full rounded-lg border p-2" placeholder="22967" />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-slate-600">Cooperativa</span>
+            <select value={form.cooperativa_nome} onChange={(e) => set('cooperativa_nome', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Nenhuma</option>
+              {COOPERATIVAS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-4 sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.no_comanda} onChange={(e) => set('no_comanda', e.target.checked)} className="h-4 w-4" />
+              <span className="font-medium text-red-600">SEM COMANDA</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.pago} onChange={(e) => set('pago', e.target.checked)} className="h-4 w-4" />
+              <span className="font-medium text-emerald-600">PAGO</span>
+            </label>
+          </div>
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-1 block text-slate-600">Observação</span>
+            <textarea value={form.observation} onChange={(e) => set('observation', e.target.value)} className="h-24 w-full rounded-lg border p-2" rows={4} />
+          </label>
+          <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+              {saving ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function NewSlotModal({ weekId, lookups, onClose, onSubmit }: any) {
+  const [form, setForm] = useState({ date: '', region_code: '', vehicle_id: '', total_slots: '6', driver_id: '', second_driver_id: '', notes: '' });
+  const [saving, setSaving] = useState(false);
+  function set(key: string, v: string) { setForm((s) => ({ ...s, [key]: v })); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const vehicle = (lookups.vehicles || []).find((v: any) => String(v.id) === form.vehicle_id);
+      await onSubmit({
+        week_id: weekId,
+        date: form.date,
+        region_code: form.region_code.toUpperCase(),
+        route_label: vehicle ? vehicle.plate : null,
+        total_slots: Number(form.total_slots) || 0,
+        driver_id: form.driver_id ? Number(form.driver_id) : null,
+        second_driver_id: form.second_driver_id ? Number(form.second_driver_id) : null,
+        vehicle_id: form.vehicle_id ? Number(form.vehicle_id) : null,
+        notes: form.notes || null,
+      });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="text-lg font-semibold">Nova rota</h3>
+        <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Data *</span><input type="date" required value={form.date} onChange={(e) => set('date', e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Região (ex: CR) *</span><input type="text" required maxLength={10} value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" placeholder="CR" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminhão (placa) *</span>
+            <select required value={form.vehicle_id} onChange={(e) => set('vehicle_id', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Selecione a placa</option>
+              {(lookups.vehicles || []).map((v: any) => <option key={v.id} value={v.id}>              {v.plate} — {v.brand} {v.model}</option>)}
+            </select>
+          </label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Total de vagas *</span><input type="number" min={0} required value={form.total_slots} onChange={(e) => set('total_slots', e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Motorista</span>
+            <select value={form.driver_id} onChange={(e) => set('driver_id', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Selecione</option>
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">2º Motorista</span>
+            <select value={form.second_driver_id} onChange={(e) => set('second_driver_id', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Selecione</option>
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Observações</span><textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} className="h-16 w-full rounded-lg border p-2" /></label>
+          <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Salvando…' : 'Criar rota'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditSlotModal({ slot, lookups, onClose, onSubmit }: any) {
+  const [form, setForm] = useState({
+    region_code: slot.region_code || '',
+    vehicle_id: slot.vehicle_id ? String(slot.vehicle_id) : '',
+    total_slots: String(slot.total_slots ?? 0),
+    driver_id: slot.driver_id ? String(slot.driver_id) : '',
+    second_driver_id: slot.second_driver_id ? String(slot.second_driver_id) : '',
+    closed: slot.closed,
+    notes: slot.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  function set(key: string, v: any) { setForm((s) => ({ ...s, [key]: v })); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const vehicle = (lookups.vehicles || []).find((v: any) => String(v.id) === form.vehicle_id);
+      await onSubmit({
+        region_code: form.region_code.toUpperCase(),
+        route_label: vehicle ? vehicle.plate : null,
+        total_slots: Number(form.total_slots) || 0,
+        driver_id: form.driver_id ? Number(form.driver_id) : null,
+        second_driver_id: form.second_driver_id ? Number(form.second_driver_id) : null,
+        vehicle_id: form.vehicle_id ? Number(form.vehicle_id) : null,
+        closed: form.closed,
+        notes: form.notes || null,
+      });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="text-lg font-semibold">Editar rota</h3>
+        <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Região *</span><input type="text" required value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminhão (placa)</span>
+            <select value={form.vehicle_id} onChange={(e) => set('vehicle_id', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Selecione</option>
+              {(lookups.vehicles || []).map((v: any) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}</option>)}
+            </select>
+          </label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Total de vagas</span><input type="number" min={0} value={form.total_slots} onChange={(e) => set('total_slots', e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="flex items-center gap-2 pt-6 text-sm">
+            <input type="checkbox" checked={form.closed} onChange={(e) => set('closed', e.target.checked)} className="h-4 w-4" />
+            <span className="text-slate-600">Rota fechada</span>
+          </label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Motorista</span>
+            <select value={form.driver_id} onChange={(e) => set('driver_id', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Selecione</option>
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">2º Motorista</span>
+            <select value={form.second_driver_id} onChange={(e) => set('second_driver_id', e.target.value)} className="w-full rounded-lg border p-2">
+              <option value="">Selecione</option>
+              {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Observações</span><textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} className="h-16 w-full rounded-lg border p-2" /></label>
+          <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Salvando…' : 'Salvar alterações'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function NewWeekModal({ onClose, onSubmit }: any) {
+  const [startDate, setStartDate] = useState('');
+  const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try { await onSubmit({ start_date: startDate, label: label || undefined }); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="text-lg font-semibold">Nova semana</h3>
+        <p className="mt-1 text-sm text-slate-500">Informe a data da segunda-feira da semana.</p>
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Data de início (segunda) *</span><input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Rótulo (opcional)</span><input type="text" placeholder="Ex: Semana 24/08 a 28/08" value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Criando…' : 'Criar semana'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function NewExtraModal({ entryId, onClose, onSubmit }: any) {
+  const [description, setDescription] = useState('');
+  const [observation, setObservation] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit({ entry_id: entryId, description, observation: observation || null, status: 'Normal' });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="text-lg font-semibold">Adicionar extra</h3>
+        <p className="mt-1 text-sm text-slate-500">Extras (ex: cavalete de água) <strong>não descontam vaga</strong>.</p>
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Descrição *</span><input type="text" required value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-lg border p-2" placeholder="CAVALETE DE AGUA" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Observação</span><input type="text" value={observation} onChange={(e) => setObservation(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'Salvando…' : 'Adicionar extra'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

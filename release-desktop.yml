@@ -1,0 +1,38 @@
+name: Build e publicar instalador Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NEXT_PUBLIC_API_BROWSER: ${{ vars.NEXT_PUBLIC_API_BROWSER }}
+  NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+  DESKTOP_API_URL: ${{ vars.NEXT_PUBLIC_API_BROWSER }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+      - name: Definir versão única da release
+        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version
+      - name: Validar TypeScript
+        run: npx tsc --noEmit
+      - name: Compilar Next.js
+        run: npm run build
+      - name: Criar instalador e publicar release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run desktop:dist -- --publish always
