@@ -5,6 +5,7 @@ import hashlib
 import os
 import secrets
 import smtplib
+import logging
 from datetime import datetime, date, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any
@@ -42,6 +43,7 @@ from .security import (
     clear_block,
 )
 
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # APP
