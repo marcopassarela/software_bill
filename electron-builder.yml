@@ -11,15 +11,6 @@ directories:
 files:
   - desktop/**/*
   - package.json
-  - node_modules/electron-updater/**/*
-  - node_modules/builder-util-runtime/**/*
-  - node_modules/fs-extra/**/*
-  - node_modules/js-yaml/**/*
-  - node_modules/lazy-val/**/*
-  - node_modules/lodash.escaperegexp/**/*
-  - node_modules/lodash.isequal/**/*
-  - node_modules/sax/**/*
-  - node_modules/semver/**/*
   - '!node_modules/.cache/**'
   - '!app/**'
   - '!.next/**'
@@ -29,7 +20,6 @@ files:
   - '!lib/**'
   - '!migrations/**'
   - '!tests/**'
-  - '!public/**'
 
 extraResources:
   - from: .next/standalone

@@ -38,7 +38,17 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Compilar aplicação
-        run: npm run build
+        shell: pwsh
+        run: |
+          npm run build
+          $found = @(Get-ChildItem -Recurse .next\standalone -Filter server.js -ErrorAction SilentlyContinue)
+          if ($found.Count -eq 0) {
+            Write-Error "standalone/server.js nao foi gerado. Verifique output: 'standalone' no next.config"
+            Get-ChildItem -Recurse .next -Filter server.js -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+            exit 1
+          }
+          Write-Host "standalone OK"
+          $found | ForEach-Object { $_.FullName }
 
       - name: Gerar instalador Windows
         env:

@@ -77,27 +77,51 @@ function waitForServer(url, timeout = 15000) {
 async function startNextServer() {
   if (isDev) return process.env.DESKTOP_DEV_URL || 'http://localhost:3000';
 
+  const base = path.join(process.resourcesPath, 'next');
   const candidates = [
-    path.join(process.resourcesPath, 'next', 'server.js'),
-    path.join(process.resourcesPath, 'next', 'software_bill', 'server.js'),
-    path.join(process.resourcesPath, 'next', 'gestao-logistica', 'server.js'),
+    path.join(base, 'server.js'),
+    path.join(base, 'gestao-logistica', 'server.js'),
+    path.join(base, 'software_bill', 'server.js'),
   ];
 
-  const standalone = candidates.find((p) => fs.existsSync(p));
+  // procura qualquer server.js dentro de resources/next
+  function findServer(dir) {
+    if (!fs.existsSync(dir)) return null;
+    const direct = path.join(dir, 'server.js');
+    if (fs.existsSync(direct)) return direct;
+    try {
+      for (const name of fs.readdirSync(dir)) {
+        const p = path.join(dir, name, 'server.js');
+        if (fs.existsSync(p)) return p;
+      }
+    } catch {}
+    return null;
+  }
+
+  const standalone = candidates.find((p) => fs.existsSync(p)) || findServer(base);
+
+  const logPath = path.join(app.getPath('userData'), 'next-server.log');
+  const log = (msg) => {
+    try {
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+    } catch {}
+  };
+
+  log(`resourcesPath=${process.resourcesPath}`);
+  log(`base=${base}`);
+  log(`standalone=${standalone || 'NOT FOUND'}`);
+
   if (!standalone) {
     dialog.showErrorBox(
       'Servidor da aplicação',
-      'server.js não encontrado em resources/next.\nCaminhos testados:\n' + candidates.join('\n')
+      `server.js não encontrado.\n\nProcurei em:\n${candidates.join('\n')}\n\nLog: ${logPath}`
     );
     throw new Error('server.js não encontrado');
   }
 
-  const logPath = path.join(app.getPath('userData'), 'next-server.log');
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-  logStream.write(`\n---- ${new Date().toISOString()} ----\n`);
-  logStream.write(`server: ${standalone}\n`);
-
   const port = 43127;
+  const cwd = path.dirname(standalone);
+
   nextServer = spawn(process.execPath, [standalone], {
     env: {
       ...process.env,
@@ -110,20 +134,19 @@ async function startNextServer() {
         ? { NEXT_PUBLIC_API_BROWSER: apiUrl, NEXT_PUBLIC_API_URL: apiUrl }
         : {}),
     },
-    cwd: path.dirname(standalone),
+    cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
 
-  nextServer.stdout.on('data', (d) => logStream.write(d));
-  nextServer.stderr.on('data', (d) => logStream.write(d));
-
+  nextServer.stdout.on('data', (d) => log(`OUT ${d}`));
+  nextServer.stderr.on('data', (d) => log(`ERR ${d}`));
   nextServer.on('exit', (code) => {
-    logStream.write(`\nexit code: ${code}\n`);
+    log(`exit code=${code}`);
     if (code && app.isReady()) {
       dialog.showErrorBox(
         'Servidor da aplicação',
-        `O servidor local foi encerrado (código ${code}).\n\nVeja o log:\n${logPath}`
+        `Servidor encerrou (código ${code}).\n\nVeja o log:\n${logPath}`
       );
     }
   });
