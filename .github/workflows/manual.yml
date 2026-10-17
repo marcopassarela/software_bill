@@ -1,4 +1,4 @@
-name: Build e publicar instalador Windows
+name: Publicar instalador Windows
 
 on:
   push:
