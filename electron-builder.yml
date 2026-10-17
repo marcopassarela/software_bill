@@ -4,6 +4,8 @@ copyright: Copyright © 2026 Logísticas Bill
 
 asar: true
 
+afterPack: scripts/after-pack.cjs
+
 directories:
   app: .
   output: dist
@@ -20,6 +22,7 @@ files:
   - '!lib/**'
   - '!migrations/**'
   - '!tests/**'
+  - '!scripts/**'
 
 extraResources:
   - from: .next/standalone
@@ -28,12 +31,8 @@ extraResources:
       - "**/*"
   - from: .next/static
     to: next/.next/static
-    filter:
-      - "**/*"
   - from: public
     to: next/public
-    filter:
-      - "**/*"
 
 win:
   target:
