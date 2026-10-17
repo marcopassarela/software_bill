@@ -1627,16 +1627,11 @@ def update_user(
 @app.delete("/users/{user_id}")
 def delete_user(
     user_id: int,
-    body: UserDelete,
     request: Request,
     admin: User = Depends(company_admin),
     db: Session = Depends(get_db),
 ):
-
-    company = get_current_company(
-        admin,
-        db,
-    )
+    company = get_current_company(admin, db)
 
     u = db.scalar(
         select(User).where(
@@ -1646,104 +1641,70 @@ def delete_user(
     )
 
     if not u:
-        raise HTTPException(
-            404,
-            "Usuário não encontrado",
-        )
+        raise HTTPException(404, "Usuário não encontrado")
 
-    if u.id == admin.id and getattr(
-        u,
-        "is_owner",
-        False,
-    ):
+    if u.id == admin.id and getattr(u, "is_owner", False):
         raise HTTPException(
             400,
             "Não é possível excluir o proprietário da empresa",
         )
 
-    if not verify_password(body.password, admin.password_hash):
-        raise HTTPException(
-            401,
-            "Senha incorreta",
+    # 1) Auditoria
+    db.execute(
+        update(AuditLog)
+        .where(
+            AuditLog.user_id == user_id,
+            AuditLog.company_id == company.id,
         )
+        .values(user_id=None)
+    )
+
+    # 2) Movimentações de estoque
+    db.execute(
+        update(StockMovement)
+        .where(
+            StockMovement.user_id == user_id,
+            StockMovement.company_id == company.id,
+        )
+        .values(user_id=None)
+    )
+
+    # 3) Registros de produção/montagem
+    db.execute(
+        update(ProductionRecord)
+        .where(
+            ProductionRecord.user_id == user_id,
+            ProductionRecord.company_id == company.id,
+        )
+        .values(user_id=None)
+    )
+
+    # 4) Pedidos (created_by)
+    db.execute(
+        update(Order)
+        .where(
+            Order.created_by == user_id,
+            Order.company_id == company.id,
+        )
+        .values(created_by=None)
+    )
+
+    # 5) Tokens de reset de senha (já tem CASCADE, mas garantimos)
+    db.execute(
+        delete(PasswordResetToken).where(
+            PasswordResetToken.user_id == user_id
+        )
+    )
 
     try:
-        db.execute(
-            delete(PasswordResetToken).where(
-                PasswordResetToken.user_id == user_id,
-            )
-        )
-        db.execute(
-            update(AuditLog)
-            .where(
-                AuditLog.user_id == user_id,
-                AuditLog.company_id == company.id,
-            )
-            .values(user_id=None)
-        )
-        db.execute(
-            update(StockMovement)
-            .where(
-                StockMovement.user_id == user_id,
-                StockMovement.company_id == company.id,
-            )
-            .values(user_id=None)
-        )
-        db.execute(
-            update(ProductionRecord)
-            .where(
-                ProductionRecord.user_id == user_id,
-                ProductionRecord.company_id == company.id,
-            )
-            .values(user_id=None)
-        )
-        db.execute(
-            update(Order)
-            .where(
-                Order.created_by == user_id,
-                Order.company_id == company.id,
-            )
-            .values(created_by=None)
-        )
         db.delete(u)
         db.flush()
-
-    
     except IntegrityError as exc:
         db.rollback()
-
-        diagnostic = getattr(exc.orig, "diag", None)
-
-        constraint = getattr(diagnostic, "constraint_name", None)
-        table = getattr(diagnostic, "table_name", None)
-        column = getattr(diagnostic, "column_name", None)
-        detail_db = getattr(diagnostic, "message_detail", None)
-
-        logger.error(
-            "Falha ao excluir usuário id=%s: "
-            "constraint=%s, table=%s, column=%s, detail=%s, error=%s",
-            user_id,
-            constraint,
-            table,
-            column,
-            detail_db,
-            str(exc.orig),
-            exc_info=True,
-        )
-
-        if table == "stock_movements" and column == "user_id":
-            detail = (
-                "O banco ainda não permite desvincular o usuário "
-                "do histórico de estoque. Verifique as migrations."
-            )
-        else:
-            detail = (
-                "Não foi possível excluir o usuário porque "
-                "existem registros vinculados."
-            )
-
-        raise HTTPException(status_code=409, detail=detail) from exc
-
+        raise HTTPException(
+            409,
+            "Não é possível excluir: este usuário possui registros vinculados. Desative-o em vez de excluir.",
+        ) from exc
 
     audit(
         db,
@@ -1756,9 +1717,7 @@ def delete_user(
 
     db.commit()
 
-    return {
-        "ok": True
-    }
+    return {"ok": True}
 
 
 # ============================================================
