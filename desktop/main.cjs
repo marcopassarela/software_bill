@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -10,6 +10,16 @@ const isDev = !app.isPackaged;
 const apiUrl = process.env.DESKTOP_API_URL || null;
 const PREFERRED_PORT = 43127;
 const updateStatePath = path.join(app.getPath('userData'), 'restart-reminder.json');
+
+// Endereço da API (backend na Vercel). Pode ser trocado com DESKTOP_API_URL.
+const API_ORIGIN = (() => {
+  try {
+    return new URL(apiUrl || process.env.NEXT_PUBLIC_API_URL || 'https://logisticasbill.vercel.app').origin;
+  } catch {
+    return 'https://logisticasbill.vercel.app';
+  }
+})();
+
 let nextServer;
 let mainWindow;
 let splashWindow;
@@ -17,6 +27,51 @@ let updateInProgress = false;
 let updateTimer;
 let opening = false;
 let quitting = false;
+
+// Ponte de API: faz o backend aceitar o app (CORS) e o cookie de login funcionar
+function setupApiBridge() {
+  const ses = session.defaultSession;
+  const filter = { urls: [`${API_ORIGIN}/*`] };
+  const localOrigins = new Map();
+  const localRe = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/;
+
+  ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const headers = details.requestHeaders;
+    const key = Object.keys(headers).find((k) => k.toLowerCase() === 'origin');
+    if (key && localRe.test(headers[key])) {
+      localOrigins.set(details.id, headers[key]);
+      headers[key] = API_ORIGIN;
+    }
+    callback({ requestHeaders: headers });
+  });
+
+  ses.webRequest.onHeadersReceived(filter, (details, callback) => {
+    const original = localOrigins.get(details.id);
+    if (!original) return callback({});
+    localOrigins.delete(details.id);
+
+    const headers = {};
+    for (const [name, value] of Object.entries(details.responseHeaders || {})) {
+      const lower = name.toLowerCase();
+      if (lower === 'access-control-allow-origin' || lower === 'access-control-allow-credentials') continue;
+      if (lower === 'set-cookie') {
+        headers[name] = value.map((cookie) => {
+          let c = cookie.replace(/;\s*SameSite=[^;]*/gi, '');
+          c += '; SameSite=None';
+          if (!/;\s*Secure/i.test(c)) c += '; Secure';
+          return c;
+        });
+        continue;
+      }
+      headers[name] = value;
+    }
+    headers['Access-Control-Allow-Origin'] = [original];
+    headers['Access-Control-Allow-Credentials'] = ['true'];
+    callback({ responseHeaders: headers });
+  });
+
+  ses.webRequest.onErrorOccurred(filter, (details) => localOrigins.delete(details.id));
+}
 
 function sendSplash(message, progress = null, notes = '') {
   if (splashWindow && !splashWindow.isDestroyed()) {
@@ -138,6 +193,7 @@ async function startNextServer() {
   log(`resourcesPath=${process.resourcesPath}`);
   log(`base=${base}`);
   log(`standalone=${standalone || 'NOT FOUND'}`);
+  log(`apiOrigin=${API_ORIGIN}`);
 
   if (!standalone) {
     dialog.showErrorBox(
@@ -315,6 +371,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    setupApiBridge();
     createSplash();
     setupUpdater();
     if (isDev) return openAfterStartup();
