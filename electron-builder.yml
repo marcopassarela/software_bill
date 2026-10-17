@@ -35,7 +35,7 @@ extraResources:
     to: next/public
 
 win:
-  icon: build/icon2.ico
+  icon: build/icon2.png
   target:
     - nsis
   artifactName: Logisticas-Bill-Setup-${version}.${ext}
@@ -45,9 +45,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  installerIcon: build/icon2.ico
-  uninstallerIcon: build/icon2.ico
-  installerHeaderIcon: build/icon2.ico
 
 publish:
   provider: github
