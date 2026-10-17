@@ -278,10 +278,35 @@ async function startNextServer() {
   return url;
 }
 
+// Converte as notas da release (HTML do GitHub) em texto limpo
+function plainText(input) {
+  return String(input || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|li|h[1-6]|div|ul|ol)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .split('\n')
+    .map((line) => line.trim())
+    // esconde a linha automática do GitHub ("Full Changelog: ...")
+    .filter((line) => line && !/^full changelog/i.test(line))
+    .join('\n')
+    .trim();
+}
+
 function releaseNotes(info) {
+  const fallback = 'Melhorias de estabilidade e correções de funcionalidades.';
   const notes = info && info.releaseNotes;
-  if (Array.isArray(notes)) return notes.map((item) => item.note || item).join('\n');
-  return typeof notes === 'string' ? notes : 'Melhorias de estabilidade e correções de funcionalidades.';
+  let text = '';
+  if (Array.isArray(notes)) text = notes.map((item) => (item && item.note) || item).join('\n');
+  else if (typeof notes === 'string') text = notes;
+  text = plainText(text);
+  if (!text) return fallback;
+  return text.length > 280 ? `${text.slice(0, 280)}…` : text;
 }
 
 async function checkForUpdates() {
@@ -336,7 +361,8 @@ function setupUpdater() {
   autoUpdater.on('update-downloaded', (info) => {
     updateInProgress = false;
     sendSplash('Atualização concluída. Reiniciando o sistema…', 100, releaseNotes(info));
-    setTimeout(() => autoUpdater.quitAndInstall(false, true), 900);
+    // true, true = instala em silêncio (sem assistente) e reabre o app sozinho
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 900);
   });
   autoUpdater.on('error', () => {
     updateInProgress = false;
