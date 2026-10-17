@@ -53,26 +53,26 @@ import {
 const items = [
   ['dashboard', 'Dashboard', LayoutDashboard],
   ['schedule', 'Agendamento', CalendarDays],
-  ['vehicles', 'Ve├¡culos', Truck],
+  ['vehicles', 'Veículos', Truck],
   ['drivers', 'Motoristas', UserRound],
-  ['maintenance', 'Manuten├º├úo', Wrench],
-  ['fuel', 'Combust├¡vel', Fuel],
-  ['production', 'Produ├º├úo', Factory],
+  ['maintenance', 'Manutenção', Wrench],
+  ['fuel', 'Combustível', Fuel],
+  ['production', 'Produção', Factory],
   ['orders', 'Pedidos', ClipboardPen],
   ['stock', 'Estoque', Boxes],
   ['entry', 'Entradas', PackagePlus],
-  ['output', 'Sa├¡das', PackageMinus],
+  ['output', 'Saídas', PackageMinus],
   ['movements', 'Movimenta├º├Áes', ArrowLeftRight],
-  ['reports', 'Relat├│rios', FileBarChart],
-  ['users', 'Usu├írios', Users],
+  ['reports', 'Relatórios', FileBarChart],
+  ['users', 'Usuários', Users],
   ['settings', 'Configura├º├Áes', Settings],
   ['plans', 'Planos', CreditCard],
-  ['critical', 'Configura├º├Áes cr├¡ticas', ShieldAlert],
+  ['critical', 'Configura├º├Áes críticas', ShieldAlert],
 ] as const;
 
 const NAV_GROUPS: { id: string; label: string; keys: string[] }[] = [
   { id: 'main', label: 'Principal', keys: ['dashboard', 'schedule', 'orders'] },
-  { id: 'ops', label: 'Opera├º├úo', keys: ['production'] },
+  { id: 'ops', label: 'Operação', keys: ['production'] },
   {
     id: 'fleet',
     label: 'Frota',
@@ -103,7 +103,7 @@ const moduleAccess: any = {
   ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
   ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
   MOTORISTA: [],
-  VENDEDOR: ['dashboard', 'schedule'], // v├¬ agenda; edi├º├úo vem das permiss├Áes finas
+  VENDEDOR: ['dashboard', 'schedule'], // vê agenda; edição vem das permiss├Áes finas
   CONSULTA: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports'],
   MONTAGEM: ['production'],
 };
@@ -123,7 +123,7 @@ export const PRODUCTION_MODELS = [
   'DUPLO T - 8MTs',
   'DUPLO T - 8.3MTs',
   'DUPLO T - 9MTs',
-  'MURETA ├üGUA',
+  'MURETA ÁGUA',
 ] as const;
 
 function titleFor(k: string) {
@@ -131,26 +131,26 @@ function titleFor(k: string) {
     ({
       dashboard: 'Dashboard',
       schedule: 'Agendamento',
-      vehicles: 'Ve├¡culos',
+      vehicles: 'Veículos',
       drivers: 'Motoristas',
-      maintenance: 'Manuten├º├úo',
-      fuel: 'Combust├¡vel',
+      maintenance: 'Manutenção',
+      fuel: 'Combustível',
       stock: 'Estoque',
       settings: 'Configura├º├Áes',
       plans: 'Planos',
       entry: 'Entradas',
-      output: 'Sa├¡das',
+      output: 'Saídas',
       movements: 'Movimenta├º├Áes',
-      production: 'Produ├º├úo',
+      production: 'Produção',
       orders: 'Pedidos',
-      reports: 'Relat├│rios',
-      users: 'Usu├írios',
-      critical: 'Configura├º├Áes cr├¡ticas',
+      reports: 'Relatórios',
+      users: 'Usuários',
+      critical: 'Configura├º├Áes críticas',
     } as any)[k] || k
   );
 }
 
-/** Grupos de permiss├úo: aba ÔåÆ op├º├Áes internas (bot├Áes / sub-abas) */
+/** Grupos de permissão: aba ÔåÆ op├º├Áes internas (bot├Áes / sub-abas) */
 const PERMISSION_GROUPS: {
   module: string;
   label: string;
@@ -191,21 +191,21 @@ const PERMISSION_GROUPS: {
   },
   {
   module: 'production',
-    label: 'Produ├º├úo',
+    label: 'Produção',
     children: [
-      { value: 'production_view', label: 'Visualizar produ├º├úo' },
-      { value: 'production_create', label: 'Lan├ºar produ├º├úo' },
-      { value: 'production_edit', label: 'Editar produ├º├úo' },
-      { value: 'production_delete', label: 'Excluir produ├º├úo' },
+      { value: 'production_view', label: 'Visualizar produção' },
+      { value: 'production_create', label: 'Lançar produção' },
+      { value: 'production_edit', label: 'Editar produção' },
+      { value: 'production_delete', label: 'Excluir produção' },
       { value: 'assembly_view', label: 'Visualizar montagem' },
-      { value: 'assembly_create', label: 'Lan├ºar montagem' },
+      { value: 'assembly_create', label: 'Lançar montagem' },
       { value: 'assembly_edit', label: 'Editar montagem' },
       { value: 'assembly_delete', label: 'Excluir montagem' },
     ],
   },
   {
   module: 'vehicles',
-    label: 'Ve├¡culos',
+    label: 'Veículos',
     children: [
       { value: 'vehicles_view', label: 'Visualizar' },
       { value: 'vehicles_create', label: 'Criar' },
@@ -225,7 +225,7 @@ const PERMISSION_GROUPS: {
   },
   {
   module: 'maintenance',
-    label: 'Manuten├º├úo',
+    label: 'Manutenção',
     children: [
       { value: 'maintenance_view', label: 'Visualizar' },
       { value: 'maintenance_create', label: 'Criar' },
@@ -235,7 +235,7 @@ const PERMISSION_GROUPS: {
   },
   {
   module: 'fuel',
-    label: 'Combust├¡vel',
+    label: 'Combustível',
     children: [
       { value: 'fuel_view', label: 'Visualizar' },
       { value: 'fuel_create', label: 'Criar' },
@@ -253,24 +253,24 @@ const PERMISSION_GROUPS: {
       { value: 'stock_delete', label: 'Excluir produto' },
 
       { value: 'entry_view', label: 'Visualizar entradas' },
-      { value: 'entry_create', label: 'Lan├ºar entrada' },
+      { value: 'entry_create', label: 'Lançar entrada' },
       { value: 'entry_edit', label: 'Editar entrada' },
       { value: 'entry_delete', label: 'Excluir entrada' },
 
-      { value: 'output_view', label: 'Visualizar sa├¡das' },
-      { value: 'output_create', label: 'Lan├ºar sa├¡da' },
-      { value: 'output_edit', label: 'Editar sa├¡da' },
-      { value: 'output_delete', label: 'Excluir sa├¡da' },
+      { value: 'output_view', label: 'Visualizar saídas' },
+      { value: 'output_create', label: 'Lançar saída' },
+      { value: 'output_edit', label: 'Editar saída' },
+      { value: 'output_delete', label: 'Excluir saída' },
 
       { value: 'movements_view', label: 'Visualizar movimenta├º├Áes' },
-      { value: 'movements_create', label: 'Lan├ºar movimenta├º├úo' },
-      { value: 'movements_edit', label: 'Editar movimenta├º├úo' },
-      { value: 'movements_delete', label: 'Excluir movimenta├º├úo' },
+      { value: 'movements_create', label: 'Lançar movimentação' },
+      { value: 'movements_edit', label: 'Editar movimentação' },
+      { value: 'movements_delete', label: 'Excluir movimentação' },
     ],
   },
   {
   module: 'reports',
-    label: 'Relat├│rios',
+    label: 'Relatórios',
     children: [
       { value: 'reports_view', label: 'Visualizar' },
       { value: 'reports_export', label: 'Exportar' },
@@ -287,7 +287,7 @@ const PERMISSION_GROUPS: {
   },
   {
   module: 'users',
-    label: 'Usu├írios',
+    label: 'Usuários',
     children: [
       { value: 'users_view', label: 'Visualizar' },
       { value: 'users_create', label: 'Criar' },
@@ -318,7 +318,7 @@ const PERMISSION_GROUPS: {
   },
 ];
 
-/** Lista plana (compat├¡vel com expandPermissions / backend) */
+/** Lista plana (compatível com expandPermissions / backend) */
 const MODULE_OPTIONS = PERMISSION_GROUPS.flatMap((g) => [
   { value: g.module, label: g.label },
   ...(g.children || []),
@@ -373,7 +373,7 @@ const FIELDS: Record<string, FieldDef[]> = {
     { key: 'current_km', label: 'KM atual', type: 'number', step: '0.01' },
     {
       key: 'fuel_type',
-      label: 'Combust├¡vel',
+      label: 'Combustível',
       type: 'select',
       options: ['Diesel', 'Gasolina', 'Etanol', 'Flex', 'El├®trico'],
     },
@@ -381,7 +381,7 @@ const FIELDS: Record<string, FieldDef[]> = {
       key: 'status',
       label: 'Status',
       type: 'select',
-      options: ['Dispon├¡vel', 'Em rota', 'Manuten├º├úo', 'Inativo'],
+      options: ['Disponível', 'Em rota', 'Manutenção', 'Inativo'],
     },
     { key: 'notes', label: 'Observa├º├Áes', type: 'textarea' },
   ],
@@ -397,7 +397,7 @@ const FIELDS: Record<string, FieldDef[]> = {
       options: ['A', 'B', 'C', 'D', 'E', 'AB', 'AC', 'AD', 'AE'],
     },
     { key: 'cnh_expiry', label: 'Validade CNH', type: 'date' },
-    { key: 'vehicle_id', label: 'Ve├¡culo', type: 'vehicle' },
+    { key: 'vehicle_id', label: 'Veículo', type: 'vehicle' },
     {
       key: 'status',
       label: 'Status',
@@ -407,7 +407,7 @@ const FIELDS: Record<string, FieldDef[]> = {
     { key: 'notes', label: 'Observa├º├Áes', type: 'textarea' },
   ],
   maintenance: [
-    { key: 'vehicle_id', label: 'Ve├¡culo', type: 'vehicle', required: true },
+    { key: 'vehicle_id', label: 'Veículo', type: 'vehicle', required: true },
     {
       key: 'type',
       label: 'Tipo',
@@ -419,28 +419,28 @@ const FIELDS: Record<string, FieldDef[]> = {
       key: 'status',
       label: 'Status',
       type: 'select',
-      options: ['Agendado', 'Em andamento', 'Conclu├¡do', 'Atrasado'],
+      options: ['Agendado', 'Em andamento', 'Concluído', 'Atrasado'],
       required: true,
     },
-    { key: 'description', label: 'Descri├º├úo', type: 'textarea', required: true },
+    { key: 'description', label: 'Descrição', type: 'textarea', required: true },
     { key: 'date', label: 'Data e hora agendada', type: 'datetime', required: true },
-    { key: 'km', label: 'KM no servi├ºo', type: 'number', step: '0.01' },
-    { key: 'next_km', label: 'Pr├│xima KM', type: 'number', step: '0.01' },
-    { key: 'next_date', label: 'Pr├│xima data', type: 'date' },
+    { key: 'km', label: 'KM no serviço', type: 'number', step: '0.01' },
+    { key: 'next_km', label: 'Próxima KM', type: 'number', step: '0.01' },
+    { key: 'next_date', label: 'Próxima data', type: 'date' },
     { key: 'value', label: 'Valor', type: 'number', step: '0.01' },
     { key: 'workshop', label: 'Oficina', type: 'text' },
-    { key: 'responsible', label: 'Respons├ível', type: 'text' },
+    { key: 'responsible', label: 'Responsável', type: 'text' },
     { key: 'notes', label: 'Observa├º├Áes', type: 'textarea' },
   ],
   fuel: [
-    { key: 'vehicle_id', label: 'Ve├¡culo', type: 'vehicle', required: true },
+    { key: 'vehicle_id', label: 'Veículo', type: 'vehicle', required: true },
     { key: 'driver_id', label: 'Motorista', type: 'driver' },
     { key: 'date', label: 'Data', type: 'date', required: true },
     { key: 'km', label: 'KM', type: 'number', step: '0.01', required: true },
     { key: 'liters', label: 'Litros', type: 'number', step: '0.001', required: true },
     {
       key: 'price_per_liter',
-      label: 'Pre├ºo por litro',
+      label: 'Preço por litro',
       type: 'number',
       step: '0.001',
       required: true,
@@ -455,21 +455,21 @@ const FIELDS: Record<string, FieldDef[]> = {
     { key: 'station', label: 'Posto', type: 'text' },
     {
       key: 'fuel_type',
-      label: 'Combust├¡vel',
+      label: 'Combustível',
       type: 'select',
       options: ['Diesel', 'Gasolina', 'Etanol', 'Flex'],
     },
   ],
   stock: [
-    { key: 'code', label: 'C├│digo', type: 'text', required: true },
+    { key: 'code', label: 'Código', type: 'text', required: true },
     { key: 'name', label: 'Nome', type: 'text', required: true },
     { key: 'model', label: 'Modelo', type: 'text' },
     { key: 'category', label: 'Categoria', type: 'text' },
     { key: 'unit', label: 'Unidade', type: 'text' },
-    { key: 'minimum_stock', label: 'Estoque m├¡nimo', type: 'number', step: '0.01' },
-    { key: 'location', label: 'Localiza├º├úo', type: 'text' },
+    { key: 'minimum_stock', label: 'Estoque mínimo', type: 'number', step: '0.01' },
+    { key: 'location', label: 'Localização', type: 'text' },
     { key: 'supplier', label: 'Fornecedor', type: 'text' },
-    { key: 'unit_value', label: 'Valor unit├írio', type: 'number', step: '0.01' },
+    { key: 'unit_value', label: 'Valor unitário', type: 'number', step: '0.01' },
     { key: 'notes', label: 'Observa├º├Áes', type: 'textarea' },
   ],
   settings: [
@@ -479,30 +479,30 @@ const FIELDS: Record<string, FieldDef[]> = {
   entry: [
     { key: 'product_id', label: 'Produto', type: 'product', required: true },
     { key: 'quantity', label: 'Quantidade', type: 'number', step: '0.01', required: true },
-    { key: 'responsible', label: 'Respons├ível', type: 'text' },
+    { key: 'responsible', label: 'Responsável', type: 'text' },
     { key: 'sector', label: 'Setor', type: 'text' },
-    { key: 'unit_value', label: 'Valor unit├írio', type: 'number', step: '0.01' },
-    { key: 'observation', label: 'Observa├º├úo', type: 'textarea' },
+    { key: 'unit_value', label: 'Valor unitário', type: 'number', step: '0.01' },
+    { key: 'observation', label: 'Observação', type: 'textarea' },
   ],
   output: [
     { key: 'product_id', label: 'Produto', type: 'product', required: true },
     { key: 'quantity', label: 'Quantidade', type: 'number', step: '0.01', required: true },
-    { key: 'responsible', label: 'Respons├ível (quem entregou)', type: 'text' },
+    { key: 'responsible', label: 'Responsável (quem entregou)', type: 'text' },
     { key: 'sector', label: 'Setor', type: 'text' },
-    { key: 'vehicle_id', label: 'Ve├¡culo (se aplic├ível)', type: 'vehicle' },
+    { key: 'vehicle_id', label: 'Veículo (se aplicável)', type: 'vehicle' },
     {
       key: 'recipient',
-      label: 'Retirado por (nome de quem est├í pegando o material)',
+      label: 'Retirado por (nome de quem está pegando o material)',
       type: 'text',
       required: true,
     },
-    { key: 'observation', label: 'Observa├º├úo', type: 'textarea' },
+    { key: 'observation', label: 'Observação', type: 'textarea' },
   ],
   users: [
     { key: 'name', label: 'Nome', type: 'text', required: true },
-    { key: 'username', label: 'Usu├írio', type: 'text', required: true },
+    { key: 'username', label: 'Usuário', type: 'text', required: true },
     { key: 'email', label: 'E-mail', type: 'text', required: true },
-    { key: 'password', label: 'Senha tempor├íria', type: 'text', required: true },
+    { key: 'password', label: 'Senha temporária', type: 'text', required: true },
     {
       key: 'role',
       label: 'Perfil',
@@ -510,7 +510,7 @@ const FIELDS: Record<string, FieldDef[]> = {
       options: [
         'ADMINISTRADOR',
         'GERENTE',
-        'LOG├ìSTICA',
+        'LOGÍSTICA',
         'ALMOXARIFADO',
         'MOTORISTA',
         'VENDEDOR',
@@ -518,23 +518,23 @@ const FIELDS: Record<string, FieldDef[]> = {
       ],
       required: true,
     },
-    { key: 'permissions', label: 'Permiss├Áes espec├¡ficas', type: 'modules' },
+    { key: 'permissions', label: 'Permiss├Áes específicas', type: 'modules' },
   ],
 };
 
 const USER_EDIT_FIELDS: FieldDef[] = [
   { key: 'name', label: 'Nome completo', type: 'text', required: true },
-  { key: 'username', label: 'Nome de usu├írio (login)', type: 'text', required: true },
+  { key: 'username', label: 'Nome de usuário (login)', type: 'text', required: true },
   { key: 'email', label: 'E-mail', type: 'text', required: true },
   {
     key: 'role',
     label: 'Perfil',
     type: 'select',
-    options: ['ADMINISTRADOR', 'GERENTE', 'LOG├ìSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR', 'MONTAGEM'],
+    options: ['ADMINISTRADOR', 'GERENTE', 'LOGÍSTICA', 'ALMOXARIFADO', 'MOTORISTA', 'VENDEDOR', 'MONTAGEM'],
     required: true,
   },
-  { key: 'permissions', label: 'Permiss├Áes espec├¡ficas', type: 'modules' },
-  { key: 'active', label: 'Ativo', type: 'select', options: ['Sim', 'N├úo'], required: true },
+  { key: 'permissions', label: 'Permiss├Áes específicas', type: 'modules' },
+  { key: 'active', label: 'Ativo', type: 'select', options: ['Sim', 'Não'], required: true },
   {
     key: 'password',
     label: 'Nova senha (deixe em branco para manter a atual)',
@@ -545,7 +545,7 @@ const USER_EDIT_FIELDS: FieldDef[] = [
 const LABELS: Record<string, string> = {
   id: 'ID',
   name: 'Nome',
-  username: 'Usu├írio',
+  username: 'Usuário',
   role: 'Perfil',
   active: 'Ativo',
   must_change_password: 'Trocar senha',
@@ -560,32 +560,32 @@ const LABELS: Record<string, string> = {
   capacity: 'Capacidade',
   average_consumption: 'Consumo m├®dio',
   current_km: 'KM atual',
-  fuel_type: 'Combust├¡vel',
+  fuel_type: 'Combustível',
   notes: 'Observa├º├Áes',
   cpf: 'CPF',
   phone: 'Telefone',
   cnh: 'CNH',
   category: 'Categoria',
   cnh_expiry: 'Validade CNH',
-  vehicle_id: 'Ve├¡culo',
-  description: 'Descri├º├úo',
+  vehicle_id: 'Veículo',
+  description: 'Descrição',
   date: 'Data',
   km: 'KM',
-  next_km: 'Pr├│xima KM',
-  next_date: 'Pr├│xima data',
+  next_km: 'Próxima KM',
+  next_date: 'Próxima data',
   value: 'Valor',
   workshop: 'Oficina',
-  responsible: 'Respons├ível',
+  responsible: 'Responsável',
   liters: 'Litros',
-  price_per_liter: 'Pre├ºo/litro',
+  price_per_liter: 'Preço/litro',
   total_value: 'Valor total',
   station: 'Posto',
   recipient: 'Retirado por',
-  code: 'C├│digo',
-  minimum_stock: 'Estoque m├¡nimo',
-  location: 'Localiza├º├úo',
+  code: 'Código',
+  minimum_stock: 'Estoque mínimo',
+  location: 'Localização',
   supplier: 'Fornecedor',
-  unit_value: 'Valor unit├írio',
+  unit_value: 'Valor unitário',
   unit: 'Unidade',
   quantity: 'Quantidade',
   key: 'Chave',
@@ -594,7 +594,7 @@ const LABELS: Record<string, string> = {
   product_id: 'Produto',
   user_id: 'Registrado por',
   invoice: 'Nota fiscal',
-  observation: 'Observa├º├úo',
+  observation: 'Observação',
   sector: 'Setor',
   email: 'E-mail',
 };
@@ -651,7 +651,7 @@ function isIsoDateTime(x: any) {
 
 function readable(x: any): string {
   if (x === null || x === undefined) return 'ÔÇö';
-  if (typeof x === 'boolean') return x ? 'Sim' : 'N├úo';
+  if (typeof x === 'boolean') return x ? 'Sim' : 'Não';
   if (isIsoDateTime(x)) {
     const d = new Date(x);
     return isNaN(d.getTime())
@@ -695,10 +695,10 @@ function resolveCell(key: string, value: any, lookups: any): string {
 
 function statusClasses(v: string): string {
   const s = (v || '').toLowerCase();
-  if (['conclu├¡do', 'concluido', 'dispon├¡vel', 'disponivel', 'ativo'].includes(s))
+  if (['concluído', 'concluido', 'disponível', 'disponivel', 'ativo'].includes(s))
     return 'bg-green-100 text-green-700';
   if (['em andamento', 'em rota'].includes(s)) return 'bg-blue-100 text-blue-700';
-  if (['atrasado', 'inativo', 'manuten├º├úo', 'manutencao'].includes(s))
+  if (['atrasado', 'inativo', 'manutenção', 'manutencao'].includes(s))
     return 'bg-red-100 text-red-700';
   return 'bg-slate-100 text-slate-700';
 }
@@ -735,8 +735,8 @@ export default function AppShell({
     return false;
   };
 
-  // Se o usu├írio n├úo tem acesso ao Dashboard (ex: s├│ tem "schedule" liberado),
-  // j├í entra direto na primeira aba que ele efetivamente pode ver.
+  // Se o usuário não tem acesso ao Dashboard (ex: só tem "schedule" liberado),
+  // já entra direto na primeira aba que ele efetivamente pode ver.
   const [page, setPage] = useState<string>(() => {
     const first = items.find(([k]) => {
       if (k === 'critical') return isMainAdmin;
@@ -798,7 +798,7 @@ export default function AppShell({
   } | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
-  // Bloqueio de usu├írios
+  // Bloqueio de usuários
   const [blockModal, setBlockModal] = useState<any>(null);
   const [blockMode, setBlockMode] = useState<'manual' | 'scheduled' | 'permanent'>('manual');
   const [blockedUntil, setBlockedUntil] = useState('');
@@ -817,7 +817,7 @@ export default function AppShell({
         );
       else if (p === 'output')
         setRows(
-          ((await request('/stock/movements')) as any[]).filter((m) => m.type === 'SA├ìDA')
+          ((await request('/stock/movements')) as any[]).filter((m) => m.type === 'SAÍDA')
         );
       else if (p === 'users') setRows(await request('/users'));
       else if (resource[p]) setRows(await request('/' + resource[p]));
@@ -895,26 +895,26 @@ export default function AppShell({
   // Tempo real barato (substitui o SSE que estourava a cota da Vercel)
   // ------------------------------------------------------------------
   // O que havia aqui antes: um EventSource apontando para /events/stream,
-  // ou seja, uma conex├úo HTTP aberta enquanto a aba existisse. Em fun├º├úo
-  // serverless, conex├úo aberta = inst├óncia viva, faturada por tempo de
+  // ou seja, uma conexão HTTP aberta enquanto a aba existisse. Em função
+  // serverless, conexão aberta = instância viva, faturada por tempo de
   // parede (Active CPU + Provisioned Memory GB-Hrs). Como o maxDuration
-  // era 60s, a conex├úo ca├¡a e o navegador reconectava, ent├úo cada aba
-  // aberta segurava uma fun├º├úo praticamente 100% do tempo, e ainda pagava
+  // era 60s, a conexão caía e o navegador reconectava, então cada aba
+  // aberta segurava uma função praticamente 100% do tempo, e ainda pagava
   // um cold start do FastAPI a cada minuto.
   //
-  // Agora: GET /events/version, que l├¬ uma ├║nica linha por chave prim├íria
-  // e responde um n├║mero. S├│ busca o payload de verdade quando o n├║mero
-  // muda. Tr├¬s travas para o consumo n├úo voltar a escalar:
-  //   1. pausa enquanto a aba est├í oculta (aba em segundo plano = 0 req);
-  //   2. hiberna ap├│s 15 min sem intera├º├úo do usu├írio (aba esquecida
-  //      aberta a noite toda n├úo gera nada) e acorda no primeiro clique,
+  // Agora: GET /events/version, que lê uma única linha por chave primária
+  // e responde um número. Só busca o payload de verdade quando o número
+  // muda. Três travas para o consumo não voltar a escalar:
+  //   1. pausa enquanto a aba está oculta (aba em segundo plano = 0 req);
+  //   2. hiberna após 15 min sem interação do usuário (aba esquecida
+  //      aberta a noite toda não gera nada) e acorda no primeiro clique,
   //      tecla, toque ou scroll;
   //   3. backoff progressivo em erro, at├® 2 min, em vez de insistir.
   useEffect(() => {
     if (!user) return;
 
     const POLL_MS = 25_000; // intervalo normal com a aba em foco
-    const IDLE_AFTER_MS = 15 * 60_000; // hiberna ap├│s 15 min parado
+    const IDLE_AFTER_MS = 15 * 60_000; // hiberna após 15 min parado
     const MAX_BACKOFF_MS = 120_000;
 
     let stopped = false;
@@ -942,8 +942,8 @@ export default function AppShell({
     const tick = async () => {
       if (stopped) return;
 
-      // Aba escondida ou usu├írio parado h├í muito tempo: n├úo gasta fun├º├úo.
-      // Reagenda s├│ para reavaliar daqui a pouco, sem fazer requisi├º├úo.
+      // Aba escondida ou usuário parado há muito tempo: não gasta função.
+      // Reagenda só para reavaliar daqui a pouco, sem fazer requisição.
       if (document.visibilityState !== 'visible' || isIdle()) {
         schedule(POLL_MS);
         return;
@@ -961,14 +961,14 @@ export default function AppShell({
         failures = 0;
 
         if (lastVersion === null) {
-          // Primeira leitura: s├│ memoriza, n├úo recarrega nada.
+          // Primeira leitura: só memoriza, não recarrega nada.
           lastVersion = version;
         } else if (version !== lastVersion) {
           lastVersion = version;
-          // O contador ├® global da empresa, ent├úo n├úo d├í para saber qual
-          // m├│dulo mudou: dispara '*', que o handler abaixo j├í trata como
-          // "recarregue a p├ígina aberta". S├│ acontece quando houve escrita
-          // de verdade, ent├úo n├úo ├® um recarregamento ├á toa.
+          // O contador ├® global da empresa, então não dá para saber qual
+          // módulo mudou: dispara '*', que o handler abaixo já trata como
+          // "recarregue a página aberta". Só acontece quando houve escrita
+          // de verdade, então não ├® um recarregamento à toa.
           window.dispatchEvent(
             new CustomEvent('company-data-changed', { detail: { module: '*' } })
           );
@@ -976,8 +976,8 @@ export default function AppShell({
 
         schedule(POLL_MS);
       } catch (err: any) {
-        // 401/403 ÔåÆ sess├úo caiu; o helper request() j├í avisa a aplica├º├úo.
-        // N├úo adianta continuar batendo no endpoint.
+        // 401/403 ÔåÆ sessão caiu; o helper request() já avisa a aplicação.
+        // Não adianta continuar batendo no endpoint.
         if (err?.status === 401 || err?.status === 403) {
           stopped = true;
           clear();
@@ -995,8 +995,8 @@ export default function AppShell({
     const markActive = () => {
       const wasIdle = isIdle();
       lastActivity = Date.now();
-      // Estava hibernando e o usu├írio voltou: consulta na hora, para ele
-      // n├úo ficar olhando dado velho at├® o pr├│ximo ciclo.
+      // Estava hibernando e o usuário voltou: consulta na hora, para ele
+      // não ficar olhando dado velho at├® o próximo ciclo.
       if (wasIdle && document.visibilityState === 'visible') schedule(0);
     };
 
@@ -1065,9 +1065,9 @@ export default function AppShell({
     }
 
     if (mod === 'audit') {
-      // Aba Auditoria fica dentro de Configura├º├Áes; s├│ o pr├│prio
-      // SettingsModule sabe se o usu├írio est├í de fato na sub-aba
-      // "audit" no momento, ent├úo s├│ repassamos o evento.
+      // Aba Auditoria fica dentro de Configura├º├Áes; só o próprio
+      // SettingsModule sabe se o usuário está de fato na sub-aba
+      // "audit" no momento, então só repassamos o evento.
       window.dispatchEvent(new Event('reload-audit'));
       return;
     }
@@ -1187,7 +1187,7 @@ export default function AppShell({
   async function deactivateUser(id: number) {
     if (
       !confirm(
-        'Desativar o acesso deste usu├írio? Os registros hist├│ricos ser├úo preservados.'
+        'Desativar o acesso deste usuário? Os registros históricos serão preservados.'
       )
     ) return;
     setError('');
@@ -1236,7 +1236,7 @@ export default function AppShell({
   }
 
   async function unblockUser(id: number) {
-    if (!confirm('Desbloquear este usu├írio?')) return;
+    if (!confirm('Desbloquear este usuário?')) return;
     setError('');
     try {
       await request(`/users/${id}/block`, {
@@ -1270,7 +1270,7 @@ export default function AppShell({
       await request('/' + resource[page] + '/' + id, { method: 'DELETE' });
       load();
     } catch (e: any) {
-      setError(e.message || 'N├úo foi poss├¡vel excluir');
+      setError(e.message || 'Não foi possível excluir');
     }
   }
 
@@ -1290,8 +1290,8 @@ export default function AppShell({
 
   async function deleteMovement(id: number) {
     askPassword(
-      'Excluir movimenta├º├úo',
-      'Confirme sua senha. O estoque ser├í ajustado de volta.',
+      'Excluir movimentação',
+      'Confirme sua senha. O estoque será ajustado de volta.',
       async (pwd: string) => {
         await request('/stock/movements/' + id + '/delete', {
           method: 'POST',
@@ -1343,10 +1343,10 @@ export default function AppShell({
         <span className="flex items-center gap-2 font-bold">
           <img
             src="/icon2.png"
-            alt="Log├¡sticas Bill"
+            alt="Logísticas Bill"
             className="h-8 w-auto object-contain"
           />
-          <span>LOG├ìSTICAS BILL</span>
+          <span>LOGÍSTICAS BILL</span>
         </span>
         <button onClick={() => setMobileMenuOpen(true)} aria-label="Abrir menu">
           <Menu size={24} />
@@ -1368,7 +1368,7 @@ export default function AppShell({
         <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden px-3">
           <img
             src="/icon2.png"
-            alt="Log├¡sticas Bill"
+            alt="Logísticas Bill"
             className="h-9 w-9 shrink-0 object-contain"
           />
           <span
@@ -1376,7 +1376,7 @@ export default function AppShell({
               sidebarCollapsed ? 'md:pointer-events-none md:opacity-0' : 'opacity-100'
             }`}
           >
-            LOG├ìSTICAS BILL
+            LOGÍSTICAS BILL
           </span>
           <button
             type="button"
@@ -1524,7 +1524,7 @@ export default function AppShell({
         {!page ? (
           <div className="rounded-xl bg-white p-8 text-center shadow-sm">
             <p className="text-sm text-slate-600">
-              Seu usu├írio n├úo tem permiss├úo para nenhum m├│dulo. Solicite libera├º├úo ao
+              Seu usuário não tem permissão para nenhum módulo. Solicite liberação ao
               administrador.
             </p>
           </div>
@@ -1622,7 +1622,7 @@ export default function AppShell({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-slate-900">
-              Bloquear usu├írio
+              Bloquear usuário
             </h3>
             <p className="mt-1 text-sm text-slate-500">
               {blockModal.name}
@@ -1641,7 +1641,7 @@ export default function AppShell({
                   {
                     id: 'manual' as const,
                     title: 'Bloquear',
-                    desc: 'S├│ desbloqueia manualmente pelo painel',
+                    desc: 'Só desbloqueia manualmente pelo painel',
                   },
                   {
                     id: 'scheduled' as const,
@@ -1703,7 +1703,7 @@ export default function AppShell({
               <input
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
-                placeholder="Ex.: f├®rias, seguran├ºa, uso indevidoÔÇª"
+                placeholder="Ex.: f├®rias, segurança, uso indevidoÔÇª"
                 className="w-full rounded-lg border border-slate-200 p-2.5 text-sm"
               />
             </label>
@@ -1808,7 +1808,7 @@ function AccountPanel({
   function onPickAvatar(file: File | null) {
     if (!file || !file.type.startsWith('image/')) return;
     setErr('');
-    setPendingAvatarFile(file); // abre o modal de recorte; o envio s├│ acontece em saveCroppedAvatar
+    setPendingAvatarFile(file); // abre o modal de recorte; o envio só acontece em saveCroppedAvatar
   }
 
   async function saveCroppedAvatar(dataUrl: string) {
@@ -2034,21 +2034,21 @@ function Dashboard({
 
   const cards = [
     {
-      label: 'Ve├¡culos dispon├¡veis',
+      label: 'Veículos disponíveis',
       value: metrics?.available,
       icon: '­ƒÜø',
       page: 'vehicles',
       color: 'from-emerald-500 to-emerald-600',
     },
     {
-      label: 'Em manuten├º├úo',
+      label: 'Em manutenção',
       value: metrics?.maintenance,
       icon: '­ƒöº',
       page: 'maintenance',
       color: 'from-amber-500 to-amber-600',
     },
     {
-      label: 'Manuten├º├Áes conclu├¡das',
+      label: 'Manuten├º├Áes concluídas',
       value: metrics?.maintenance_completed,
       icon: 'Ô£à',
       page: 'maintenance',
@@ -2069,7 +2069,7 @@ function Dashboard({
       color: 'from-red-500 to-red-600',
     },
     {
-      label: 'Custo combust├¡vel',
+      label: 'Custo combustível',
       value: metrics?.fuel_cost?.toLocaleString('pt-BR', {
         style: 'currency',
         currency: 'BRL',
@@ -2081,10 +2081,10 @@ function Dashboard({
   ];
 
   const fleetData = [
-    { name: 'Dispon├¡veis', value: Number(metrics?.available ?? 0), color: '#22c55e' },
-    { name: 'Em manuten├º├úo', value: Number(metrics?.maintenance ?? 0), color: '#f59e0b' },
+    { name: 'Disponíveis', value: Number(metrics?.available ?? 0), color: '#22c55e' },
+    { name: 'Em manutenção', value: Number(metrics?.maintenance ?? 0), color: '#f59e0b' },
     {
-      name: 'Conclu├¡das',
+      name: 'Concluídas',
       value: Number(metrics?.maintenance_completed ?? 0),
       color: '#3b82f6',
     },
@@ -2111,9 +2111,9 @@ function Dashboard({
                 ÔÜá´©Å
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Aviso de manuten├º├úo</h2>
+                <h2 className="text-lg font-bold text-slate-900">Aviso de manutenção</h2>
                 <p className="text-sm text-slate-500">
-                  Existem manuten├º├Áes que precisam da sua aten├º├úo.
+                  Existem manuten├º├Áes que precisam da sua atenção.
                 </p>
               </div>
             </div>
@@ -2203,9 +2203,9 @@ function Dashboard({
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="dash-chart-enter rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
-          <h3 className="mb-1 font-semibold text-slate-800">Frota / Manuten├º├úo</h3>
+          <h3 className="mb-1 font-semibold text-slate-800">Frota / Manutenção</h3>
           <p className="mb-4 text-xs text-slate-500">
-            Vis├úo geral da frota ┬À meta: at├® 5 manuten├º├Áes no per├¡odo
+            Visão geral da frota ┬À meta: at├® 5 manuten├º├Áes no período
           </p>
           <div className="h-64">
             {fleetData.length === 0 ? (
@@ -2260,12 +2260,12 @@ function Dashboard({
           </div>
           {Number(metrics?.maintenance ?? 0) > 5 && (
             <p className="mt-2 text-center text-xs font-medium text-amber-600">
-              Aten├º├úo: mais de 5 ve├¡culos em manuten├º├úo
+              Atenção: mais de 5 veículos em manutenção
             </p>
           )}
           {Number(metrics?.maintenance_completed ?? 0) > 5 && (
             <p className="mt-1 text-center text-xs text-slate-500">
-              Manuten├º├Áes conclu├¡das no per├¡odo: {metrics.maintenance_completed} (acima da
+              Manuten├º├Áes concluídas no período: {metrics.maintenance_completed} (acima da
               meta de 5)
             </p>
           )}
@@ -2274,7 +2274,7 @@ function Dashboard({
         <div className="dash-chart-enter rounded-2xl bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
           <h3 className="mb-1 font-semibold text-slate-800">Estoque</h3>
           <p className="mb-4 text-xs text-slate-500">
-            Produtos cadastrados e alertas de m├¡nimo
+            Produtos cadastrados e alertas de mínimo
           </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -2310,10 +2310,10 @@ function Dashboard({
 }
 
 const REPORT_SOURCES = [
-  { value: 'vehicles', label: 'Ve├¡culos', path: '/vehicles' },
+  { value: 'vehicles', label: 'Veículos', path: '/vehicles' },
   { value: 'drivers', label: 'Motoristas', path: '/drivers' },
-  { value: 'maintenance', label: 'Manuten├º├úo', path: '/maintenance' },
-  { value: 'fuel', label: 'Combust├¡vel', path: '/fuel' },
+  { value: 'maintenance', label: 'Manutenção', path: '/maintenance' },
+  { value: 'fuel', label: 'Combustível', path: '/fuel' },
   { value: 'products', label: 'Estoque', path: '/products' },
   { value: 'movements', label: 'Movimenta├º├Áes de estoque', path: '/stock/movements' },
   { value: 'schedule', label: 'Agendamento', path: '/schedule/weeks?include_archived=true' },
@@ -2332,7 +2332,7 @@ function cleanRowForReport(r: any, lookups: any) {
     } else if (v === null || v === undefined) {
       val = '';
     } else if (typeof v === 'boolean') {
-      val = v ? 'Sim' : 'N├úo';
+      val = v ? 'Sim' : 'Não';
     }
     out[labelFor(k)] = val;
   }
@@ -2344,8 +2344,8 @@ function exportExcelMulti(datasets: { cfg: any; rows: any[] }[]) {
   const today = new Date().toLocaleDateString('pt-BR');
   const data: any[][] = [];
 
-  data.push(['LOG├ìSTICAS BILL']);
-  data.push([`Relat├│rio geral`]);
+  data.push(['LOGÍSTICAS BILL']);
+  data.push([`Relatório geral`]);
   data.push([`Gerado em: ${today}`]);
   data.push([]);
 
@@ -2382,7 +2382,7 @@ function exportExcelMulti(datasets: { cfg: any; rows: any[] }[]) {
   sheet['!rows'] = data.map(() => ({ hpt: 18 }));
   sheet['!freeze'] = { xSplit: 0, ySplit: 4 };
 
-  XLSX.utils.book_append_sheet(book, sheet, 'Relat├│rio');
+  XLSX.utils.book_append_sheet(book, sheet, 'Relatório');
   XLSX.writeFile(
     book,
     `Bill_Logistica_Relatorio_${today.replace(/\//g, '-')}.xlsx`
@@ -2406,10 +2406,10 @@ function exportPdfMulti(
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
-  doc.text('LOG├ìSTICAS BILL', margin, 10);
+  doc.text('LOGÍSTICAS BILL', margin, 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text('Relat├│rio geral', margin, 15);
+  doc.text('Relatório geral', margin, 15);
   doc.text(`Gerado em: ${today}`, pageWidth - margin, 15, { align: 'right' });
 
   let currentY = 20;
@@ -2525,7 +2525,7 @@ function exportPdfMulti(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.text(
-    'LOG├ìSTICAS BILL ÔÇö Relat├│rio gerado automaticamente',
+    'LOGÍSTICAS BILL ÔÇö Relatório gerado automaticamente',
     margin,
     pageHeight - 4
   );
@@ -2537,29 +2537,29 @@ const SCHEDULE_REPORT_FIELDS = [
   { key: 'Semana', label: 'Semana' },
   { key: 'Status_Semana', label: 'Status da semana' },
   { key: 'Data', label: 'Data' },
-  { key: 'Regi├úo', label: 'Regi├úo' },
+  { key: 'Região', label: 'Região' },
   { key: 'Rota', label: 'Rota' },
-  { key: 'Posi├º├úo', label: 'Posi├º├úo' },
+  { key: 'Posição', label: 'Posição' },
   { key: 'Cliente', label: 'Cliente' },
-  { key: 'Servi├ºo', label: 'Servi├ºo' },
+  { key: 'Serviço', label: 'Serviço' },
   { key: 'Telefone', label: 'Telefone' },
-  { key: 'Localiza├º├úo', label: 'Localiza├º├úo' },
+  { key: 'Localização', label: 'Localização' },
   { key: 'Comanda', label: 'Comanda' },
   { key: 'Pago', label: 'Pago' },
   { key: 'Cooperativa', label: 'Cooperativa' },
   { key: 'Sem Comanda', label: 'Sem Comanda' },
   { key: 'Status', label: 'Status' },
-  { key: 'Observa├º├úo', label: 'Observa├º├úo' },
+  { key: 'Observação', label: 'Observação' },
   { key: 'Vagas', label: 'Vagas' },
 ];
 
 const COMMERCIAL_REPORT_FIELDS = [
-  { key: 'C├│digo', label: 'C├│digo' },
+  { key: 'Código', label: 'Código' },
   { key: 'Produto', label: 'Produto' },
   { key: 'Qtd', label: 'Quantidade' },
-  { key: 'Pre├ºo unit.', label: 'Pre├ºo unit├írio' },
+  { key: 'Preço unit.', label: 'Preço unitário' },
   { key: 'Total', label: 'Total' },
-  { key: 'Agendamentos', label: 'N┬║ de agendamentos' },
+  { key: 'Agendamentos', label: 'Nº de agendamentos' },
 ];
 
 function ClosingReport() {
@@ -2590,9 +2590,9 @@ function ClosingReport() {
 
   return (
     <div className="mb-8 rounded-xl border bg-white p-5">
-      <h3 className="font-semibold text-slate-800">Fechamento do m├¬s</h3>
+      <h3 className="font-semibold text-slate-800">Fechamento do mês</h3>
       <p className="mt-1 text-sm text-slate-500">
-        Compara a descri├º├úo do servi├ºo agendado com os produtos cadastrados em Comercial.
+        Compara a descrição do serviço agendado com os produtos cadastrados em Comercial.
       </p>
       <form onSubmit={run} className="mt-4 flex flex-wrap items-end gap-3">
         <label className="text-sm">
@@ -2630,10 +2630,10 @@ function ClosingReport() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs text-slate-500">
                 <tr>
-                  <th className="px-3 py-2">C├│digo</th>
+                  <th className="px-3 py-2">Código</th>
                   <th className="px-3 py-2">Produto</th>
                   <th className="px-3 py-2">Qtd</th>
-                  <th className="px-3 py-2">Pre├ºo unit.</th>
+                  <th className="px-3 py-2">Preço unit.</th>
                   <th className="px-3 py-2">Total</th>
                   <th className="px-3 py-2">Agendamentos</th>
                 </tr>
@@ -2656,7 +2656,7 @@ function ClosingReport() {
           {!!data.unmatched?.length && (
             <details className="mt-4 text-sm">
               <summary className="cursor-pointer text-amber-800">
-                Servi├ºos sem produto cadastrado ({data.unmatched.length})
+                Serviços sem produto cadastrado ({data.unmatched.length})
               </summary>
               <ul className="mt-2 max-h-40 overflow-auto text-xs text-slate-600">
                 {data.unmatched.map((u: any, i: number) => (
@@ -2717,7 +2717,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
   
   async function loadPreview() {
     if (!selected.length) {
-      setErr('Selecione pelo menos um m├│dulo.');
+      setErr('Selecione pelo menos um módulo.');
       return;
     }
     setExporting(true);
@@ -2748,9 +2748,9 @@ function ReportsExport({ lookups }: { lookups: any }) {
                     Telefone: e.phone || '',
                     'Localização': e.location_link || '',
                     Comanda: e.comanda || '',
-                    Pago: e.pago ? 'Sim' : 'N├úo',
+                    Pago: e.pago ? 'Sim' : 'Não',
                     Cooperativa: e.cooperativa_nome || '',
-                    'Sem Comanda': e.no_comanda ? 'Sim' : 'N├úo',
+                    'Sem Comanda': e.no_comanda ? 'Sim' : 'Não',
                     Status: e.status || '',
                     'Observação': e.observation || '',
                     Vagas: e.slots_consumed || 1,
@@ -2779,7 +2779,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
                 'Código': l.code || '',
                 Produto: l.name || '',
                 Qtd: l.quantity,
-                'Pre├ºo unit.': l.unit_price,
+                'Preço unit.': l.unit_price,
                 Total: l.line_total,
                 Agendamentos: l.entries,
               };
@@ -2835,7 +2835,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
   return (
     <div className="p-5 text-sm text-slate-600">
       <p className="mb-3">
-        Selecione um ou mais m├│dulos. Ao clicar em <strong>Gerar relat├│rio</strong> voc├¬ ver├í o
+        Selecione um ou mais módulos. Ao clicar em <strong>Gerar relatório</strong> você verá o
         preview completo antes de salvar ou imprimir.
       </p>
       {err && <p className="mb-2 text-red-600">{err}</p>}
@@ -2899,7 +2899,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
         {selected.includes('commercial') && (
         <div className="mb-4 rounded-lg border p-3">
           <p className="mb-2 text-xs font-medium text-slate-700">
-            Comercial ÔÇö per├¡odo e campos
+            Comercial ÔÇö período e campos
           </p>
           <div className="mb-3 flex flex-wrap gap-3">
             <label className="text-xs">
@@ -2986,7 +2986,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
         disabled={exporting}
         className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-60"
       >
-        {exporting ? 'CarregandoÔÇª' : 'Gerar relat├│rio'}
+        {exporting ? 'CarregandoÔÇª' : 'Gerar relatório'}
       </button>
 
       {preview && (
@@ -2994,7 +2994,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
           <div className="flex h-[96vh] w-[98vw] max-w-none flex-col rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-5 py-4">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Preview do relat├│rio</h3>
+                <h3 className="text-lg font-semibold text-slate-900">Preview do relatório</h3>
                 <p className="text-xs text-slate-500">
                   Confira os dados abaixo. Depois escolha salvar em Excel, PDF ou imprimir.
                 </p>
@@ -3170,7 +3170,7 @@ function Module({
               : page === 'entry'
               ? 'Nova entrada'
               : page === 'output'
-              ? 'Nova sa├¡da'
+              ? 'Nova saída'
               : 'Novo registro'}
           </h3>
           {page === 'entry' || page === 'output' ? (
@@ -3188,7 +3188,7 @@ function Module({
       <section className="overflow-hidden rounded-xl bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b p-5">
           <h2 className="font-semibold">
-            {page === 'reports' ? 'Relat├│rios' : titleFor(page)}
+            {page === 'reports' ? 'Relatórios' : titleFor(page)}
           </h2>
           <div className="flex items-center gap-3">
             {page === 'stock' && rows.length > 0 && (
@@ -3381,7 +3381,7 @@ function Module({
       {isUsers && isAdmin && editingUser && (
         <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-semibold">Editar usu├írio: {editingUser.name}</h3>
+            <h3 className="font-semibold">Editar usuário: {editingUser.name}</h3>
             <button
               onClick={() => setEditingUser(null)}
               className="text-sm text-slate-500 hover:underline"
@@ -3422,7 +3422,7 @@ function Module({
       {isMovementModule && editingMovement && (
         <section className="mt-6 rounded-xl bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-semibold">Editar movimenta├º├úo</h3>
+            <h3 className="font-semibold">Editar movimentação</h3>
             <button
               onClick={() => setEditingMovement(null)}
               className="text-sm text-slate-500 hover:underline"
@@ -3475,10 +3475,10 @@ function ModuleCheckboxes({
 
   return (
     <div className="grid gap-3 rounded-lg border border-slate-200 p-3 lg:grid-cols-5">
-      {/* Coluna esquerda: s├│ as abas */}
+      {/* Coluna esquerda: só as abas */}
       <div className="flex flex-col gap-1 lg:col-span-2">
         <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          M├│dulos
+          Módulos
         </p>
         {PERMISSION_GROUPS.map((g) => {
           const on =
@@ -3542,7 +3542,7 @@ function ModuleCheckboxes({
         <p className="mb-2 text-sm font-semibold text-slate-800">{group.label}</p>
         {!group.children?.length ? (
           <p className="text-xs text-slate-500">
-            Sem op├º├Áes extras. Marque o m├│dulo ├á esquerda para liberar a aba inteira.
+            Sem op├º├Áes extras. Marque o módulo à esquerda para liberar a aba inteira.
           </p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -3593,7 +3593,7 @@ function PermissionsField({
           onClick={() => setOpen(true)}
           className="text-xs font-medium text-brand hover:underline"
         >
-          Personalizar permiss├Áes espec├¡ficas (opcional)
+          Personalizar permiss├Áes específicas (opcional)
         </button>
       ) : (
         <>
@@ -3606,7 +3606,7 @@ function PermissionsField({
             }}
             className="mt-2 text-xs text-slate-500 hover:underline"
           >
-            Usar m├│dulos padr├úo do perfil
+            Usar módulos padrão do perfil
           </button>
         </>
       )}
@@ -3689,7 +3689,7 @@ function ResourceForm({
   if (!fields.length)
     return (
       <p className="text-sm text-slate-500">
-        Este m├│dulo ainda n├úo possui formul├írio de cadastro.
+        Este módulo ainda não possui formulário de cadastro.
       </p>
     );
 
@@ -3796,7 +3796,7 @@ function EditUserForm({
     email: user.email || '',
     role: user.role || '',
     permissions: user.permissions || '',
-    active: user.active ? 'Sim' : 'N├úo',
+    active: user.active ? 'Sim' : 'Não',
     password: '',
   });
   const [saving, setSaving] = useState(false);
@@ -3944,7 +3944,7 @@ function MovementEditForm({
         />
       </label>
       <label className="text-sm">
-        <span className="mb-1 block text-slate-600">Respons├ível (quem entregou)</span>
+        <span className="mb-1 block text-slate-600">Responsável (quem entregou)</span>
         <input
           value={values.responsible}
           onChange={(e) => set('responsible', e.target.value)}
@@ -3968,7 +3968,7 @@ function MovementEditForm({
         />
       </label>
       <label className="text-sm">
-        <span className="mb-1 block text-slate-600">Ve├¡culo</span>
+        <span className="mb-1 block text-slate-600">Veículo</span>
         <select
           value={values.vehicle_id}
           onChange={(e) => set('vehicle_id', e.target.value)}
@@ -3983,7 +3983,7 @@ function MovementEditForm({
         </select>
       </label>
       <label className="text-sm sm:col-span-2">
-        <span className="mb-1 block text-slate-600">Observa├º├úo</span>
+        <span className="mb-1 block text-slate-600">Observação</span>
         <textarea
           value={values.observation}
           onChange={(e) => set('observation', e.target.value)}
@@ -3991,7 +3991,7 @@ function MovementEditForm({
         />
       </label>
       <label className="text-sm">
-        <span className="mb-1 block text-slate-600">Valor unit├írio</span>
+        <span className="mb-1 block text-slate-600">Valor unitário</span>
         <input
           type="number"
           step="0.01"
@@ -4024,11 +4024,11 @@ function MovementEditForm({
 }
 
 // ============================================================
-// M├ôDULO DE AGENDAMENTO ÔÇô VERS├âO COMPLETA E MELHORADA
+// MÓDULO DE AGENDAMENTO ÔÇô VERSÃO COMPLETA E MELHORADA
 // ============================================================
 
 const COOPERATIVAS = [
-  'COOPERA', 'COOPERALIAN├çA', 'CERPALO', 'CERMOFUL',
+  'COOPERA', 'COOPERALIANÇA', 'CERPALO', 'CERMOFUL',
   'CERTREL', 'CELESC', 'CERBRANORTE', 'CEGERO',
   'CERGAL', 'CERGRAL', 'COOPERCOCAL', 'EFLUL',
   'COOPERZEM', 'CEGERO',
@@ -4095,10 +4095,10 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   const perms = (user.permissions || '').split(',').filter(Boolean);
   const isMainAdmin = !!user.is_main_admin;
 
-  // Apenas o Administrador Principal (id 1) tem acesso total autom├ítico ao
+  // Apenas o Administrador Principal (id 1) tem acesso total automático ao
   // Agendamento. Todo o resto ÔÇö incluindo os perfis ADMINISTRADOR e GERENTE ÔÇö
-  // depende exclusivamente das permiss├Áes espec├¡ficas marcadas no cadastro
-  // do usu├írio (schedule / schedule_edit / schedule_delete / schedule_export /
+  // depende exclusivamente das permiss├Áes específicas marcadas no cadastro
+  // do usuário (schedule / schedule_edit / schedule_delete / schedule_export /
   // schedule_archive).
   const canEdit =
     isMainAdmin || perms.includes('schedule_edit');
@@ -4147,8 +4147,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     async function load(opts?: { silent?: boolean }) {
     const silent = !!(opts?.silent || weeks.length > 0);
-    // N├âO guardar scroll no in├¡cio: se o usu├írio rolar durante o fetch,
-    // restaurar a posi├º├úo antiga puxa a p├ígina para cima de novo.
+    // NÃO guardar scroll no início: se o usuário rolar durante o fetch,
+    // restaurar a posição antiga puxa a página para cima de novo.
 
     if (!silent) setLoading(true);
     if (!silent) setError('');
@@ -4161,7 +4161,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         `/schedule/weeks?include_archived=${includeArchived}${hashQ}`
       );
 
-      // Backend: { unchanged, hash, weeks } ÔÇö se igual, n├úo reprocessa
+      // Backend: { unchanged, hash, weeks } ÔÇö se igual, não reprocessa
       if (raw && raw.unchanged) {
         if (raw.hash) scheduleHashRef.current = raw.hash;
         return;
@@ -4174,7 +4174,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         : [];
       if (raw?.hash) scheduleHashRef.current = raw.hash;
 
-      // posi├º├úo ATUAL (depois do await)
+      // posição ATUAL (depois do await)
       const scrollY =
         typeof window !== 'undefined'
           ? window.scrollY || document.documentElement.scrollTop || 0
@@ -4192,7 +4192,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         });
       }
 
-      // S├│ corrige scroll se houve re-render real
+      // Só corrige scroll se houve re-render real
       if (typeof window !== 'undefined' && scrollY > 0) {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -4227,7 +4227,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeArchived]);
 
-  // Atualiza├º├úo vem do SSE global (AppShell) ÔåÆ evento reload-schedule
+  // Atualização vem do SSE global (AppShell) ÔåÆ evento reload-schedule
   useEffect(() => {
     const onReload = () => forceReloadSchedule();
     window.addEventListener('reload-schedule', onReload);
@@ -4245,7 +4245,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       }, {})
     : {};
 
-  // ordem fixa dentro do dia (ordem de cria├º├úo)
+  // ordem fixa dentro do dia (ordem de criação)
   Object.keys(slotsByDate).forEach((key) => {
     slotsByDate[key].sort((a: any, b: any) => Number(a.id) - Number(b.id));
   });
@@ -4283,7 +4283,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
       const parts = String(dateKey || slot.date || '').slice(0, 10).split('-');
       if (parts.length === 3) {
         const [y, m, d] = parts.map(Number);
-        const dow = new Date(y, m - 1, d).getDay(); // 0=Dom ... 6=S├íb
+        const dow = new Date(y, m - 1, d).getDay(); // 0=Dom ... 6=Sáb
         if (String(dow) !== filterWeekday) return false;
       }
     }
@@ -4371,7 +4371,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-      doc.text('LOG├ìSTICAS BILL ÔÇö Agenda de Instala├º├Áes', margin, y);
+      doc.text('LOGÍSTICAS BILL ÔÇö Agenda de Instala├º├Áes', margin, y);
       y += 7;
 
       doc.setFont('helvetica', 'normal');
@@ -4418,12 +4418,12 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           y += 4;
 
           const rows = (slot.entries || []).map((e: any) => [
-            `${String(e.position).padStart(2, '0')}┬░`,
+            `${String(e.position).padStart(2, '0')}°`,
             e.client_name || '',
             e.service_description || '',
             e.phone || '',
             e.comanda || '',
-            e.pago ? 'Sim' : 'N├úo',
+            e.pago ? 'Sim' : 'Não',
             e.cooperativa_nome || '',
             e.observation || '',
           ]);
@@ -4431,7 +4431,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           if (rows.length) {
             autoTable(doc, {
               startY: y,
-              head: [['Pos', 'Cliente', 'Servi├ºo', 'Telefone', 'Comanda', 'Pago', 'Cooperativa', 'Obs']],
+              head: [['Pos', 'Cliente', 'Serviço', 'Telefone', 'Comanda', 'Pago', 'Cooperativa', 'Obs']],
               body: rows,
               margin: { left: margin, right: margin },
               styles: { fontSize: 7, cellPadding: 1 },
@@ -4471,7 +4471,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     });
 
     if (!slots.length) {
-      setError('Nenhuma rota encontrada para essa data / caminh├úo.');
+      setError('Nenhuma rota encontrada para essa data / caminhão.');
       return;
     }
 
@@ -4484,7 +4484,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('LOG├ìSTICAS BILL ÔÇö Rota do dia', margin, y);
+    doc.text('LOGÍSTICAS BILL ÔÇö Rota do dia', margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -4499,9 +4499,9 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     
     if (printFields.position) head.push('Pos');
     if (printFields.client) head.push('Cliente');
-    if (printFields.service) head.push('Servi├ºo');
+    if (printFields.service) head.push('Serviço');
     if (printFields.phone) head.push('Telefone');
-    if (printFields.location) head.push('Localiza├º├úo');
+    if (printFields.location) head.push('Localização');
     if (printFields.comanda) head.push('Comanda');
     if (printFields.cooperativa) head.push('Cooperativa');
     if (printFields.pago) head.push('Pago');
@@ -4533,14 +4533,14 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
 
       const body = (slot.entries || []).map((e: any) => {
         const row: string[] = [];
-        if (printFields.position) row.push(`${String(e.position).padStart(2, '0')}┬░`);
+        if (printFields.position) row.push(`${String(e.position).padStart(2, '0')}°`);
         if (printFields.client) row.push(e.client_name || '');
         if (printFields.service) row.push(e.service_description || '');
         if (printFields.phone) row.push(e.phone || '');
         if (printFields.location) row.push(e.location_link || '');
         if (printFields.comanda) row.push(e.no_comanda ? 'SEM COMANDA' : e.comanda || '');
         if (printFields.cooperativa) row.push(e.cooperativa_nome || '');
-        if (printFields.pago) row.push(e.pago ? 'Sim' : 'N├úo');
+        if (printFields.pago) row.push(e.pago ? 'Sim' : 'Não');
         if (printFields.status) row.push(e.status || '');
         if (printFields.observation) row.push(e.observation || '');
         if (printFields.extras) {
@@ -4625,7 +4625,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
   }
 
   async function deleteEntry(entryId: number) {
-    if (!confirm('Remover este cliente da rota? A vaga ser├í liberada.')) return;
+    if (!confirm('Remover este cliente da rota? A vaga será liberada.')) return;
     try {
       await request(`/schedule/entries/${entryId}`, { method: 'DELETE' });
       forceReloadSchedule();
@@ -4674,7 +4674,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     } catch (e: any) {
       setError(
         e.message ||
-          'N├úo foi poss├¡vel transferir. Rota destino fechada ou sem vagas.'
+          'Não foi possível transferir. Rota destino fechada ou sem vagas.'
       );
     } finally {
       setTransferring(false);
@@ -4718,7 +4718,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
     const slotsByDayForTransfer = (() => {
     const acc: Record<string, any[]> = {};
     for (const w of weeks) {
-      // s├│ semanas ativas (n├úo arquivadas)
+      // só semanas ativas (não arquivadas)
       if (w.status === 'Arquivada') continue;
       for (const s of w.route_slots || []) {
         const key = `${w.id}_${s.date}`; // semana + data
@@ -4914,7 +4914,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Imprimir rota do dia</h3>
             <p className="mt-1 text-sm text-slate-500">
-              Escolha o dia, o caminh├úo (ou todos) e os campos do PDF.
+              Escolha o dia, o caminhão (ou todos) e os campos do PDF.
             </p>
 
             <label className="mt-4 block text-sm">
@@ -4945,7 +4945,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             </label>
 
             <label className="mt-3 block text-sm">
-              <span className="mb-1 block text-slate-600">Caminh├úo / rota</span>
+              <span className="mb-1 block text-slate-600">Caminhão / rota</span>
               <select
                 value={printSlotId}
                 onChange={(e) => setPrintSlotId(e.target.value)}
@@ -4966,16 +4966,16 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {(
                   [
-                    ['position', 'Posi├º├úo'],
+                    ['position', 'Posição'],
                     ['client', 'Cliente'],
-                    ['service', 'Servi├ºo'],
+                    ['service', 'Serviço'],
                     ['phone', 'Telefone'],
-                    ['location', 'Localiza├º├úo'],
+                    ['location', 'Localização'],
                     ['comanda', 'Comanda'],
                     ['cooperativa', 'Cooperativa'],
                     ['pago', 'Pago'],
                     ['status', 'Status'],
-                    ['observation', 'Observa├º├úo'],
+                    ['observation', 'Observação'],
                     ['extras', 'Extras'],
                   ] as const
                 ).map(([key, label]) => (
@@ -5046,7 +5046,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-slate-600">Situa├º├úo</span>
+                  <span className="mb-1 block text-slate-600">Situação</span>
                   <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
@@ -5060,7 +5060,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                   </select>
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-slate-600">N├║mero da comanda</span>
+                  <span className="mb-1 block text-slate-600">Número da comanda</span>
                   <input
                     value={filterComanda}
                     onChange={(e) => setFilterComanda(e.target.value)}
@@ -5069,7 +5069,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-slate-600">Placa do caminh├úo</span>
+                  <span className="mb-1 block text-slate-600">Placa do caminhão</span>
                   <input
                     value={filterPlate}
                     onChange={(e) => setFilterPlate(e.target.value)}
@@ -5086,11 +5086,11 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                   >
                     <option value="">Todos</option>
                     <option value="1">Segunda-feira</option>
-                    <option value="2">Ter├ºa-feira</option>
+                    <option value="2">Terça-feira</option>
                     <option value="3">Quarta-feira</option>
                     <option value="4">Quinta-feira</option>
                     <option value="5">Sexta-feira</option>
-                    <option value="6">S├íbado</option>
+                    <option value="6">Sábado</option>
                     <option value="0">Domingo</option>
                   </select>
                 </label>
@@ -5143,7 +5143,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
                   <div className="my-6 flex items-center gap-3">
                     <div className="h-0.5 flex-1 bg-slate-300" />
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      Pr├│ximo dia
+                      Próximo dia
                     </span>
                     <div className="h-0.5 flex-1 bg-slate-300" />
                   </div>
@@ -5212,7 +5212,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
         </div>
       ) : (
         <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm">
-          Selecione ou crie uma semana para come├ºar.
+          Selecione ou crie uma semana para começar.
         </div>
       )}
 
@@ -5304,7 +5304,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             <p className="mt-1 text-sm text-slate-500">
               ({transferSlot.region_code}){' '}
               {transferSlot.vehicle?.plate || transferSlot.route_label || ''} ÔÇö todos os
-              clientes v├úo junto
+              clientes vão junto
             </p>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">Nova data *</span>
@@ -5358,7 +5358,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
             <p className="mt-1 text-sm text-slate-500">
               ({transferSlot.region_code}){' '}
               {transferSlot.vehicle?.plate || transferSlot.route_label || ''} ÔÇö todos os
-              clientes v├úo junto
+              clientes vão junto
             </p>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">Nova data *</span>
@@ -5413,7 +5413,7 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               Excluir semana permanentemente
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Esta a├º├úo apaga a semana e todas as rotas/clientes. N├úo tem volta.
+              Esta ação apaga a semana e todas as rotas/clientes. Não tem volta.
             </p>
 
             <label className="mt-4 block text-sm">
@@ -5462,8 +5462,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               Arquivar esta semana (backup)
             </h3>
             <p className="mt-2 text-sm text-slate-600">
-              A semana sai da lista ativa e fica s├│ para consulta. Voc├¬ ainda poder├í baixar o PDF.
-              N├úo apaga rotas nem clientes.
+              A semana sai da lista ativa e fica só para consulta. Você ainda poderá baixar o PDF.
+              Não apaga rotas nem clientes.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -5496,8 +5496,8 @@ function ScheduleModule({ user, lookups }: { user: any; lookups: any }) {
               Excluir semana permanentemente
             </h3>
             <p className="mt-2 text-sm text-slate-600">
-              Apaga a semana e <strong>todas</strong> as rotas e clientes. Esta a├º├úo{' '}
-              <strong>n├úo tem volta</strong>.
+              Apaga a semana e <strong>todas</strong> as rotas e clientes. Esta ação{' '}
+              <strong>não tem volta</strong>.
             </p>
             <label className="mt-4 block text-sm">
               <span className="mb-1 block text-slate-600">
@@ -5735,11 +5735,11 @@ function RouteSlotCard({
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="w-14 px-3 py-2">Pos</th>
-              <th className="min-w-[200px] px-3 py-2">Cliente / Servi├ºo</th>
+              <th className="min-w-[200px] px-3 py-2">Cliente / Serviço</th>
               <th className="min-w-[110px] whitespace-nowrap px-3 py-2">Telefone</th>
-              <th className="px-3 py-2">Localiza├º├úo</th>
+              <th className="px-3 py-2">Localização</th>
               <th className="px-3 py-2">Flags</th>
-              <th className="min-w-[180px] px-3 py-2">Observa├º├úo</th>
+              <th className="min-w-[180px] px-3 py-2">Observação</th>
               {(canEdit || canTransfer || canExtra || canDelete) && (
                 <th className="w-52 px-3 py-2">A├º├Áes</th>
               )}
@@ -5780,7 +5780,7 @@ function RouteSlotCard({
                           Ôï«Ôï«
                         </span>
                         <span className="font-bold text-slate-800">
-                          {String(entry.position).padStart(2, '0')}┬░
+                          {String(entry.position).padStart(2, '0')}°
                         </span>
                         {slots > 1 && (
                           <span className="rounded bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-700">
@@ -6031,7 +6031,7 @@ function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any)
             <input type="text" required value={form.client_name} onChange={(e) => set('client_name', e.target.value)} className="w-full rounded-lg border p-2" />
           </label>
           <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Descri├º├úo do servi├ºo *</span>
+            <span className="mb-1 block text-slate-600">Descrição do serviço *</span>
             <input type="text" required value={form.service_description} onChange={(e) => set('service_description', e.target.value)} className="w-full rounded-lg border p-2" placeholder="2 MONO 1CX 8M AE - (GAROPABA)" />
             <span className="mt-1 block text-xs text-slate-500">
               Vagas que este cliente consome: <strong className="text-brand">{form.slots_consumed ?? calcularVagas(form.service_description)}</strong>
@@ -6051,11 +6051,11 @@ function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any)
             </select>
           </label>
           <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Link de localiza├º├úo (Maps)</span>
+            <span className="mb-1 block text-slate-600">Link de localização (Maps)</span>
             <input type="url" value={form.location_link} onChange={(e) => set('location_link', e.target.value)} className="w-full rounded-lg border p-2" placeholder="https://maps.app.goo.gl/..." />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-slate-600">N┬║ da Comanda</span>
+            <span className="mb-1 block text-slate-600">Nº da Comanda</span>
             <input type="text" value={form.comanda} onChange={(e) => set('comanda', e.target.value)} className="w-full rounded-lg border p-2" placeholder="22967" />
           </label>
           <label className="text-sm">
@@ -6076,7 +6076,7 @@ function EntryFormModal({ routeSlotId, initial, onClose, onSubmit, title }: any)
             </label>
           </div>
           <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block text-slate-600">Observa├º├úo</span>
+            <span className="mb-1 block text-slate-600">Observação</span>
             <textarea value={form.observation} onChange={(e) => set('observation', e.target.value)} className="h-24 w-full rounded-lg border p-2" rows={4} />
           </label>
           <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
@@ -6121,8 +6121,8 @@ function NewSlotModal({ weekId, lookups, onClose, onSubmit }: any) {
         <h3 className="text-lg font-semibold">Nova rota</h3>
         <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="text-sm sm:col-span-2"><span className="mb-1 block text-slate-600">Data *</span><input type="date" required value={form.date} onChange={(e) => set('date', e.target.value)} className="w-full rounded-lg border p-2" /></label>
-          <label className="text-sm"><span className="mb-1 block text-slate-600">Regi├úo (ex: CR) *</span><input type="text" required maxLength={10} value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" placeholder="CR" /></label>
-          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminh├úo (placa) *</span>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Região (ex: CR) *</span><input type="text" required maxLength={10} value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" placeholder="CR" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminhão (placa) *</span>
             <select required value={form.vehicle_id} onChange={(e) => set('vehicle_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione a placa</option>
               {(lookups.vehicles || []).map((v: any) => <option key={v.id} value={v.id}>{v.plate} ÔÇö {v.brand} {v.model}</option>)}
@@ -6135,7 +6135,7 @@ function NewSlotModal({ weekId, lookups, onClose, onSubmit }: any) {
               {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="text-sm"><span className="mb-1 block text-slate-600">2┬║ Motorista</span>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">2º Motorista</span>
             <select value={form.second_driver_id} onChange={(e) => set('second_driver_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
               {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -6188,8 +6188,8 @@ function EditSlotModal({ slot, lookups, onClose, onSubmit }: any) {
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold">Editar rota</h3>
         <form onSubmit={handleSubmit} className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm"><span className="mb-1 block text-slate-600">Regi├úo *</span><input type="text" required value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" /></label>
-          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminh├úo (placa)</span>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Região *</span><input type="text" required value={form.region_code} onChange={(e) => set('region_code', e.target.value)} className="w-full rounded-lg border p-2 uppercase" /></label>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">Caminhão (placa)</span>
             <select value={form.vehicle_id} onChange={(e) => set('vehicle_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
               {(lookups.vehicles || []).map((v: any) => <option key={v.id} value={v.id}>{v.plate} ÔÇö {v.brand} {v.model}</option>)}
@@ -6206,7 +6206,7 @@ function EditSlotModal({ slot, lookups, onClose, onSubmit }: any) {
               {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="text-sm"><span className="mb-1 block text-slate-600">2┬║ Motorista</span>
+          <label className="text-sm"><span className="mb-1 block text-slate-600">2º Motorista</span>
             <select value={form.second_driver_id} onChange={(e) => set('second_driver_id', e.target.value)} className="w-full rounded-lg border p-2">
               <option value="">Selecione</option>
               {(lookups.drivers || []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -6241,8 +6241,8 @@ function NewWeekModal({ onClose, onSubmit }: any) {
         <h3 className="text-lg font-semibold">Nova semana</h3>
         <p className="mt-1 text-sm text-slate-500">Informe a data da segunda-feira da semana.</p>
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <label className="block text-sm"><span className="mb-1 block text-slate-600">Data de in├¡cio (segunda) *</span><input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-lg border p-2" /></label>
-          <label className="block text-sm"><span className="mb-1 block text-slate-600">R├│tulo (opcional)</span><input type="text" placeholder="Ex: Semana 24/08 a 28/08" value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Data de início (segunda) *</span><input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Rótulo (opcional)</span><input type="text" placeholder="Ex: Semana 24/08 a 28/08" value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-lg border p-2" /></label>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
             <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'CriandoÔÇª' : 'Criar semana'}</button>
@@ -6270,10 +6270,10 @@ function NewExtraModal({ entryId, onClose, onSubmit }: any) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold">Adicionar extra</h3>
-        <p className="mt-1 text-sm text-slate-500">Extras (ex: cavalete de ├ígua) <strong>n├úo descontam vaga</strong>.</p>
+        <p className="mt-1 text-sm text-slate-500">Extras (ex: cavalete de água) <strong>não descontam vaga</strong>.</p>
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <label className="block text-sm"><span className="mb-1 block text-slate-600">Descri├º├úo *</span><input type="text" required value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-lg border p-2" placeholder="CAVALETE DE AGUA" /></label>
-          <label className="block text-sm"><span className="mb-1 block text-slate-600">Observa├º├úo</span><input type="text" value={observation} onChange={(e) => setObservation(e.target.value)} className="w-full rounded-lg border p-2" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Descrição *</span><input type="text" required value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-lg border p-2" placeholder="CAVALETE DE AGUA" /></label>
+          <label className="block text-sm"><span className="mb-1 block text-slate-600">Observação</span><input type="text" value={observation} onChange={(e) => setObservation(e.target.value)} className="w-full rounded-lg border p-2" /></label>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Cancelar</button>
             <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? 'SalvandoÔÇª' : 'Adicionar extra'}</button>
