@@ -10,6 +10,7 @@ const isDev = !app.isPackaged;
 const apiUrl = process.env.DESKTOP_API_URL || null;
 const PREFERRED_PORT = 43127;
 const updateStatePath = path.join(app.getPath('userData'), 'restart-reminder.json');
+const versionStatePath = path.join(app.getPath('userData'), 'last-version.json');
 const logPath = path.join(app.getPath('userData'), 'next-server.log');
 
 function log(msg) {
@@ -102,9 +103,10 @@ function setupApiBridge() {
   });
 }
 
-function sendSplash(message, progress = null, notes = '') {
+function sendSplash(message, progress = null) {
+  // notes sempre vazio: o que mudou aparece numa janela própria depois de atualizar
   if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('update-status', { message, progress, notes });
+    splashWindow.webContents.send('update-status', { message, progress, notes: '' });
   }
 }
 
@@ -122,6 +124,94 @@ function createSplash() {
   splashWindow.loadFile(path.join(__dirname, 'update.html'));
   splashWindow.once('ready-to-show', () => splashWindow.show());
 }
+
+// ---------- O que mudou (janela mostrada na primeira abertura depois de atualizar) ----------
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildWhatsNewHtml(version, notes) {
+  const lines = String(notes || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const title = lines.length ? lines[0] : '';
+  const rest = lines.slice(1);
+  const items = rest
+    .map((l) => `<li>${escapeHtml(l.replace(/^[-*•]\s*/, ''))}</li>`)
+    .join('');
+  const body = lines.length
+    ? `<p class="title">${escapeHtml(title)}</p>${items ? `<ul>${items}</ul>` : ''}`
+    : '<p class="title">Melhorias de estabilidade e correções.</p>';
+
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Novidades</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f8fafc;color:#0f172a;padding:24px;display:flex;flex-direction:column;height:100vh}
+  h1{margin:0 0 4px;font-size:20px}
+  .ver{color:#475569;font-size:13px;margin-bottom:16px}
+  .box{flex:1;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;font-size:14px;line-height:1.5}
+  .title{font-weight:600;margin:0 0 8px}
+  ul{margin:0;padding-left:20px}
+  li{margin:4px 0}
+  a.btn{align-self:flex-end;margin-top:16px;background:#0f172a;color:#fff;text-decoration:none;padding:10px 22px;border-radius:8px;font-size:14px}
+</style></head><body>
+<h1>Sistema atualizado</h1>
+<div class="ver">Versão ${escapeHtml(version)} · veja o que mudou</div>
+<div class="box">${body}</div>
+<a class="btn" href="app://fechar">Entendi</a>
+</body></html>`;
+}
+
+function showWhatsNew(version, notes) {
+  const win = new BrowserWindow({
+    width: 520,
+    height: 420,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    modal: !!(mainWindow && !mainWindow.isDestroyed()),
+    show: false,
+    backgroundColor: '#f8fafc',
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  win.removeMenu();
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (url.startsWith('app://')) win.close();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.once('ready-to-show', () => win.show());
+  win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildWhatsNewHtml(version, notes))}`);
+}
+
+function checkWhatsNew() {
+  const current = app.getVersion();
+  let last = null;
+  try { last = JSON.parse(fs.readFileSync(versionStatePath, 'utf8')).version; } catch {}
+  try {
+    fs.mkdirSync(path.dirname(versionStatePath), { recursive: true });
+    fs.writeFileSync(versionStatePath, JSON.stringify({ version: current }));
+  } catch {}
+
+  // primeira instalação (sem versão anterior) ou mesma versão: não mostra
+  if (!last || last === current) return;
+
+  let notes = '';
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(__dirname, 'whatsnew.json'), 'utf8'));
+    if (info && info.version === current) notes = info.notes || '';
+  } catch {}
+  log(`atualizado de ${last} para ${current}`);
+  showWhatsNew(current, notes);
+}
+// -------------------------------------------------------------------------------------------
 
 function openMain(targetUrl) {
   if (mainWindow && !mainWindow.isDestroyed()) return;
@@ -150,6 +240,7 @@ function openMain(targetUrl) {
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
     mainWindow.show();
     scheduleRestartReminder();
+    checkWhatsNew();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -278,37 +369,6 @@ async function startNextServer() {
   return url;
 }
 
-// Converte as notas da release (HTML do GitHub) em texto limpo
-function plainText(input) {
-  return String(input || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|li|h[1-6]|div|ul|ol)>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .split('\n')
-    .map((line) => line.trim())
-    // esconde a linha automática do GitHub ("Full Changelog: ...")
-    .filter((line) => line && !/^full changelog/i.test(line))
-    .join('\n')
-    .trim();
-}
-
-function releaseNotes(info) {
-  const fallback = 'Melhorias de estabilidade e correções de funcionalidades.';
-  const notes = info && info.releaseNotes;
-  let text = '';
-  if (Array.isArray(notes)) text = notes.map((item) => (item && item.note) || item).join('\n');
-  else if (typeof notes === 'string') text = notes;
-  text = plainText(text);
-  if (!text) return fallback;
-  return text.length > 280 ? `${text.slice(0, 280)}…` : text;
-}
-
 async function checkForUpdates() {
   if (isDev || !app.isPackaged) return false;
   updateInProgress = true;
@@ -348,7 +408,7 @@ function setupUpdater() {
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on('checking-for-update', () => sendSplash('Verificando atualizações…'));
   autoUpdater.on('update-available', (info) => {
-    sendSplash(`Atualização ${info.version} encontrada. Baixando…`, 0, releaseNotes(info));
+    sendSplash(`Atualização ${info.version} encontrada. Baixando…`, 0);
   });
   autoUpdater.on('download-progress', (progress) => {
     sendSplash(`Baixando atualização… ${Math.round(progress.percent)}%`, progress.percent);
@@ -358,9 +418,9 @@ function setupUpdater() {
     sendSplash('Nenhuma atualização encontrada.', 100);
     setTimeout(() => openAfterStartup(), 350);
   });
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', () => {
     updateInProgress = false;
-    sendSplash('Atualização concluída. Reiniciando o sistema…', 100, releaseNotes(info));
+    sendSplash('Atualização concluída. Reiniciando o sistema…', 100);
     // true, true = instala em silêncio (sem assistente) e reabre o app sozinho
     setTimeout(() => autoUpdater.quitAndInstall(true, true), 900);
   });
