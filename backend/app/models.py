@@ -1014,9 +1014,9 @@ class StockMovement(Base):
         server_default=func.now(),
     )
 
-    user_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
     )
 
     responsible: Mapped[str | None] = mapped_column(

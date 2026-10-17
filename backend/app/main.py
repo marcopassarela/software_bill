@@ -1665,6 +1665,31 @@ def delete_user(
         )
     )
 
+    db.execute(
+        update(StockMovement)
+        .where(
+            StockMovement.user_id == user_id,
+            StockMovement.company_id == company.id,
+        )
+        .values(user_id=None)
+    )
+    db.execute(
+        update(ProductionRecord)
+        .where(
+            ProductionRecord.user_id == user_id,
+            ProductionRecord.company_id == company.id,
+        )
+        .values(user_id=None)
+    )
+    db.execute(
+        update(Order)
+        .where(
+            Order.created_by == user_id,
+            Order.company_id == company.id,
+        )
+        .values(created_by=None)
+    )
+
     try:
 
         db.delete(u)
@@ -1676,7 +1701,7 @@ def delete_user(
 
         raise HTTPException(
             409,
-            "Não é possível excluir: este usuário possui registros vinculados. Desative-o em vez de excluir.",
+            "Não foi possível excluir o usuário porque ainda existem registros vinculados.",
         ) from exc
 
     audit(

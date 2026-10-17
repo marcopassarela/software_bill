@@ -1184,21 +1184,11 @@ export default function AppShell({
     }
   }
 
-  async function deactivateUser(id: number) {
-    if (
-      !confirm(
-        'Desativar o acesso deste usuário? Os registros históricos serão preservados.'
-      )
-    ) return;
+  async function deleteUser(id: number) {
+    if (!confirm('Tem certeza que deseja excluir este usuário?')) return;
     setError('');
     try {
-      await request(`/users/${id}/block`, {
-        method: 'POST',
-        body: JSON.stringify({
-          mode: 'permanent',
-          reason: 'Conta desativada pelo administrador.',
-        }),
-      });
+      await request(`/users/${id}`, { method: 'DELETE' });
       await load('users');
     } catch (e: any) {
       setError(e.message);
@@ -1553,7 +1543,7 @@ export default function AppShell({
             editingUser={editingUser}
             setEditingUser={setEditingUser}
             updateUser={updateUser}
-            deactivateUser={deactivateUser}
+            deleteUser={deleteUser}
             setBlockModal={setBlockModal}
             setBlockMode={setBlockMode}
             setBlockedUntil={setBlockedUntil}
@@ -3103,7 +3093,7 @@ function Module({
   editingUser,
   setEditingUser,
   updateUser,
-  deactivateUser,
+  deleteUser,
   editingResource,
   setEditingResource,
   updateResource,
@@ -3122,7 +3112,7 @@ function Module({
   editingUser: any;
   setEditingUser: (u: any) => void;
   updateUser: (id: number, data: any) => Promise<void>;
-  deactivateUser: (id: number) => Promise<void>;
+  deleteUser: (id: number) => Promise<void>;
   editingResource: any;
   setEditingResource: (r: any) => void;
   updateResource: (id: string | number, data: any) => Promise<void>;
@@ -3342,19 +3332,19 @@ function Module({
                               )
                             )}
                             
-                            {!(isUsers && (r.is_main_admin || r.active === false)) && (
+                            {!(isUsers && r.is_main_admin) && (
                               <button
                                 type="button"
                                 onClick={() =>
                                   isUsers
-                                    ? deactivateUser(r.id)
+                                    ? deleteUser(r.id)
                                     : isMovementModule
                                     ? deleteMovement(r.id)
                                     : deleteResource(resourceIdOf(page, r))
                                 }
                                 className="rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
                               >
-                                {isUsers ? 'Desativar' : 'Excluir'}
+                                Excluir
                               </button>
                             )}
                           </div>
