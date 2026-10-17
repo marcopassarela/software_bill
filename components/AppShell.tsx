@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import ProductionModule from './ProductionModule';
 import AvatarCropper from './AvatarCropper';
 import { StockMovementForm, printProductLabels } from './QrTools';
@@ -99,7 +99,7 @@ const resource: any = {
 const moduleAccess: any = {
   ADMINISTRADOR: ['*'],
   GERENTE: ['dashboard', 'schedule', 'vehicles', 'drivers', 'maintenance', 'fuel', 'stock', 'reports', 'production', 'orders'],
-  LOG├ìSTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
+  LOGISTICA: ['dashboard', 'vehicles', 'drivers', 'fuel'],
   ALMOXARIFADO: ['dashboard', 'stock', 'entry', 'output', 'movements'],
   ESTOQUE: ['dashboard', 'stock', 'entry', 'output', 'movements'], // se ainda existir
   MOTORISTA: [],
@@ -2740,19 +2740,19 @@ function ReportsExport({ lookups }: { lookups: any }) {
                     Semana: week.label || week.start_date,
                     Status_Semana: week.status,
                     Data: slot.date,
-                    Regi├úo: slot.region_code,
+                    'Região': slot.region_code,
                     Rota: slot.route_label || slot.vehicle?.plate || '',
-                    Posi├º├úo: e.position,
+                    'Posição': e.position,
                     Cliente: e.client_name,
-                    Servi├ºo: e.service_description,
+                    'Serviço': e.service_description,
                     Telefone: e.phone || '',
-                    Localiza├º├úo: e.location_link || '',
+                    'Localização': e.location_link || '',
                     Comanda: e.comanda || '',
                     Pago: e.pago ? 'Sim' : 'N├úo',
                     Cooperativa: e.cooperativa_nome || '',
                     'Sem Comanda': e.no_comanda ? 'Sim' : 'N├úo',
                     Status: e.status || '',
-                    Observa├º├úo: e.observation || '',
+                    'Observação': e.observation || '',
                     Vagas: e.slots_consumed || 1,
                   };
                   const row: Record<string, any> = {};
@@ -2776,7 +2776,7 @@ function ReportsExport({ lookups }: { lookups: any }) {
             const data = await request(`/commercial/closing-report?${qs.toString()}`);
             const flat = (data.lines || []).map((l: any) => {
               const full: Record<string, any> = {
-                C├│digo: l.code || '',
+                'Código': l.code || '',
                 Produto: l.name || '',
                 Qtd: l.quantity,
                 'Pre├ºo unit.': l.unit_price,
@@ -3147,7 +3147,7 @@ function Module({
   const hidden = HIDDEN_TABLE_COLUMNS[page] || [];
   const cols =
     TABLE_COLUMNS[page] ||
-    Object.keys(rows[0] || { id: 'ID', informa├º├úo: 'Informa├º├úo' })
+    Object.keys(rows[0] || { id: 'ID', 'informação': 'Informação' })
       .filter((k) => !hidden.includes(k))
       .slice(0, 7);
 
