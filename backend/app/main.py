@@ -1706,27 +1706,42 @@ def delete_user(
         db.delete(u)
         db.flush()
 
+    
     except IntegrityError as exc:
-
         db.rollback()
+
         diagnostic = getattr(exc.orig, "diag", None)
-        if (
-            getattr(diagnostic, "table_name", None) == "stock_movements"
-            and getattr(diagnostic, "column_name", None) == "user_id"
-        ):
+
+        constraint = getattr(diagnostic, "constraint_name", None)
+        table = getattr(diagnostic, "table_name", None)
+        column = getattr(diagnostic, "column_name", None)
+        detail_db = getattr(diagnostic, "message_detail", None)
+
+        logger.error(
+            "Falha ao excluir usuário id=%s: "
+            "constraint=%s, table=%s, column=%s, detail=%s, error=%s",
+            user_id,
+            constraint,
+            table,
+            column,
+            detail_db,
+            str(exc.orig),
+            exc_info=True,
+        )
+
+        if table == "stock_movements" and column == "user_id":
             detail = (
-                "O banco ainda não permite desvincular o usuário do histórico de estoque. "
-                "Aplique as migrations pendentes com `alembic upgrade head` e tente novamente."
+                "O banco ainda não permite desvincular o usuário "
+                "do histórico de estoque. Verifique as migrations."
             )
         else:
             detail = (
-                "Não foi possível excluir o usuário porque ainda existem registros vinculados."
+                "Não foi possível excluir o usuário porque "
+                "existem registros vinculados."
             )
 
-        raise HTTPException(
-            409,
-            detail,
-        ) from exc
+        raise HTTPException(status_code=409, detail=detail) from exc
+
 
     audit(
         db,
