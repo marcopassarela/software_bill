@@ -10,6 +10,14 @@ const isDev = !app.isPackaged;
 const apiUrl = process.env.DESKTOP_API_URL || null;
 const PREFERRED_PORT = 43127;
 const updateStatePath = path.join(app.getPath('userData'), 'restart-reminder.json');
+const logPath = path.join(app.getPath('userData'), 'next-server.log');
+
+function log(msg) {
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {}
+}
 
 // Endereço da API (backend na Vercel). Pode ser trocado com DESKTOP_API_URL.
 const API_ORIGIN = (() => {
@@ -19,6 +27,7 @@ const API_ORIGIN = (() => {
     return 'https://logisticasbill.vercel.app';
   }
 })();
+const LEGACY_ORIGINS = ['https://software-bill.vercel.app'];
 
 let nextServer;
 let mainWindow;
@@ -31,13 +40,27 @@ let quitting = false;
 // Ponte de API: faz o backend aceitar o app (CORS) e o cookie de login funcionar
 function setupApiBridge() {
   const ses = session.defaultSession;
-  const filter = { urls: [`${API_ORIGIN}/*`] };
+  const apiFilter = { urls: [`${API_ORIGIN}/*`] };
   const localOrigins = new Map();
   const localRe = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/;
 
-  ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+  // domínio antigo -> domínio atual (redirecionamento interno, sem round trip)
+  ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    for (const legacy of LEGACY_ORIGINS) {
+      if (details.url.startsWith(legacy + '/') || details.url === legacy) {
+        const redirectURL = API_ORIGIN + details.url.slice(legacy.length);
+        log(`REDIRECT ${details.url} -> ${redirectURL}`);
+        return callback({ redirectURL });
+      }
+    }
+    callback({});
+  });
+
+  ses.webRequest.onBeforeSendHeaders(apiFilter, (details, callback) => {
     const headers = details.requestHeaders;
     const key = Object.keys(headers).find((k) => k.toLowerCase() === 'origin');
+    const originalOrigin = key ? headers[key] : '(sem origin)';
+    log(`API ${details.method} ${details.url} origin=${originalOrigin}`);
     if (key && localRe.test(headers[key])) {
       localOrigins.set(details.id, headers[key]);
       headers[key] = API_ORIGIN;
@@ -45,7 +68,8 @@ function setupApiBridge() {
     callback({ requestHeaders: headers });
   });
 
-  ses.webRequest.onHeadersReceived(filter, (details, callback) => {
+  ses.webRequest.onHeadersReceived(apiFilter, (details, callback) => {
+    log(`API-RES ${details.statusCode} ${details.method} ${details.url}`);
     const original = localOrigins.get(details.id);
     if (!original) return callback({});
     localOrigins.delete(details.id);
@@ -70,7 +94,12 @@ function setupApiBridge() {
     callback({ responseHeaders: headers });
   });
 
-  ses.webRequest.onErrorOccurred(filter, (details) => localOrigins.delete(details.id));
+  // registra qualquer falha de rede (ignora cancelamentos normais)
+  ses.webRequest.onErrorOccurred({ urls: ['<all_urls>'] }, (details) => {
+    localOrigins.delete(details.id);
+    if (details.error === 'net::ERR_ABORTED') return;
+    log(`NET-ERROR ${details.error} ${details.method} ${details.url}`);
+  });
 }
 
 function sendSplash(message, progress = null, notes = '') {
@@ -104,6 +133,18 @@ function openMain(targetUrl) {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   });
   mainWindow.removeMenu();
+
+  // F12 ou Ctrl+Shift+I abre o console para diagnóstico
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isF12 = input.key === 'F12';
+    const isCtrlShiftI = input.control && input.shift && String(input.key).toLowerCase() === 'i';
+    if (isF12 || isCtrlShiftI) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
   mainWindow.loadURL(targetUrl);
   mainWindow.once('ready-to-show', () => {
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
@@ -183,13 +224,7 @@ async function startNextServer() {
 
   const standalone = candidates.find((p) => fs.existsSync(p)) || findServer(base);
 
-  const logPath = path.join(app.getPath('userData'), 'next-server.log');
-  const log = (msg) => {
-    try {
-      fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
-    } catch {}
-  };
-
+  log(`versao=${app.getVersion()}`);
   log(`resourcesPath=${process.resourcesPath}`);
   log(`base=${base}`);
   log(`standalone=${standalone || 'NOT FOUND'}`);
