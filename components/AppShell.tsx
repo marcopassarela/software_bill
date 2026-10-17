@@ -1185,14 +1185,18 @@ export default function AppShell({
   }
 
   async function deleteUser(id: number) {
-    if (!confirm('Tem certeza que deseja excluir este usuário?')) return;
-    setError('');
-    try {
-      await request(`/users/${id}`, { method: 'DELETE' });
-      await load('users');
-    } catch (e: any) {
-      setError(e.message);
-    }
+    askPassword(
+      'Excluir usuário',
+      'Digite sua senha de administrador para confirmar a exclusão deste usuário.',
+      async (password: string) => {
+        await request(`/users/${id}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ password }),
+        });
+        setEditingUser(null);
+        await load('users');
+      }
+    );
   }
 
   async function confirmBlock() {

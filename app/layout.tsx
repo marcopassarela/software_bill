@@ -12,10 +12,8 @@ export const metadata: Metadata = {
 
   manifest: '/manifest.json',
 
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'Logísticas Bill',
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
 
   icons: {

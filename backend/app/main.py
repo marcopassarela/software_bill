@@ -371,6 +371,10 @@ class MovementDelete(BaseModel):
     password: str
 
 
+class UserDelete(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
 # ============================================================
 # USUÁRIO
 # ============================================================
@@ -1621,6 +1625,7 @@ def update_user(
 @app.delete("/users/{user_id}")
 def delete_user(
     user_id: int,
+    body: UserDelete,
     request: Request,
     admin: User = Depends(company_admin),
     db: Session = Depends(get_db),
@@ -1652,6 +1657,12 @@ def delete_user(
         raise HTTPException(
             400,
             "Não é possível excluir o proprietário da empresa",
+        )
+
+    if not verify_password(body.password, admin.password_hash):
+        raise HTTPException(
+            401,
+            "Senha incorreta",
         )
 
     db.execute(
