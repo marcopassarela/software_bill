@@ -4,16 +4,19 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const net = require('node:net');
 
 const isDev = !app.isPackaged;
-const appUrl = process.env.DESKTOP_APP_URL || null;
 const apiUrl = process.env.DESKTOP_API_URL || null;
+const PREFERRED_PORT = 43127;
 const updateStatePath = path.join(app.getPath('userData'), 'restart-reminder.json');
 let nextServer;
 let mainWindow;
 let splashWindow;
 let updateInProgress = false;
 let updateTimer;
+let opening = false;
+let quitting = false;
 
 function sendSplash(message, progress = null, notes = '') {
   if (splashWindow && !splashWindow.isDestroyed()) {
@@ -74,6 +77,31 @@ function waitForServer(url, timeout = 15000) {
   });
 }
 
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => srv.close(() => resolve(true)));
+    srv.listen(port, '127.0.0.1');
+  });
+}
+
+function getRandomFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+async function pickPort() {
+  if (await isPortFree(PREFERRED_PORT)) return PREFERRED_PORT;
+  return getRandomFreePort();
+}
+
 async function startNextServer() {
   if (isDev) return process.env.DESKTOP_DEV_URL || 'http://localhost:3000';
 
@@ -119,10 +147,11 @@ async function startNextServer() {
     throw new Error('server.js não encontrado');
   }
 
-  const port = 43127;
+  const port = await pickPort();
+  log(`port=${port}`);
   const cwd = path.dirname(standalone);
 
-  nextServer = spawn(process.execPath, [standalone], {
+  const child = spawn(process.execPath, [standalone], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
@@ -138,12 +167,14 @@ async function startNextServer() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
+  nextServer = child;
 
-  nextServer.stdout.on('data', (d) => log(`OUT ${d}`));
-  nextServer.stderr.on('data', (d) => log(`ERR ${d}`));
-  nextServer.on('exit', (code) => {
+  child.stdout.on('data', (d) => log(`OUT ${d}`));
+  child.stderr.on('data', (d) => log(`ERR ${d}`));
+  child.on('exit', (code) => {
     log(`exit code=${code}`);
-    if (code && app.isReady()) {
+    // só avisa se este for o servidor atual e ele caiu sozinho
+    if (code && !quitting && nextServer === child && app.isReady()) {
       dialog.showErrorBox(
         'Servidor da aplicação',
         `Servidor encerrou (código ${code}).\n\nVeja o log:\n${logPath}`
@@ -224,9 +255,16 @@ function setupUpdater() {
 }
 
 async function openAfterStartup() {
-  if (mainWindow) return;
-  const url = await startNextServer();
-  openMain(url);
+  // trava: só uma abertura por vez (evita subir o servidor duas vezes)
+  if (mainWindow || opening) return;
+  opening = true;
+  try {
+    const url = await startNextServer();
+    openMain(url);
+  } catch (error) {
+    opening = false;
+    throw error;
+  }
 }
 
 function readReminder() {
@@ -264,14 +302,31 @@ async function showRestartReminder() {
   } else scheduleRestartReminder();
 }
 
-app.whenReady().then(async () => {
-  createSplash();
-  setupUpdater();
-  if (isDev) return openAfterStartup();
-  const hasUpdate = await checkForUpdates();
-  if (!hasUpdate && !updateInProgress) openAfterStartup();
-});
+// instância única: impede abrir o sistema duas vezes ao mesmo tempo
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(async () => {
+    createSplash();
+    setupUpdater();
+    if (isDev) return openAfterStartup();
+    const hasUpdate = await checkForUpdates();
+    if (!hasUpdate && !updateInProgress) openAfterStartup();
+  });
+}
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => { clearTimeout(updateTimer); if (nextServer) nextServer.kill(); });
+app.on('before-quit', () => {
+  quitting = true;
+  clearTimeout(updateTimer);
+  if (nextServer) nextServer.kill();
+});
 ipcMain.handle('app-version', () => app.getVersion());
