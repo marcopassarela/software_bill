@@ -100,7 +100,7 @@ PLAN_LIMITS = {
         "price": 119.90,
         "users": 6,
     },
-}
+} 
 
 
 def get_current_company(
