@@ -1644,67 +1644,35 @@ def delete_user(
         raise HTTPException(404, "Usuário não encontrado")
 
     if u.id == admin.id and getattr(u, "is_owner", False):
-        raise HTTPException(
-            400,
-            "Não é possível excluir o proprietário da empresa",
-        )
+        raise HTTPException(400, "Não é possível excluir o proprietário da empresa")
 
-    # 1) Auditoria
+    # Limpa TODOS os vínculos antes de apagar
     db.execute(
         update(AuditLog)
-        .where(
-            AuditLog.user_id == user_id,
-            AuditLog.company_id == company.id,
-        )
+        .where(AuditLog.user_id == user_id)
         .values(user_id=None)
     )
-
-    # 2) Movimentações de estoque
     db.execute(
         update(StockMovement)
-        .where(
-            StockMovement.user_id == user_id,
-            StockMovement.company_id == company.id,
-        )
+        .where(StockMovement.user_id == user_id)
         .values(user_id=None)
     )
-
-    # 3) Registros de produção/montagem
     db.execute(
         update(ProductionRecord)
-        .where(
-            ProductionRecord.user_id == user_id,
-            ProductionRecord.company_id == company.id,
-        )
+        .where(ProductionRecord.user_id == user_id)
         .values(user_id=None)
     )
-
-    # 4) Pedidos (created_by)
     db.execute(
         update(Order)
-        .where(
-            Order.created_by == user_id,
-            Order.company_id == company.id,
-        )
+        .where(Order.created_by == user_id)
         .values(created_by=None)
     )
-
-    # 5) Tokens de reset de senha (já tem CASCADE, mas garantimos)
     db.execute(
-        delete(PasswordResetToken).where(
-            PasswordResetToken.user_id == user_id
-        )
+        delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id)
     )
 
-    try:
-        db.delete(u)
-        db.flush()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(
-            409,
-            "Não é possível excluir: este usuário possui registros vinculados. Desative-o em vez de excluir.",
-        ) from exc
+    db.delete(u)
+    db.flush()
 
     audit(
         db,
@@ -1716,7 +1684,6 @@ def delete_user(
     )
 
     db.commit()
-
     return {"ok": True}
 
 
