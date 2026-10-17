@@ -37,18 +37,25 @@ jobs:
       - name: Validar TypeScript
         run: npx tsc --noEmit
 
-      - name: Compilar aplicação
+        - name: Compilar aplicação
         shell: pwsh
         run: |
           npm run build
-          $found = @(Get-ChildItem -Recurse .next\standalone -Filter server.js -ErrorAction SilentlyContinue)
-          if ($found.Count -eq 0) {
-            Write-Error "standalone/server.js nao foi gerado. Verifique output: 'standalone' no next.config"
-            Get-ChildItem -Recurse .next -Filter server.js -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+
+          $server = Get-ChildItem -Recurse .next\standalone -Filter server.js -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $server) {
+            Write-Error "standalone/server.js nao foi gerado"
             exit 1
           }
-          Write-Host "standalone OK"
-          $found | ForEach-Object { $_.FullName }
+          Write-Host "server.js: $($server.FullName)"
+
+          $nextMod = Join-Path $server.DirectoryName "node_modules\next"
+          if (-not (Test-Path $nextMod)) {
+            Write-Error "node_modules/next ausente no standalone. Nao da para empacotar."
+            Get-ChildItem $server.DirectoryName | Select-Object Name
+            exit 1
+          }
+          Write-Host "node_modules/next OK: $nextMod"
 
       - name: Gerar instalador Windows
         env:

@@ -24,10 +24,16 @@ files:
 extraResources:
   - from: .next/standalone
     to: next
+    filter:
+      - "**/*"
   - from: .next/static
     to: next/.next/static
+    filter:
+      - "**/*"
   - from: public
     to: next/public
+    filter:
+      - "**/*"
 
 win:
   target:
