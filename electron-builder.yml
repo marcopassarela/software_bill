@@ -5,9 +5,11 @@ copyright: Copyright © 2026 Logísticas Bill
 asar: true
 
 files:
-  - desktop/**/*
+  - from: desktop
+    to: .
+    filter:
+      - "**/*"
   - package.json
-  - '!node_modules/.cache/**'
 
 extraResources:
   - from: .next/standalone
