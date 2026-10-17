@@ -1665,54 +1665,67 @@ def delete_user(
             "Senha incorreta",
         )
 
-    db.execute(
-        update(AuditLog)
-        .where(
-            AuditLog.user_id == user_id,
-            AuditLog.company_id == company.id,
-        )
-        .values(
-            user_id=None
-        )
-    )
-
-    db.execute(
-        update(StockMovement)
-        .where(
-            StockMovement.user_id == user_id,
-            StockMovement.company_id == company.id,
-        )
-        .values(user_id=None)
-    )
-    db.execute(
-        update(ProductionRecord)
-        .where(
-            ProductionRecord.user_id == user_id,
-            ProductionRecord.company_id == company.id,
-        )
-        .values(user_id=None)
-    )
-    db.execute(
-        update(Order)
-        .where(
-            Order.created_by == user_id,
-            Order.company_id == company.id,
-        )
-        .values(created_by=None)
-    )
-
     try:
-
+        db.execute(
+            delete(PasswordResetToken).where(
+                PasswordResetToken.user_id == user_id,
+            )
+        )
+        db.execute(
+            update(AuditLog)
+            .where(
+                AuditLog.user_id == user_id,
+                AuditLog.company_id == company.id,
+            )
+            .values(user_id=None)
+        )
+        db.execute(
+            update(StockMovement)
+            .where(
+                StockMovement.user_id == user_id,
+                StockMovement.company_id == company.id,
+            )
+            .values(user_id=None)
+        )
+        db.execute(
+            update(ProductionRecord)
+            .where(
+                ProductionRecord.user_id == user_id,
+                ProductionRecord.company_id == company.id,
+            )
+            .values(user_id=None)
+        )
+        db.execute(
+            update(Order)
+            .where(
+                Order.created_by == user_id,
+                Order.company_id == company.id,
+            )
+            .values(created_by=None)
+        )
         db.delete(u)
         db.flush()
 
     except IntegrityError as exc:
 
         db.rollback()
+        diagnostic = getattr(exc.orig, "diag", None)
+        if (
+            getattr(diagnostic, "table_name", None) == "stock_movements"
+            and getattr(diagnostic, "column_name", None) == "user_id"
+        ):
+            detail = (
+                "O banco ainda não permite desvincular o usuário do histórico de estoque. "
+                "Aplique as migrations pendentes com `alembic upgrade head` e tente novamente."
+            )
+        else:
+            detail = (
+                "Não foi possível excluir o usuário porque ainda existem registros vinculados."
+            )
 
         raise HTTPException(
             409,
-            "Não foi possível excluir o usuário porque ainda existem registros vinculados.",
+            detail,
         ) from exc
 
     audit(
