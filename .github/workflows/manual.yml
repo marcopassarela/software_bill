@@ -33,6 +33,7 @@ jobs:
           $ver = "1.0.$env:GITHUB_RUN_NUMBER"
           npm version $ver --no-git-tag-version
           echo "version=$ver" >> $env:GITHUB_OUTPUT
+          Write-Host "Versao: $ver"
 
       - name: Validar TypeScript
         run: npx tsc --noEmit
@@ -46,21 +47,26 @@ jobs:
             Write-Error "standalone/server.js nao foi gerado"
             exit 1
           }
-          Write-Host "server.js: $($server.FullName)"
           $nextMod = Join-Path $server.DirectoryName "node_modules\next"
           if (-not (Test-Path $nextMod)) {
             Write-Error "node_modules/next ausente no standalone"
-            Get-ChildItem $server.DirectoryName | Select-Object Name
             exit 1
           }
-          Write-Host "node_modules/next OK: $nextMod"
+          Write-Host "OK server.js e node_modules/next"
 
       - name: Gerar instalador Windows
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run desktop:dist -- --publish never
 
       - name: Publicar release no GitHub
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Logísticas Bill v${{ steps.version.outputs.version }}
+          files: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
