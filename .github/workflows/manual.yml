@@ -37,21 +37,19 @@ jobs:
       - name: Validar TypeScript
         run: npx tsc --noEmit
 
-        - name: Compilar aplicação
+      - name: Compilar aplicação
         shell: pwsh
         run: |
           npm run build
-
           $server = Get-ChildItem -Recurse .next\standalone -Filter server.js -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $server) {
             Write-Error "standalone/server.js nao foi gerado"
             exit 1
           }
           Write-Host "server.js: $($server.FullName)"
-
           $nextMod = Join-Path $server.DirectoryName "node_modules\next"
           if (-not (Test-Path $nextMod)) {
-            Write-Error "node_modules/next ausente no standalone. Nao da para empacotar."
+            Write-Error "node_modules/next ausente no standalone"
             Get-ChildItem $server.DirectoryName | Select-Object Name
             exit 1
           }
@@ -65,12 +63,4 @@ jobs:
       - name: Publicar release no GitHub
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Logísticas Bill v${{ steps.version.outputs.version }}
-          files: |
-            dist/*.exe
-            dist/latest.yml
-            dist/*.blockmap
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: v
