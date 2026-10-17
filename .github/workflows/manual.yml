@@ -27,9 +27,12 @@ jobs:
         run: npm ci
 
       - name: Definir versão da release
+        id: version
         shell: pwsh
         run: |
-          npm version 1.0.${{ github.run_number }} --no-git-tag-version
+          $ver = "1.0.$env:GITHUB_RUN_NUMBER"
+          npm version $ver --no-git-tag-version
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
 
       - name: Validar TypeScript
         run: npx tsc --noEmit
@@ -37,7 +40,20 @@ jobs:
       - name: Compilar aplicação
         run: npm run build
 
-      - name: Gerar e publicar instalador Windows
+      - name: Gerar instalador Windows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run desktop:dist -- --publish always
+        run: npm run desktop:dist -- --publish never
+
+      - name: Publicar release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Logísticas Bill v${{ steps.version.outputs.version }}
+          files: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
