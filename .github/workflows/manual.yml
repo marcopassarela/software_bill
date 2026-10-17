@@ -1,6 +1,9 @@
 ﻿name: Build instalador Windows
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -46,3 +49,4 @@ jobs:
           path: dist/Logisticas-Bill-Setup-*.exe
           if-no-files-found: error
           retention-days: 30
+
