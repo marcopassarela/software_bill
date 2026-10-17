@@ -76,15 +76,58 @@ function waitForServer(url, timeout = 15000) {
 
 async function startNextServer() {
   if (isDev) return process.env.DESKTOP_DEV_URL || 'http://localhost:3000';
-  const standalone = path.join(process.resourcesPath, 'next', 'server.js');
+
+  const candidates = [
+    path.join(process.resourcesPath, 'next', 'server.js'),
+    path.join(process.resourcesPath, 'next', 'software_bill', 'server.js'),
+    path.join(process.resourcesPath, 'next', 'gestao-logistica', 'server.js'),
+  ];
+
+  const standalone = candidates.find((p) => fs.existsSync(p));
+  if (!standalone) {
+    dialog.showErrorBox(
+      'Servidor da aplicação',
+      'server.js não encontrado em resources/next.\nCaminhos testados:\n' + candidates.join('\n')
+    );
+    throw new Error('server.js não encontrado');
+  }
+
+  const logPath = path.join(app.getPath('userData'), 'next-server.log');
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  logStream.write(`\n---- ${new Date().toISOString()} ----\n`);
+  logStream.write(`server: ${standalone}\n`);
+
   const port = 43127;
   nextServer = spawn(process.execPath, [standalone], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PORT: String(port), HOSTNAME: '127.0.0.1', ...(apiUrl ? { NEXT_PUBLIC_API_BROWSER: apiUrl, NEXT_PUBLIC_API_URL: apiUrl } : {}) },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      NODE_ENV: 'production',
+      PORT: String(port),
+      HOSTNAME: '127.0.0.1',
+      HOST: '127.0.0.1',
+      ...(apiUrl
+        ? { NEXT_PUBLIC_API_BROWSER: apiUrl, NEXT_PUBLIC_API_URL: apiUrl }
+        : {}),
+    },
     cwd: path.dirname(standalone),
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
-  nextServer.on('exit', (code) => { if (code && app.isReady()) dialog.showErrorBox('Servidor da aplicação', `O servidor local foi encerrado (código ${code}).`); });
+
+  nextServer.stdout.on('data', (d) => logStream.write(d));
+  nextServer.stderr.on('data', (d) => logStream.write(d));
+
+  nextServer.on('exit', (code) => {
+    logStream.write(`\nexit code: ${code}\n`);
+    if (code && app.isReady()) {
+      dialog.showErrorBox(
+        'Servidor da aplicação',
+        `O servidor local foi encerrado (código ${code}).\n\nVeja o log:\n${logPath}`
+      );
+    }
+  });
+
   const url = `http://127.0.0.1:${port}`;
   await waitForServer(url);
   return url;
