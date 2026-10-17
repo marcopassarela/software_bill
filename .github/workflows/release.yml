@@ -29,8 +29,8 @@ jobs:
       - name: Build do Next
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://logisticasbill.vercel.app
-          NEXT_PUBLIC_API_BROWSER: https://logisticasbill.vercel.app
+          NEXT_PUBLIC_API_URL: https://logisticasbill.vercel.app/api
+          NEXT_PUBLIC_API_BROWSER: https://logisticasbill.vercel.app/api
 
       - name: Conferir standalone
         shell: pwsh
