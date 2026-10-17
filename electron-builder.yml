@@ -1,11 +1,14 @@
 appId: br.com.logisticasbill.app
 productName: Logísticas Bill
 copyright: Copyright © 2026 Logísticas Bill
+
 asar: true
+
 files:
-  - desktop/**/*
+  - desktop/**
   - package.json
   - '!node_modules/.cache/**'
+
 extraResources:
   - from: .next/standalone
     to: next
@@ -13,15 +16,18 @@ extraResources:
     to: next/.next/static
   - from: public
     to: next/public
+
 win:
   target:
     - nsis
   artifactName: Logisticas-Bill-Setup-${version}.${ext}
+
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
+
 publish:
   provider: github
   owner: marcopassarela
